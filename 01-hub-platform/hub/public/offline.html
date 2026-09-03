@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Нет связи — NEXUS404</title>
+<style>
+  :root { --bg: #08070c; --text: #ddd6ff; --muted: #7a72a0; --accent: #b388ff; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px; text-align: center;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); margin-bottom: 16px; }
+  h1 { font-size: 1.1rem; margin-bottom: 8px; }
+  p { color: var(--muted); font-size: 0.9rem; max-width: 320px; line-height: 1.5; }
+  button {
+    margin-top: 20px; background: transparent; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 4px; padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 0.85rem;
+  }
+  button:hover { background: rgba(179, 136, 255, 0.08); }
+</style>
+</head>
+<body>
+  <div class="dot"></div>
+  <h1>нет связи с хабом</h1>
+  <p>Проверь подключение к сети — как только оно вернётся, страница снова заработает сама.</p>
+  <button onclick="location.reload()">попробовать снова</button>
+</body>
+</html>

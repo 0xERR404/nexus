@@ -1,0 +1,76 @@
+networks:
+  default:
+    name: nexus404
+    external: true
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    depends_on:
+      - hub
+
+  hub:
+    build:
+      context: ./hub
+    restart: unless-stopped
+    # Порт наружу не публикуем — снаружи всё идёт только через Caddy.
+    # 3000 доступен внутри docker-сети nexus404 под именем "hub".
+    expose:
+      - "3000"
+    volumes:
+      # Модули и данные хаба (темы чата, ключи API) — смонтированы, чтобы
+      # хаб мог их видеть с хоста и данные переживали пересоздание
+      # контейнера.
+      - ./modules:/app/modules
+      - ./data:/app/data
+      # Общий журнал событий — тот же самый файл, куда пишут fail2ban/
+      # unattended-upgrades/cron из базовой настройки сервера (через
+      # /opt/nexus404/hooks/event_hook.sh). Один журнал на весь хаб, не
+      # два параллельных — события хаба и события сервера в одном месте.
+      - ./hooks:/app/hooks
+      # Мост к хосту (host-bridge) — Unix-сокет, слушает демон на самом
+      # хосте (не в Docker). Единственный способ хаба выполнить что-то
+      # на уровне хоста (перезапуск сервера, управление контейнерами
+      # модулей) — сам хаб в контейнере этого физически не может.
+      # docker.sock здесь больше НЕ монтируется — раньше был прямой
+      # доступ к Docker API, что по факту равносильно root на хосте.
+      # Теперь управление модулями (build/run/inspect/stop) тоже идёт
+      # через host-bridge (см. bridge.py) — тот же принцип двойной
+      # защиты, что и для restart_server/run_cleanup.
+      - /opt/nexus404/host-bridge.sock:/var/run/host-bridge.sock
+    environment:
+      - NODE_ENV=production
+      - MODULES_DIR=/app/modules
+      - HUB_DATA_DIR=/app/data
+      - EVENTS_LOG=/app/hooks/events/events.jsonl
+      - HOST_BRIDGE_SOCKET=/var/run/host-bridge.sock
+      - DOCKER_NETWORK=nexus404
+      # Лимиты расхода токенов в чате — у обоих есть встроенные значения
+      # по умолчанию (6000 / 4096), эти строки не обязательны, раскомментируй
+      # и поставь своё число, если дефолт не подходит. См.
+      # hub/src/chat/context.ts и hub/src/chat/deepseek.ts/gemini.ts.
+      # - CHAT_MAX_CONTEXT_TOKENS=6000   # бюджет на историю, уходящую в запрос
+      # - CHAT_MAX_REPLY_TOKENS=4096     # потолок длины ответа модели (общий для DeepSeek/Gemini/Claude)
+      # - CHAT_CLAUDE_MODEL=claude-sonnet-5   # строка модели Claude, см. hub/src/chat/claude.ts
+      # - CHAT_GEMINI_MODEL=gemini-2.5-flash  # строка модели Gemini, см. hub/src/chat/gemini.ts —
+                                               # у Google модели с суффиксом "-exp" снимаются без
+                                               # предупреждения, полезно уметь поменять без пересборки
+    # AUTH_USER/AUTH_HASH/SESSION_SECRET — через env_file, НЕ через
+    # environment: с ${VAR}. Bcrypt-хэш содержит символы '$' (например
+    # $2a$14$...), а Compose интерполирует '$слово' и в самом .env тоже —
+    # кусок хэша после последнего '$' принимался за имя ещё одной
+    # переменной. env_file передаёт значения в контейнер напрямую, без
+    # какой-либо интерполяции — единственный правильный способ для секретов
+    # со спецсимволами. Файл генерируется install-hub-platform.sh/update.sh,
+    # не хранится в репозитории.
+    env_file:
+      - ./secrets.env
