@@ -160,6 +160,57 @@ const BODY_CONTENT = `
       <div class="empty-note" style="margin-top:6px;">этим же токеном должен представляться агент на каждом удалённом сервере — скопируй сразу после сохранения, второй раз хаб его не покажет</div>
     </div>
   </section>
+
+  <section>
+    <div class="section-title">cheevoscope — steam / retroachievements</div>
+    <div class="box">
+      <div class="row">
+        <span class="dot unset" id="steamApiKeyDot"></span>
+        <input type="password" id="steamApiKeyInput" placeholder="Steam API-ключ (steamcommunity.com/dev/apikey)" autocomplete="off" />
+        <button class="icon-btn" id="saveSteamApiKeyBtn" title="сохранить">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <span class="dot unset" id="steamIdDot"></span>
+        <input type="text" id="steamIdInput" placeholder="SteamID64, ник или ссылка на профиль" autocomplete="off" />
+        <button class="icon-btn" id="saveSteamIdBtn" title="сохранить">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <span class="dot unset" id="raUsernameDot"></span>
+        <input type="text" id="raUsernameInput" placeholder="Логин на retroachievements.org (необязательно)" autocomplete="off" />
+        <button class="icon-btn" id="saveRaUsernameBtn" title="сохранить">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <span class="dot unset" id="raApiKeyDot"></span>
+        <input type="password" id="raApiKeyInput" placeholder="RA API-ключ (Settings → Keys, необязательно)" autocomplete="off" />
+        <button class="icon-btn" id="saveRaApiKeyBtn" title="сохранить">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="empty-note" style="margin-top:6px;">Steam API-ключ и SteamID обязательны для вкладки Steam, RetroAchievements — необязательная вторая вкладка, без них дашборд работает, та вкладка просто пустая</div>
+    </div>
+  </section>
 `;
 
 const EXTRA_SCRIPT = `
@@ -175,6 +226,10 @@ const EXTRA_SCRIPT = `
       document.getElementById('claudeDot').className = 'dot ' + (data.claude ? 'set' : 'unset');
       document.getElementById('claudeBaseUrlDot').className = 'dot ' + (data.claudeBaseUrl ? 'set' : 'unset');
       document.getElementById('monitoringDot').className = 'dot ' + (data.monitoringAgentToken ? 'set' : 'unset');
+      document.getElementById('steamApiKeyDot').className = 'dot ' + (data.steamApiKey ? 'set' : 'unset');
+      document.getElementById('steamIdDot').className = 'dot ' + (data.steamId ? 'set' : 'unset');
+      document.getElementById('raUsernameDot').className = 'dot ' + (data.raUsername ? 'set' : 'unset');
+      document.getElementById('raApiKeyDot').className = 'dot ' + (data.raApiKey ? 'set' : 'unset');
     } catch {}
   }
   loadKeyStatus();
@@ -293,6 +348,57 @@ const EXTRA_SCRIPT = `
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ monitoringAgentToken: value }),
     });
+    loadKeyStatus();
+  });
+
+  document.getElementById('saveSteamApiKeyBtn').addEventListener('click', async () => {
+    const input = document.getElementById('steamApiKeyInput');
+    const value = input.value.trim();
+    if (!value) return;
+    await fetch('/api/settings/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steamApiKey: value }),
+    });
+    input.value = '';
+    loadKeyStatus();
+  });
+
+  // Без "if (!value) return" — то же самое, что у geminiBaseUrl: пустое
+  // значение здесь осмысленно (стереть SteamID, не секрет).
+  document.getElementById('saveSteamIdBtn').addEventListener('click', async () => {
+    const input = document.getElementById('steamIdInput');
+    const value = input.value.trim();
+    await fetch('/api/settings/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steamId: value }),
+    });
+    loadKeyStatus();
+  });
+
+  document.getElementById('saveRaUsernameBtn').addEventListener('click', async () => {
+    const input = document.getElementById('raUsernameInput');
+    const value = input.value.trim();
+    if (!value) return;
+    await fetch('/api/settings/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raUsername: value }),
+    });
+    loadKeyStatus();
+  });
+
+  document.getElementById('saveRaApiKeyBtn').addEventListener('click', async () => {
+    const input = document.getElementById('raApiKeyInput');
+    const value = input.value.trim();
+    if (!value) return;
+    await fetch('/api/settings/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raApiKey: value }),
+    });
+    input.value = '';
     loadKeyStatus();
   });
 `;

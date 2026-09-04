@@ -17,9 +17,14 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# IS_TTY запоминаем СЕЙЧАС, до enable_full_logging ниже — тот делает
+# exec > >(tee ...), после чего [ -t 1 ] всегда лжёт, хотя реальный
+# терминал никуда не делся.
 if [ -t 1 ]; then
+    IS_TTY=1
     BOLD=$'\033[1m'; CYAN=$'\033[36m'; GREEN=$'\033[32m'; RED=$'\033[31m'; NC=$'\033[0m'
 else
+    IS_TTY=0
     BOLD=""; CYAN=""; GREEN=""; RED=""; NC=""
 fi
 
@@ -41,7 +46,7 @@ enable_full_logging
 _spin_wait() {
     local pid="$1" desc="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' start elapsed i=0
     start=$(date +%s)
-    if [ -t 1 ]; then
+    if [ "$IS_TTY" = "1" ]; then
         while kill -0 "$pid" 2>/dev/null; do
             elapsed=$(( $(date +%s) - start ))
             printf "\r${CYAN}[%s]${NC} %s... (%02d:%02d)  " \
@@ -89,6 +94,9 @@ trap '
 ' EXIT
 
 # ================== Проверка сохранённых данных ==================
+echo "${BOLD}${CYAN}==========================================================================="
+echo "  Проверка сохранённых данных"
+echo "===========================================================================${NC}"
 DOMAIN=$(cat "$STATE_DIR/domain" 2>/dev/null || echo "")
 AUTH_USER=$(cat "$STATE_DIR/auth_user" 2>/dev/null || echo "")
 AUTH_HASH=$(cat "$STATE_DIR/auth_hash" 2>/dev/null || echo "")
@@ -112,7 +120,9 @@ fi
 echo "${GREEN}[✓]${NC} Домен: $DOMAIN"
 
 # ================== Обновление файлов ==================
-echo "${BOLD}${CYAN}--- Обновление файлов (хаб, модули, Caddyfile) ---${NC}"
+echo "${BOLD}${CYAN}==========================================================================="
+echo "  Обновление файлов (хаб, модули, Caddyfile)"
+echo "===========================================================================${NC}"
 
 cp "$SCRIPT_DIR/docker-compose.yml" "$NEXUS_DIR/docker-compose.yml"
 # basic_auth убран из Caddyfile — только подстановка домена.
@@ -169,7 +179,9 @@ fi
 echo "${GREEN}[✓]${NC} Файлы обновлены"
 
 # ================== Пересборка и перезапуск ==================
-echo "${BOLD}${CYAN}--- Пересборка и перезапуск (Caddy + хаб) ---${NC}"
+echo "${BOLD}${CYAN}==========================================================================="
+echo "  Пересборка и перезапуск (Caddy + хаб)"
+echo "===========================================================================${NC}"
 
 cd "$NEXUS_DIR"
 run_spinner "Пересборка образа хаба" "docker compose build hub"

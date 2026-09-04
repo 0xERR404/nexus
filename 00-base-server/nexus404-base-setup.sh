@@ -36,10 +36,19 @@ export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || tr
 DK_VERSION="1.0.0"
 
 # --- Цвета (без цвета, если вывод не в терминал — например, в лог-файл) ---
+# IS_TTY запоминаем СЕЙЧАС, до enable_full_logging ниже: тот делает
+# exec > >(tee ...) — после этого stdout самого скрипта становится
+# каналом (pipe) в tee, и [ -t 1 ], проверенный ПОСЛЕ, всегда лжёт (не
+# терминал), хотя реальный терминал никуда не делся — просто вывод идёт
+# через tee. Без этой переменной _spin_wait ниже решил бы, что терминала
+# нет, и молча отключил бы анимацию/таймер спиннера на весь остаток
+# скрипта, начиная с первого шага после enable_full_logging.
 if [ -t 1 ]; then
+    IS_TTY=1
     BOLD=$'\033[1m'; CYAN=$'\033[36m'; GREEN=$'\033[32m'
     RED=$'\033[31m'; YELLOW=$'\033[33m'; NC=$'\033[0m'
 else
+    IS_TTY=0
     BOLD=""; CYAN=""; GREEN=""; RED=""; YELLOW=""; NC=""
 fi
 
@@ -91,7 +100,7 @@ check_or_fail() {
 _spin_wait() {
     local pid="$1" desc="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' start elapsed i=0
     start=$(date +%s)
-    if [ -t 1 ]; then
+    if [ "$IS_TTY" = "1" ]; then
         while kill -0 "$pid" 2>/dev/null; do
             elapsed=$(( $(date +%s) - start ))
             printf "\r${CYAN}[%s]${NC} %s... (%02d:%02d)  " \
@@ -231,16 +240,22 @@ restart_ssh() {
     target_port=$(grep -E "^Port " "$SSHD_CONFIG" | awk '{print $2}')
     target_port=${target_port:-22}
 
-    # На Ubuntu 24.04 ssh.socket слушает порт НЕЗАВИСИМО от службы — обычный
-    # restart не освобождает его. Выключаем сокет ВСЕГДА первым шагом.
-    if systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.socket'; then
-        echo "${CYAN}[*]${NC} Обнаружен ssh.socket — выключаю его перед сменой порта"
-        systemctl stop ssh.socket >> "$LOGFILE" 2>&1 || true
-        systemctl disable ssh.socket >> "$LOGFILE" 2>&1 || true
-    fi
+    # "systemctl enable --now" на УЖЕ запущенной службе — no-op на старте:
+    # не перезапускает и не перечитывает конфиг. Именно из-за этого смена
+    # порта могла тихо не применяться — sshd продолжал слушать старый
+    # порт при уже правильном конфиге на диске. Останавливаем явно (и
+    # сокет — на Ubuntu 24.04 слушает порт независимо от службы, и саму
+    # службу под обоими возможными именами), потом запускаем заново —
+    # так следующий старт гарантированно не no-op, а реальный запуск с
+    # новым конфигом.
+    echo "${CYAN}[*]${NC} Останавливаю SSH перед применением нового конфига..."
+    systemctl stop ssh.socket >> "$LOGFILE" 2>&1 || true
+    systemctl disable ssh.socket >> "$LOGFILE" 2>&1 || true
+    systemctl stop ssh.service >> "$LOGFILE" 2>&1 || true
+    systemctl stop sshd.service >> "$LOGFILE" 2>&1 || true
 
     run_spinner "Запуск SSH-службы на порту $target_port" \
-        "systemctl enable --now ssh.service >> \"$LOGFILE\" 2>&1 || systemctl enable --now sshd.service >> \"$LOGFILE\" 2>&1 || systemctl restart sshd || systemctl restart ssh"
+        "systemctl enable --now ssh.service >> \"$LOGFILE\" 2>&1 || systemctl enable --now sshd.service >> \"$LOGFILE\" 2>&1"
 
     sleep 1
     if ss -tln 2>/dev/null | grep -q ":${target_port} "; then

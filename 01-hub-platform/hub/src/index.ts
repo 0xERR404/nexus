@@ -19,7 +19,7 @@ import {
   SESSION_MAX_AGE_SECONDS,
 } from "./auth.js";
 import { renderDashboard, renderChatPage } from "./dashboard.js";
-import { getKeyStatus, setKey, clearKey, getMonitoringAgentToken } from "./keys.js";
+import { getKeyStatus, setKey, clearKey, getMonitoringAgentToken, getSteamApiKey, getSteamId, getRaUsername, getRaApiKey } from "./keys.js";
 import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage } from "./chat/storage.js";
 import { buildContext } from "./chat/context.js";
 import { askDeepSeek, DeepSeekNotConfiguredError, getDeepSeekBalance } from "./chat/deepseek.js";
@@ -229,7 +229,7 @@ app.get("/api/settings/keys", async () => {
 
 // Поля, которые можно стереть пустым значением — настраиваемые
 // необязательные параметры (geminiBaseUrl и т.п.), не сами ключи.
-const CLEARABLE_KEY_FIELDS = new Set(["geminiBaseUrl", "claudeBaseUrl", "flowmusicBaseUrl"]);
+const CLEARABLE_KEY_FIELDS = new Set(["geminiBaseUrl", "claudeBaseUrl", "flowmusicBaseUrl", "steamId"]);
 
 app.post<{ Body: Record<string, string> }>("/api/settings/keys", async (request, reply) => {
   const body = request.body ?? {};
@@ -628,6 +628,26 @@ app.get("/internal/monitoring-token", async (request, reply) => {
     return { error: "доступно только модулям хаба" };
   }
   return { token: (await getMonitoringAgentToken()) ?? null };
+});
+
+// GET /internal/cheevoscope-keys — в отличие от чат-провайдеров (там
+// хаб сам делает запрос и отдаёт модулю только готовый результат, ключ
+// наружу не выходит), здесь модуль сам обращается к Steam/RA API — ему
+// нужен настоящий ключ, не обработанный ответ. Спрашивает заново при
+// каждом запуске пайплайна, не кэширует у себя — смена в интерфейсе
+// действует сразу, тем же принципом, что и у токена агентов выше.
+app.get("/internal/cheevoscope-keys", async (request, reply) => {
+  const token = request.headers["x-internal-token"];
+  if (token !== INTERNAL_TOKEN) {
+    reply.code(403);
+    return { error: "доступно только модулям хаба" };
+  }
+  return {
+    steamApiKey: (await getSteamApiKey()) ?? null,
+    steamId: (await getSteamId()) ?? null,
+    raUsername: (await getRaUsername()) ?? null,
+    raApiKey: (await getRaApiKey()) ?? null,
+  };
 });
 
 // GET /internal/chat-usage — расход токенов чата, реальные числа из

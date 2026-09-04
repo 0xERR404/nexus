@@ -19,10 +19,17 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || true
 
+# IS_TTY запоминаем СЕЙЧАС, до enable_full_logging ниже — тот делает
+# exec > >(tee ...), после чего [ -t 1 ] всегда лжёт (stdout стал
+# каналом в tee), хотя реальный терминал никуда не делся. Без этого
+# _spin_wait решил бы, что терминала нет, и молча отключил бы
+# анимацию/таймер спиннера на весь остаток скрипта.
 if [ -t 1 ]; then
+    IS_TTY=1
     BOLD=$'\033[1m'; CYAN=$'\033[36m'; GREEN=$'\033[32m'
     RED=$'\033[31m'; YELLOW=$'\033[33m'; NC=$'\033[0m'
 else
+    IS_TTY=0
     BOLD=""; CYAN=""; GREEN=""; RED=""; YELLOW=""; NC=""
 fi
 
@@ -66,7 +73,7 @@ check_or_fail() {
 _spin_wait() {
     local pid="$1" desc="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' start elapsed i=0
     start=$(date +%s)
-    if [ -t 1 ]; then
+    if [ "$IS_TTY" = "1" ]; then
         while kill -0 "$pid" 2>/dev/null; do
             elapsed=$(( $(date +%s) - start ))
             printf "\r${CYAN}[%s]${NC} %s... (%02d:%02d)  " \
@@ -129,7 +136,9 @@ echo "==========================================================================
 if is_done "hub_1_docker"; then
     echo "${CYAN}[*]${NC} Docker уже установлен, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 1: Docker Engine ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 1: Docker Engine"
+    echo "===========================================================================${NC}"
 
     if command -v docker >/dev/null 2>&1; then
         echo "${CYAN}[*]${NC} Docker уже присутствует в системе"
@@ -167,7 +176,9 @@ fi
 if is_done "hub_2_structure"; then
     echo "${CYAN}[*]${NC} Структура каталогов уже создана, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 2: структура каталогов + docker-сеть ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 2: структура каталогов + docker-сеть"
+    echo "===========================================================================${NC}"
 
     mkdir -p "$NEXUS_DIR"/{hub,modules,data,caddy/data,caddy/config,hooks/events}
     chmod 700 "$NEXUS_DIR/hooks/events"
@@ -186,7 +197,9 @@ fi
 if is_done "hub_2b_hooks"; then
     echo "${CYAN}[*]${NC} Хук-механизм уже установлен, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 2b: общий механизм событий (хуки) ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 2b: общий механизм событий (хуки)"
+    echo "===========================================================================${NC}"
     echo "${CYAN}[*]${NC} Любой код может записать событие любого типа —"
     echo "    не список из заранее придуманных."
 
@@ -295,11 +308,20 @@ EOF
     mark_done "hub_2b_hooks"
 fi
 
-# ================== ШАГ 3: Домен для Caddy ==================
-if is_done "hub_3_domain"; then
-    echo "${CYAN}[*]${NC} Домен уже задан, пропуск"
+# ================== ШАГ 3: Настройка хаба (домен, вход, имя сервера) ==================
+# Раньше это было три отдельных псевдо-шага (3/3b/3c) — искусственное
+# дробление одного и того же дела ("собрать настройки перед установкой").
+# Совместимость: если старые флаги уже отмечены на уже настроенном
+# сервере (до этого объединения) — считаем шаг пройденным, не спрашиваем
+# заново то, что уже сохранено на диске.
+if is_done "hub_3_setup" || { is_done "hub_3_domain" && is_done "hub_3b_auth" && is_done "hub_3c_server_name"; }; then
+    is_done "hub_3_setup" || mark_done "hub_3_setup"
+    echo "${CYAN}[*]${NC} Настройка хаба уже выполнена, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 3: Домен для Caddy ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 3: Настройка хаба (домен, вход, имя сервера)"
+    echo "===========================================================================${NC}"
+
     DOMAIN="${PRESET_DOMAIN:-}"
     while [ -z "$DOMAIN" ]; do
         read -rp "${YELLOW}[?]${NC} Домен, указывающий на этот сервер (например hub.example.com): " DOMAIN < /dev/tty || { echo "${RED}[!]${NC} Не удалось прочитать ввод"; exit 1; }
@@ -310,30 +332,38 @@ else
     done
     echo "$DOMAIN" > "$STATE_DIR/domain"
     echo "${GREEN}[✓]${NC} Домен: $DOMAIN"
-    mark_done "hub_3_domain"
-fi
-DOMAIN=$(cat "$STATE_DIR/domain" 2>/dev/null || echo "")
 
-# ================== ШАГ 3b: логин/пароль для временной защиты Caddy ==================
-if is_done "hub_3b_auth"; then
-    echo "${CYAN}[*]${NC} Логин/пароль для Caddy уже заданы, пропуск"
-else
-    echo "${BOLD}${CYAN}--- Шаг 3b: логин/пароль (временная защита через Caddy) ---${NC}"
-    echo "${CYAN}[*]${NC} Временная защита домена базовой авторизацией Caddy —"
-    echo "    закрывает вообще всё, без исключений, один пользователь."
+    echo "${CYAN}[*]${NC} Логин/пароль для входа в хаб (тот же хэш — и временная"
+    echo "    защита через Caddy, если понадобится включить снова)."
 
     AUTH_USER="${PRESET_AUTH_USER:-}"
     while [ -z "$AUTH_USER" ]; do
         read -rp "${YELLOW}[?]${NC} Логин: " AUTH_USER < /dev/tty || { echo "${RED}[!]${NC} Не удалось прочитать ввод"; exit 1; }
     done
 
+    # Минимум 8 символов + повтор — раньше пароль спрашивался один раз
+    # без проверки длины, опечатка в пароле обнаруживалась только на
+    # первом реальном входе. PRESET_AUTH_PASSWORD (полная автоматизация)
+    # короче 8 символов — отбрасываем и спрашиваем как обычно, не падаем.
     AUTH_PASS="${PRESET_AUTH_PASSWORD:-}"
+    if [ -n "$AUTH_PASS" ] && [ "${#AUTH_PASS}" -lt 8 ]; then
+        echo "${YELLOW}[?]${NC} PRESET_AUTH_PASSWORD короче 8 символов — игнорирую, спрошу вручную"
+        AUTH_PASS=""
+    fi
     while [ -z "$AUTH_PASS" ]; do
-        read -rsp "${YELLOW}[?]${NC} Пароль: " AUTH_PASS < /dev/tty; echo ""
-        if [ -z "$AUTH_PASS" ]; then
-            echo "${RED}[!]${NC} Пустой пароль не годится"
+        read -rsp "${YELLOW}[?]${NC} Пароль (минимум 8 символов): " AUTH_PASS < /dev/tty; echo ""
+        if [ "${#AUTH_PASS}" -lt 8 ]; then
+            echo "${RED}[!]${NC} Пароль короче 8 символов, попробуй снова"
+            AUTH_PASS=""
+            continue
+        fi
+        read -rsp "${YELLOW}[?]${NC} Повтори пароль: " AUTH_PASS_CONFIRM < /dev/tty; echo ""
+        if [ "$AUTH_PASS" != "$AUTH_PASS_CONFIRM" ]; then
+            echo "${RED}[!]${NC} Пароли не совпадают, попробуй снова"
+            AUTH_PASS=""
         fi
     done
+    unset AUTH_PASS_CONFIRM
 
     # Хэш считает Caddy (bcrypt) через одноразовый контейнер. Пароль — через
     # переменную окружения, не в строке команды (спецсимволы могли бы сломать её).
@@ -348,15 +378,26 @@ else
     echo "$AUTH_USER" > "$STATE_DIR/auth_user"
     echo "$AUTH_HASH" > "$STATE_DIR/auth_hash"
     chmod 600 "$STATE_DIR/auth_user" "$STATE_DIR/auth_hash"
-    unset AUTH_PASS
-
     echo "${GREEN}[✓]${NC} Логин/пароль сохранены (пароль — только как bcrypt-хэш)"
-    mark_done "hub_3b_auth"
+
+    DEFAULT_SERVER_NAME="$(hostname 2>/dev/null || echo server)"
+    LOCAL_SERVER_NAME="${PRESET_LOCAL_SERVER_NAME:-}"
+    if [ -z "$LOCAL_SERVER_NAME" ]; then
+        read -rp "${YELLOW}[?]${NC} Имя этого сервера в списке мониторинга [${DEFAULT_SERVER_NAME}]: " LOCAL_SERVER_NAME < /dev/tty || { echo "${RED}[!]${NC} Не удалось прочитать ввод"; exit 1; }
+    fi
+    LOCAL_SERVER_NAME="${LOCAL_SERVER_NAME:-$DEFAULT_SERVER_NAME}"
+    echo "$LOCAL_SERVER_NAME" > "$STATE_DIR/local_server_name"
+    echo "${GREEN}[✓]${NC} Имя сервера: $LOCAL_SERVER_NAME"
+
+    echo "${GREEN}[✓]${NC} Шаг 3 завершён успешно"
+    mark_done "hub_3_setup"
 fi
+DOMAIN=$(cat "$STATE_DIR/domain" 2>/dev/null || echo "")
 AUTH_USER=$(cat "$STATE_DIR/auth_user" 2>/dev/null || echo "")
 AUTH_HASH=$(cat "$STATE_DIR/auth_hash" 2>/dev/null || echo "")
+LOCAL_SERVER_NAME=$(cat "$STATE_DIR/local_server_name" 2>/dev/null || echo "")
 
-# Секрет сессий — вне блока is_done "hub_3b_auth": на уже настроенных
+# Секрет сессий — вне блока is_done "hub_3_setup": на уже настроенных
 # установках тот шаг мог пройти ещё до появления страницы входа.
 if [ ! -f "$STATE_DIR/session_secret" ]; then
     echo "${CYAN}[*]${NC} Генерирую секрет для сессий хаба..."
@@ -370,29 +411,13 @@ if [ ! -f "$STATE_DIR/session_secret" ]; then
 fi
 SESSION_SECRET=$(cat "$STATE_DIR/session_secret" 2>/dev/null || echo "")
 
-# ================== ШАГ 3c: имя сервера (модуль мониторинга) ==================
-# Задаётся один раз на этапе деплоя, не runtime-настройкой в браузере.
-if is_done "hub_3c_server_name"; then
-    echo "${CYAN}[*]${NC} Имя сервера для мониторинга уже задано, пропуск"
-else
-    echo "${BOLD}${CYAN}--- Шаг 3c: имя этого сервера (модуль \"Системные ресурсы\") ---${NC}"
-    DEFAULT_SERVER_NAME="$(hostname 2>/dev/null || echo server)"
-    LOCAL_SERVER_NAME="${PRESET_LOCAL_SERVER_NAME:-}"
-    if [ -z "$LOCAL_SERVER_NAME" ]; then
-        read -rp "${YELLOW}[?]${NC} Имя этого сервера в списке мониторинга [${DEFAULT_SERVER_NAME}]: " LOCAL_SERVER_NAME < /dev/tty || { echo "${RED}[!]${NC} Не удалось прочитать ввод"; exit 1; }
-    fi
-    LOCAL_SERVER_NAME="${LOCAL_SERVER_NAME:-$DEFAULT_SERVER_NAME}"
-    echo "$LOCAL_SERVER_NAME" > "$STATE_DIR/local_server_name"
-    echo "${GREEN}[✓]${NC} Имя сервера: $LOCAL_SERVER_NAME"
-    mark_done "hub_3c_server_name"
-fi
-LOCAL_SERVER_NAME=$(cat "$STATE_DIR/local_server_name" 2>/dev/null || echo "")
-
 # ================== ШАГ 4: файлы хаба и Caddy ==================
 if is_done "hub_4_files"; then
     echo "${CYAN}[*]${NC} Файлы хаба и Caddy уже на месте, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 4: файлы хаба и Caddy ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 4: файлы хаба и Caddy"
+    echo "===========================================================================${NC}"
     echo "${YELLOW}[?]${NC} Ожидается, что этот скрипт лежит рядом с docker-compose.yml,"
     echo "    Caddyfile и папкой hub/ (из репозитория) — копирую их в $NEXUS_DIR"
 
@@ -445,7 +470,9 @@ fi
 if is_done "hub_4b_bridge"; then
     echo "${CYAN}[*]${NC} host-bridge уже установлен, пропуск"
 else
-    echo "${BOLD}${CYAN}--- Шаг 4b: host-bridge (мост к хосту) ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 4b: host-bridge (мост к хосту)"
+    echo "===========================================================================${NC}"
     echo "${CYAN}[*]${NC} Хаб в контейнере не может выполнить действие на"
     echo "    уровне хоста напрямую — этот демон на хосте делает это за"
     echo "    него, со своим независимым белым списком (двойная защита)."
@@ -476,7 +503,9 @@ if is_done "hub_5_up"; then
     echo "${CYAN}[*]${NC} Контейнеры уже поднимались этим скриптом, пропуск"
     echo "${CYAN}[*]${NC} Для обновления после правок: cd $NEXUS_DIR && docker compose up -d --build"
 else
-    echo "${BOLD}${CYAN}--- Шаг 5: сборка и запуск (Caddy + хаб) ---${NC}"
+    echo "${BOLD}${CYAN}==========================================================================="
+    echo "  ШАГ 5: сборка и запуск (Caddy + хаб)"
+    echo "===========================================================================${NC}"
     echo "${CYAN}[*]${NC} Управление контейнерами модулей идёт через host-bridge,"
     echo "    без прямого docker.sock у хаба."
     cd "$NEXUS_DIR"

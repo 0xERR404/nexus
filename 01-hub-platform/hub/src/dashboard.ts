@@ -283,6 +283,22 @@ const MODULES_SCRIPT = `
             '</div>' +
             '</a>';
         }
+        // Модуль cheevoscope — то же точечное исключение: ачивки Steam,
+        // ачивки RA и часы в Steam (у RA понятия наигранного времени
+        // вообще нет — сервис только для достижений).
+        if (m.name === 'cheevoscope') {
+          return '<a class="module-card" href="/modules/' + encodeURIComponent(m.name) + '/">' +
+            '<div class="name">' + escapeHtml(m.displayName) + '</div>' +
+            '<div class="stat-tiles-grid" id="cheevoscopeTiles">' +
+              '<div class="stat-tile"><span class="stat-label">\u0430\u0447\u0438\u0432\u043a\u0438 steam</span><span class="stat-value" id="cheevoSteamAch">\u2014</span></div>' +
+              '<div class="stat-tile"><span class="stat-label">\u0430\u0447\u0438\u0432\u043a\u0438 ra</span><span class="stat-value" id="cheevoRaAch">\u2014</span></div>' +
+              '<div class="stat-tile"><span class="stat-label">\u0447\u0430\u0441\u043e\u0432 \u0432 steam</span><span class="stat-value" id="cheevoHours">\u2014</span></div>' +
+            '</div>' +
+            '<div class="footer-row">' +
+              '<span class="status-pill ' + st.cls + '">' + st.text + '</span>' +
+            '</div>' +
+            '</a>';
+        }
         return '<a class="module-card" href="/modules/' + encodeURIComponent(m.name) + '/">' +
           '<div class="name">' + escapeHtml(m.displayName) + '</div>' +
           '<div class="stat-tiles-grid">' +
@@ -310,6 +326,8 @@ const MODULES_SCRIPT = `
       if (hasNotifications) refreshNotificationsSummary();
       var hasFinance = data.modules.some(function (m) { return m.name === 'finance'; });
       if (hasFinance) refreshFinanceSummary();
+      var hasCheevoscope = data.modules.some(function (m) { return m.name === 'cheevoscope'; });
+      if (hasCheevoscope) refreshCheevoscopeSummary();
     } catch {
       if (lastGridSignature === 'ERROR') return; // уже показана ошибка — не пересоздаём
       lastGridSignature = 'ERROR';
@@ -431,6 +449,23 @@ const MODULES_SCRIPT = `
     } catch {}
   }
 
+  // Та же частота и принцип, что и у finance выше. Значения могут быть
+  // null (ни разу не обновлялось на соответствующей платформе) — "—",
+  // не "null"/"undefined" на экране.
+  async function refreshCheevoscopeSummary() {
+    try {
+      const res = await fetch('/modules/cheevoscope/api/summary');
+      const s = await res.json();
+      const anchorEl = document.getElementById('cheevoSteamAch');
+      if (!anchorEl) return;
+      document.getElementById('cheevoSteamAch').textContent =
+        s.steamAchievementsTotal !== null ? s.steamAchievementsUnlocked + '/' + s.steamAchievementsTotal : '\u2014';
+      document.getElementById('cheevoRaAch').textContent =
+        s.raAchievementsTotal !== null ? s.raAchievementsUnlocked + '/' + s.raAchievementsTotal : '\u2014';
+      document.getElementById('cheevoHours').textContent = s.steamHours !== null ? s.steamHours : '\u2014';
+    } catch {}
+  }
+
   loadModules();
   setInterval(loadModules, 10000);
   // Сбор на сервере тоже раз в 5с (SAMPLE_INTERVAL_MS в monitoring/store.js).
@@ -438,6 +473,7 @@ const MODULES_SCRIPT = `
   setInterval(refreshBillingSummary, 15000);
   setInterval(refreshNotificationsSummary, 15000);
   setInterval(refreshFinanceSummary, 15000);
+  setInterval(refreshCheevoscopeSummary, 15000);
   setInterval(refreshChatSummary, 15000);
 `;
 

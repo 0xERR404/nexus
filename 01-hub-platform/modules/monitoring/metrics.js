@@ -1,11 +1,9 @@
 // NEXUS404 — сбор метрик ХОСТА (не контейнера) для локального сервера.
 //
-// Работает только потому, что host-bridge монтирует этому конкретному
-// модулю /proc и корень хоста только на чтение (см. bridge.py,
-// module_ensure_running — точечное исключение по имени "monitoring", не
-// общее правило для всех модулей). Без этих монтирований здесь были бы
-// видны только цифры самого контейнера — бессмысленно для мониторинга
-// сервера в целом.
+// Работает только потому, что host-bridge монтирует этому модулю /proc и
+// корень хоста только на чтение (точечное исключение по имени
+// "monitoring", см. bridge.py) — без этого были бы видны только цифры
+// самого контейнера.
 
 const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
@@ -42,10 +40,7 @@ async function readCpuPercent() {
   return Math.max(0, Math.min(100, (1 - idleDelta / totalDelta) * 100));
 }
 
-// Число ядер — строки "cpu0", "cpu1", ... в /proc/stat (сама строка
-// "cpu " без номера — суммарная по всем ядрам, не считается). Показывать
-// просто "23%" рядом с остальными двузначными парами (5.0 ГБ / 59.0 ГБ)
-// смотрелось одиноко — с числом ядер это тоже пара значений.
+// Число ядер — по строкам "cpu0", "cpu1"... в /proc/stat.
 async function readCpuCores() {
   const raw = await fs.readFile(`${PROC_DIR}/stat`, 'utf-8');
   return raw.split('\n').filter((line) => /^cpu\d+\s/.test(line)).length || 1;
@@ -65,12 +60,9 @@ async function readMemory() {
 }
 
 async function readDisk() {
-  // df на bind-смонтированный (только чтение) корень хоста — та же самая
-  // файловая система хоста, просто видна из контейнера по другому пути.
-  // ЧЕСТНАЯ ОГОВОРКА: busybox df (node:alpine) не понимает GNU-флаг
-  // --output, поэтому разбираем стандартные позиционные колонки
-  // (Filesystem, 1K-blocks, Used, Available, Use%, Mounted on) — этот
-  // формат одинаков и у busybox, и у GNU coreutils df.
+  // df на bind-смонтированный корень хоста. Честная оговорка: busybox df
+  // не понимает GNU-флаг --output, разбираем позиционные колонки —
+  // формат одинаков у busybox и GNU coreutils.
   try {
     const { stdout } = await execFileAsync('df', ['-k', ROOT_DIR]);
     const dataLine = stdout.trim().split('\n').pop().trim().split(/\s+/);

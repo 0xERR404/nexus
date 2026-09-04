@@ -18,6 +18,13 @@ export interface ApiKeys {
   // Токен, который хаб сам придумывает для представления удалённых
   // агентов мониторинга — тот же слот хранения, что и у ключей.
   monitoringAgentToken?: string;
+  // CheevoScope — ключи Steam/RetroAchievements. Не общий пул провайдеров
+  // чата, но тот же принцип: модуль сам не хранит секреты, спрашивает у
+  // хаба (см. GET /internal/cheevoscope-keys в index.ts).
+  steamApiKey?: string;
+  steamId?: string;
+  raUsername?: string;
+  raApiKey?: string;
 }
 
 const KNOWN_KEYS: (keyof ApiKeys)[] = [
@@ -29,6 +36,10 @@ const KNOWN_KEYS: (keyof ApiKeys)[] = [
   "claudeBaseUrl",
   "flowmusicBaseUrl",
   "monitoringAgentToken",
+  "steamApiKey",
+  "steamId",
+  "raUsername",
+  "raApiKey",
 ];
 
 async function ensureDir() {
@@ -115,4 +126,24 @@ export async function getFlowMusicBaseUrl(): Promise<string | undefined> {
 export async function getMonitoringAgentToken(): Promise<string | undefined> {
   const keys = await getKeys();
   return keys.monitoringAgentToken;
+}
+
+export async function getSteamApiKey(): Promise<string | undefined> {
+  const keys = await getKeys();
+  return keys.steamApiKey;
+}
+
+export async function getSteamId(): Promise<string | undefined> {
+  const keys = await getKeys();
+  return keys.steamId;
+}
+
+export async function getRaUsername(): Promise<string | undefined> {
+  const keys = await getKeys();
+  return keys.raUsername;
+}
+
+export async function getRaApiKey(): Promise<string | undefined> {
+  const keys = await getKeys();
+  return keys.raApiKey;
 }
