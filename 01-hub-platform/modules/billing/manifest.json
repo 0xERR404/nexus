@@ -1,7 +1,7 @@
 {
   "name": "billing",
   "displayName": "Расходы AI",
-  "version": "1.5.8",
+  "version": "1.5.10",
   "description": "Баланс DeepSeek и расход токенов по провайдерам (DeepSeek/Gemini) — сегодня и всего",
   "port": 4002
 }

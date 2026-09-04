@@ -192,14 +192,14 @@ const EXTRA_HEAD = `
     display: inline-flex; align-items: center; gap: 7px;
     background: transparent; border: 1px solid var(--line); color: var(--muted);
     font-family: var(--font-sans); font-weight: 700; font-size: 12px;
-    padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    padding: 8px 16px; border-radius: var(--card-radius); cursor: pointer;
     transition: border-color .15s ease, color .15s ease, background .15s ease;
   }
   .cs-tab-btn svg { width: 14px; height: 14px; }
   .cs-tab-btn.active { color: var(--text); border-color: rgba(179,136,255,0.4); background: rgba(179,136,255,0.14); }
   .cs-tab-btn:not(.active):hover { border-color: rgba(179,136,255,0.3); color: var(--text); }
   .cs-tab-panel { display: none; }
-  .cs-tab-panel.active { display: block; }
+  .cs-tab-panel.active { display: block; will-change: transform; }
 
   .cs-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
   /* Одна карточка на 4 плитки (Игр / Стоимость / Часов / Замастерено) —
@@ -316,16 +316,26 @@ const EXTRA_HEAD = `
   .cs-toolbar input::placeholder { color: var(--muted); }
   .cs-toolbar input:focus, .cs-toolbar select:focus { border-color: rgba(179,136,255,0.4); }
 
-  .cs-modal-overlay { position: fixed; inset: 0; background: rgba(3,5,9,0.72); backdrop-filter: blur(4px); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding: 40px 16px; overflow-y: auto; }
+  /* flex-column + max-height на самом боксе (не только на списке внутри) —
+     раньше высоту ограничивал только .cs-ach-modal-list (60vh), а сам бокс
+     мог вылезти за пределы экрана целиком (заголовок + отступы поверх тех
+     же 60vh), из-за чего на невысоких экранах модалка выглядела "обрезанной"
+     снизу — приходилось скроллить весь оверлей, не сам список. Теперь
+     ровно одна явная граница (90vh на боксе), список сам берёт остаток. */
+  .cs-modal-overlay { position: fixed; inset: 0; background: rgba(3,5,9,0.72); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px 16px; }
   .cs-modal-overlay.show { display: flex; }
-  .cs-modal-box { background: var(--bg); border: 1px solid rgba(179,136,255,0.3); border-radius: 14px; width: 100%; max-width: 540px; padding: 20px 22px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
-  .cs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .cs-modal-box { background: var(--bg); border: 1px solid rgba(179,136,255,0.3); border-radius: 14px; width: 100%; max-width: 560px; max-height: 90vh; padding: 20px 22px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); display: flex; flex-direction: column; }
+  .cs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-shrink: 0; }
   .cs-modal-head h3 { font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--text); margin: 0; }
-  .cs-modal-close { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-  .cs-modal-close:hover { border-color: rgba(179,136,255,0.3); color: var(--text); }
-  .cs-modal-close svg { width: 14px; height: 14px; }
+  /* Рамка/иконка были почти невидимы на тёмном фоне (var(--line) — 15%
+     непрозрачности, var(--muted) — приглушённый серо-фиолетовый) — крестик
+     закрытия выглядел как пустой квадрат. Контраст выше в покое, не только
+     при наведении. */
+  .cs-modal-close { background: rgba(179,136,255,0.08); border: 1px solid rgba(179,136,255,0.3); color: var(--text); border-radius: 8px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .cs-modal-close:hover { border-color: var(--accent); background: rgba(179,136,255,0.16); box-shadow: 0 0 12px rgba(179,136,255,0.25); }
+  .cs-modal-close svg { width: 15px; height: 15px; }
   .cs-modal-loading, .cs-modal-empty { color: var(--muted); font-size: 12.5px; text-align: center; padding: 22px 0; }
-  .cs-ach-modal-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+  .cs-ach-modal-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; min-height: 0; }
   .cs-ach-modal-row { display: flex; align-items: center; gap: 12px; border-radius: var(--card-radius); border: 1px solid var(--line); padding: 9px 11px; }
   .cs-ach-modal-row.unlocked { border-color: rgba(102,187,106,0.35); }
   .cs-ach-check { width: 20px; height: 20px; min-width: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.06); color: var(--muted); }
@@ -418,7 +428,7 @@ const BODY_CONTENT = `
       </button>
       <button class="cs-tab-btn" id="tab-overall">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="17" rx="1"/></svg>
-        Общая статистика
+        Общее
       </button>
     </div>
     <div class="cs-actions">
@@ -999,7 +1009,7 @@ function switchTab(t){
   const titles = {
     steam: \`CheevoScope <span style="color:var(--accent)">· Steam</span>\`,
     retro: \`CheevoScope <span style="color:var(--amber)">· RetroAchievements</span>\`,
-    overall: \`CheevoScope <span style="color:var(--amber)">· Общая статистика</span>\`,
+    overall: \`CheevoScope <span style="color:var(--amber)">· Общее</span>\`,
   };
   document.getElementById('page-title').innerHTML = titles[t];
 
@@ -1318,7 +1328,7 @@ function filterGamesGrid(gridId, searchId, sortId){
 }
 
 // ========================================================================
-// "Общая статистика" — комбинирует уже загруженные report.json + retro_report.json.
+// "Общее" — комбинирует уже загруженные report.json + retro_report.json.
 // ========================================================================
 
 async function loadOverall(){
@@ -1520,12 +1530,23 @@ function renderRarestColumn(list){
 // Модалка "все ачивки" — общая для Steam- и RA-плиток.
 // ========================================================================
 
+// Модалка закрывается по backspace/кнопке "назад" на телефоне, не уводит
+// со страницы целиком. history.pushState при открытии — физическая кнопка
+// "назад" на телефоне генерирует popstate, а не keydown, перехватить её
+// иначе просто нельзя. modalHistoryPushed — чтобы не плодить лишние записи
+// в истории при повторных открытиях/закрытиях подряд.
+let modalHistoryPushed = false;
+
 async function openAchievementsModal(platform, id, title){
   const overlay = document.getElementById('ach-modal-overlay');
   const body = document.getElementById('ach-modal-body');
   document.getElementById('ach-modal-title').textContent = title || 'Достижения';
   body.innerHTML = '<div class="cs-modal-loading">Загрузка…</div>';
   overlay.classList.add('show');
+  if(!modalHistoryPushed){
+    modalHistoryPushed = true;
+    history.pushState({ cheevoscopeModal: true }, '', location.href);
+  }
 
   const url = platform === 'retro' ? \`api/retro/game/\${id}/achievements\` : \`api/game/\${id}/achievements\`;
   try{
@@ -1537,9 +1558,39 @@ async function openAchievementsModal(platform, id, title){
   }
 }
 
-function closeAchievementsModal(){
+// fromPopstate=true — модалку закрыла САМА физическая кнопка "назад"
+// (см. popstate ниже), запись истории уже израсходована браузером, ещё
+// раз history.back() звать не нужно (иначе улетели бы на страницу ДО
+// CheevoScope). fromPopstate=false — закрыли крестиком/оверлеем/backspace,
+// запись в истории надо убрать самим, иначе следующее "назад" ничего не
+// сделает визуально (вернёт на ту же самую страницу).
+function closeAchievementsModal(fromPopstate){
   document.getElementById('ach-modal-overlay').classList.remove('show');
+  if(modalHistoryPushed){
+    modalHistoryPushed = false;
+    if(!fromPopstate) history.back();
+  }
 }
+
+window.addEventListener('popstate', function(){
+  if(document.getElementById('ach-modal-overlay').classList.contains('show')){
+    closeAchievementsModal(true);
+  }
+});
+
+// capture-фаза (последний аргумент true) — перехватываем backspace РАНЬШЕ
+// общего обработчика в chrome.js (тот вешает свой слушатель в обычной,
+// bubble-фазе и уводит на главную хаба), пока модалка открыта.
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Backspace') return;
+  if(!document.getElementById('ach-modal-overlay').classList.contains('show')) return;
+  const t = document.activeElement;
+  const isEditable = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  if(isEditable) return;
+  e.preventDefault();
+  e.stopPropagation();
+  closeAchievementsModal(false);
+}, true);
 
 function renderAchievementsModal(data, platform){
   const body = document.getElementById('ach-modal-body');
@@ -1581,7 +1632,7 @@ switchTab('steam');
 loadReport();
 pollSteamStatus();
 
-// Свайп влево/вправо переключает вкладки Steam ⇄ RA ⇄ Общая статистика.
+// Свайп влево/вправо переключает вкладки Steam ⇄ RA ⇄ Общее.
 (function initSwipeNav(){
   const TAB_ORDER = ['steam', 'retro', 'overall'];
   const MIN_DIST = 60;
@@ -1598,6 +1649,22 @@ pollSteamStatus();
     panelEl = document.querySelector('.cs-tab-panel.active');
   }
 
+  // rAF-троттлинг — touchmove на некоторых устройствах стреляет чаще,
+  // чем реально успевает перерисовываться экран (60 кадров/сек), лишние
+  // промежуточные mutation стиля между кадрами — впустую потраченная
+  // работа, только добавляющая лаг на тяжёлых панелях (сотни плиток игр
+  // на вкладке Steam).
+  let rafPending = false;
+  let pendingDx = 0;
+
+  function applyTransform(){
+    rafPending = false;
+    if(!panelEl) return;
+    const idx = TAB_ORDER.indexOf(activeTab);
+    const atEdge = (idx === 0 && pendingDx > 0) || (idx === TAB_ORDER.length - 1 && pendingDx < 0);
+    panelEl.style.transform = \`translateX(\${pendingDx * (atEdge ? 0.3 : 0.9)}px)\`;
+  }
+
   function onMove(e){
     if(!tracking || !panelEl) return;
     const t = e.touches[0];
@@ -1609,9 +1676,11 @@ pollSteamStatus();
       dragging = true;
       panelEl.style.transition = 'none';
     }
-    const idx = TAB_ORDER.indexOf(activeTab);
-    const atEdge = (idx === 0 && dx > 0) || (idx === TAB_ORDER.length - 1 && dx < 0);
-    panelEl.style.transform = \`translateX(\${dx * (atEdge ? 0.3 : 0.9)}px)\`;
+    pendingDx = dx;
+    if(!rafPending){
+      rafPending = true;
+      requestAnimationFrame(applyTransform);
+    }
   }
 
   function onEnd(e){

@@ -1,6 +1,6 @@
 {
   "name": "nexus404-hub",
-  "version": "1.5.8",
+  "version": "1.5.10",
   "private": true,
   "description": "NEXUS404 — хаб-платформа (маршрутизация модулей, health-check, голый чат с выбором модели)",
   "type": "module",

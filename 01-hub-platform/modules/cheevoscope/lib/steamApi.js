@@ -56,7 +56,18 @@ function createSteamApi({ apiKey, steamId, logger = console }) {
   // экспоненте (2с, 4с, 8с, 16с).
   async function getStore(url, params, timeoutMs = 15000, maxRetries = 4) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const res = await storeLimiter.run(() => fetchWithTimeout(withParams(url, params), timeoutMs));
+      let res;
+      try {
+        res = await storeLimiter.run(() => fetchWithTimeout(withParams(url, params), timeoutMs));
+      } catch (e) {
+        if (isRetryable(e) && attempt < maxRetries - 1) {
+          const wait = 2 ** (attempt + 1);
+          logger.warn(`Сбой запроса к store.steampowered.com (попытка ${attempt + 1}/${maxRetries}): ${e.message}, жду ${wait}с...`);
+          await sleep(wait * 1000);
+          continue;
+        }
+        throw e;
+      }
       if (res.status === 429) {
         const retryAfter = res.headers.get('retry-after');
         const wait = retryAfter ? Number(retryAfter) : 2 ** (attempt + 1);
@@ -163,7 +174,7 @@ function createSteamApi({ apiKey, steamId, logger = console }) {
         const data = await get(url, { gameid: appid, format: 'json' });
         return data.achievementpercentages?.achievements || [];
       } catch (e) {
-        if (e instanceof HttpError && isRetryableStatus(e.status) && attempt < maxRetries - 1) {
+        if (isRetryable(e) && attempt < maxRetries - 1) {
           await sleep(2 ** (attempt + 1) * 1000);
           continue;
         }
@@ -187,7 +198,7 @@ function createSteamApi({ apiKey, steamId, logger = console }) {
         const data = await get(url, { key: apiKey, appid, l: 'russian', format: 'json' });
         return data.game?.availableGameStats?.achievements || [];
       } catch (e) {
-        if (e instanceof HttpError && isRetryableStatus(e.status) && attempt < maxRetries - 1) {
+        if (isRetryable(e) && attempt < maxRetries - 1) {
           await sleep(2 ** (attempt + 1) * 1000);
           continue;
         }
@@ -216,10 +227,10 @@ function createSteamApi({ apiKey, steamId, logger = console }) {
         response.transientError = false;
         return response;
       } catch (e) {
-        if (e instanceof HttpError && isRetryableStatus(e.status) && attempt < maxRetries - 1) {
+        if (isRetryable(e) && attempt < maxRetries - 1) {
           const wait = 2 ** (attempt + 1);
           logger.warn(
-            `Ошибка ${e.status} при получении достижений appid=${appid} (попытка ${attempt + 1}/${maxRetries}), жду ${wait}с...`
+            `Ошибка при получении достижений appid=${appid} (попытка ${attempt + 1}/${maxRetries}): ${e.message}, жду ${wait}с...`
           );
           await sleep(wait * 1000);
           continue;
@@ -350,6 +361,17 @@ class HttpError extends Error {
 
 function isRetryableStatus(status) {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+// Стоит ли повторить попытку — не только конкретные HTTP-коды (HttpError),
+// но и тайм-аут/сетевой обрыв (AbortError и подобные, вообще не HttpError).
+// Раньше тайм-аут сразу сдавался без единого повтора — у игр с ОГРОМНЫМ
+// списком ачивок (300+ — например, "100% Orange Juice") сам ответ Steam
+// может не уложиться в 15с даже при нормальной сети, и единственный
+// тайм-аут на холодном кэше показывал бы "нет данных", хотя они есть.
+function isRetryable(e) {
+  if (e instanceof HttpError) return isRetryableStatus(e.status);
+  return e && (e.name === 'AbortError' || e.name === 'TypeError');
 }
 
 function sleep(ms) {
