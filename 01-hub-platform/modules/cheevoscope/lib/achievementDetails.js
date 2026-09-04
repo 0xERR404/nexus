@@ -12,16 +12,26 @@ function createAchievementDetails({ steamApi, retroApi, cache }) {
   // долгий кэш (не зависят от вас лично); личный прогресс — каждый раз
   // заново (дешёвый одиночный вызов, важна свежесть галочки "выбито").
   async function getSteamGameAchievements(appid) {
-    const schema = await cache.cachedCall(`schema_ru_${appid}`, () => steamApi.getSchemaForGame(appid), ACHIEVEMENT_SCHEMA_CACHE_TTL_HOURS);
+    // Три независимых запроса — параллельно, не по очереди: раньше ждали
+    // схему, потом глобальный %, потом личный прогресс строго друг за
+    // другом. На холодном кэше (первый просмотр именно этой игры) сумма
+    // трёх походов в Steam легко вылезала за общий тайм-аут прокси хаба
+    // (10с) — особенно если Steam в моменте отвечает чуть медленнее
+    // обычного. Параллельно — итоговое время примерно равно самому
+    // медленному из трёх запросов, не их сумме.
+    const [schema, globalPct, playerData] = await Promise.all([
+      cache.cachedCall(`schema_ru_${appid}`, () => steamApi.getSchemaForGame(appid), ACHIEVEMENT_SCHEMA_CACHE_TTL_HOURS),
+      cache.cachedCall(`global_pct_${appid}`, () => steamApi.getGlobalAchievementPercentages(appid), GLOBAL_PCT_CACHE_TTL_HOURS),
+      steamApi.getPlayerAchievements(appid),
+    ]);
+
     if (!schema || schema.length === 0) {
       return { appid, available: false, achievements: [] };
     }
 
-    const globalPct = await cache.cachedCall(`global_pct_${appid}`, () => steamApi.getGlobalAchievementPercentages(appid), GLOBAL_PCT_CACHE_TTL_HOURS);
     const pctByName = {};
     for (const a of globalPct) pctByName[a.name] = a.percent;
 
-    const playerData = await steamApi.getPlayerAchievements(appid);
     const unlockedByName = {};
     for (const a of playerData.achievements || []) {
       if (a.achieved === 1) unlockedByName[a.apiname] = a.unlocktime;

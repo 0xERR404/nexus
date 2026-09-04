@@ -44,7 +44,7 @@ sudo bash update.sh
 
 ```bash
 curl https://ваш-домен/health
-# {"status":"ok","version":"1.5.2","uptime_seconds":N}
+# {"status":"ok","version":"1.5.5","uptime_seconds":N}
 ```
 
 Браузер будет ругаться на сертификат — это ожидаемо (staging CA), не баг.

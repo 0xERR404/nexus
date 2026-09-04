@@ -63,7 +63,12 @@ function createStats({ steamApi, cache, paths, steamId, apiConcurrency = 10, sto
   const COMPLETED_ACHIEVEMENTS_CACHE_TTL_HOURS = 24 * 7;
   const ACHIEVEMENT_SCHEMA_CACHE_TTL_HOURS = 24 * 30;
   const GLOBAL_PCT_CACHE_TTL_HOURS = 24 * 7;
-  const PRICE_REVIEW_CACHE_TTL_HOURS = 24 * 7;
+  // Цены/отзывы меняются медленно (скидки — не каждый день, отзывы —
+  // плавно). 21 день вместо 7 — «Обновить всё» на большой библиотеке
+  // (сотни игр) в большинстве повторных прогонов попадает в кэш вместо
+  // похода на витрину (самый жёстко ограниченный по скорости источник),
+  // не теряя актуальности сколько-нибудь заметно.
+  const PRICE_REVIEW_CACHE_TTL_HOURS = 24 * 21;
 
   function achievementsCacheTtlHours(cachedData) {
     const achievements = cachedData.achievements || [];

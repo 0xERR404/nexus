@@ -357,6 +357,20 @@ const EXTRA_HEAD = `
     .cs-review-badge .cs-review-label { display: none; }
     .cs-rarity-columns { flex-direction: column; }
     .cs-progress-row { flex-direction: column; }
+    .cs-header { gap: 10px; }
+    .cs-actions { width: 100%; }
+    .cs-btn-primary, .cs-btn-secondary { font-size: 11.5px; padding: 8px 12px; flex: 1 1 auto; justify-content: center; white-space: nowrap; }
+    .cs-title { font-size: 17px; }
+    .cs-score { font-size: 24px; }
+    .cs-mastery-card, .cs-rarity-card { padding: 14px 16px; gap: 14px; }
+  }
+
+  @media (max-width: 380px) {
+    .cs-stats-grid { grid-template-columns: 1fr; }
+    .cs-games-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cs-btn-primary, .cs-btn-secondary { font-size: 11px; padding: 7px 10px; }
+    .cs-retro-row .cs-pct-block { width: 38px; font-size: 11px; }
+    .cs-status-badge { width: 72px; font-size: 8px; }
   }
 </style>
 `;
@@ -906,10 +920,28 @@ function handleThumbError(img){
   }
 }
 
+// Градация прогресса ачивок — не 2 плоских цвета (было: "не начато" серым,
+// "не 100%" фиолетовым, "100%" золотом), а плавный градиент от тусклого
+// (только начал) через фиолетовый (в процессе) к золоту (почти/полностью
+// пройдено) — тот же приём, что уже есть у reviewColor ниже.
+const ACH_GRADIENT_STOPS = [
+  { pct: 0,   rgb: [122, 114, 160] }, // var(--muted)
+  { pct: 50,  rgb: [179, 136, 255] }, // var(--accent)
+  { pct: 100, rgb: [255, 204, 102] }, // var(--amber)
+];
 function achColor(pct){
   if(pct === null || pct === undefined) return 'var(--muted)';
-  if(pct >= 100) return 'var(--amber)';
-  return 'var(--accent)';
+  const p = Math.max(0, Math.min(100, pct));
+  let lo = ACH_GRADIENT_STOPS[0], hi = ACH_GRADIENT_STOPS[ACH_GRADIENT_STOPS.length - 1];
+  for(let i = 0; i < ACH_GRADIENT_STOPS.length - 1; i++){
+    if(p >= ACH_GRADIENT_STOPS[i].pct && p <= ACH_GRADIENT_STOPS[i+1].pct){
+      lo = ACH_GRADIENT_STOPS[i]; hi = ACH_GRADIENT_STOPS[i+1]; break;
+    }
+  }
+  const span = hi.pct - lo.pct;
+  const t = span === 0 ? 0 : (p - lo.pct) / span;
+  const [r, g, b] = mixRgb(lo.rgb, hi.rgb, t);
+  return \`rgb(\${r}, \${g}, \${b})\`;
 }
 
 // Непрерывный градиент по проценту положительных отзывов: 0% — красный,
@@ -993,9 +1025,15 @@ async function pollSteamStatus(){
       btn.classList.add('spinning');
       forceBtn.disabled = true;
       if(activeTab === 'steam'){
-        line.textContent = s.progress
+        var mainText = s.progress
           ? \`\${stageLabel(s.stage)}: \${s.progress.done} / \${s.progress.total}\`
           : stageLabel(s.stage) + '...';
+        // secondaryStage — достижения считаются параллельно с картинками/
+        // ценами/отзывами (см. lib/pipeline.js), у обоих свой прогресс.
+        var secondaryText = (s.secondaryStage && s.secondaryProgress)
+          ? \` · \${stageLabel(s.secondaryStage)}: \${s.secondaryProgress.done} / \${s.secondaryProgress.total}\`
+          : '';
+        line.textContent = mainText + secondaryText;
       }
       loadReport();
     } else if(s.state === 'error'){
