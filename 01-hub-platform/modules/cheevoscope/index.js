@@ -148,19 +148,26 @@ const EXTRA_HEAD = `
      --indigo -> --muted, --magenta -> --red, --panel -> тот же полупрозрачный
      тёмный фон, что у .box. */
   .cs-header {
-    display: flex; justify-content: space-between; align-items: center;
-    flex-wrap: wrap; gap: 14px; margin-bottom: 18px;
+    margin-bottom: 14px;
   }
   .cs-title { font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
   .cs-subtitle { color: var(--muted); font-size: 11px; margin-top: 3px; }
   #status-line { font-size: 11px; color: var(--muted); margin-top: 2px; }
   #status-line.error { color: var(--red); }
 
-  .cs-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* Вкладки слева, кнопки обновления справа — одна строка, не два
+     отдельных ряда друг под другом. */
+  .cs-tab-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .cs-tabs-left { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .cs-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* Прямоугольные, как карточки (var(--card-radius)), не капсулы — и
+     заметно мельче, под стать остальным кнопкам в интерфейсе (см.
+     .icon-btn в chrome.js). Раньше были крупными "таблетками". */
   .cs-btn-primary, .cs-btn-secondary {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-family: var(--font-sans); font-weight: 700; font-size: 12.5px;
-    padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-sans); font-weight: 700; font-size: 11.5px;
+    padding: 6px 12px; border-radius: var(--card-radius); cursor: pointer;
     transition: box-shadow .15s ease, background .15s ease, opacity .15s ease;
   }
   /* Тот же стиль, что у .login-btn (страница входа) — прозрачный фон,
@@ -181,7 +188,6 @@ const EXTRA_HEAD = `
   .cs-btn-secondary:disabled { color: var(--muted); border-color: var(--line); cursor: default; background: transparent; opacity: 0.5; }
   @keyframes cs-spin { to { transform: rotate(360deg); } }
 
-  .cs-tab-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .cs-tab-btn {
     display: inline-flex; align-items: center; gap: 7px;
     background: transparent; border: 1px solid var(--line); color: var(--muted);
@@ -196,6 +202,14 @@ const EXTRA_HEAD = `
   .cs-tab-panel.active { display: block; }
 
   .cs-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  /* Одна карточка на 4 плитки (Игр / Стоимость / Часов / Замастерено) —
+     тот же паттерн, что у "Расходов AI" (.stat-tiles-row/.stat-tile в
+     modules/billing/index.js): подпись сверху, значение снизу, ряд в один
+     блок с общей рамкой, не 3-4 отдельные карточки со своей рамкой у каждой. */
+  .cs-stats-tiles { display: flex; gap: 10px; margin-bottom: 14px; }
+  .cs-stat-tile { flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; }
+  .cs-stat-tile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-family: var(--font-mono); }
+  .cs-stat-tile-value { font-size: 17px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
   .cs-stat-card { display: flex; align-items: center; gap: 12px; }
   .cs-stat-icon {
     width: 34px; height: 34px; min-width: 34px; border-radius: var(--card-radius);
@@ -360,13 +374,13 @@ const EXTRA_HEAD = `
   @media (max-width: 600px) {
     .cs-stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
     .cs-stats-grid .cs-stat-card:first-child { grid-column: 1 / -1; }
+    .cs-stats-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .cs-games-grid { grid-template-columns: 1fr 1fr; }
     .cs-tab-btn { font-size: 10.5px; padding: 7px 11px; flex: 1 1 auto; justify-content: center; }
     .cs-review-badge .cs-review-label { display: none; }
     .cs-rarity-columns { flex-direction: column; }
     .cs-progress-row { flex-direction: column; }
-    .cs-header { gap: 10px; }
-    .cs-actions { width: 100%; }
+    .cs-actions { width: 100%; gap: 12px; }
     .cs-btn-primary, .cs-btn-secondary { font-size: 11.5px; padding: 8px 12px; flex: 1 1 auto; justify-content: center; white-space: nowrap; }
     .cs-title { font-size: 17px; }
     .cs-score { font-size: 24px; }
@@ -390,32 +404,34 @@ const BODY_CONTENT = `
       <div class="cs-subtitle" id="last-updated">данных пока нет</div>
       <div id="status-line"></div>
     </div>
+  </div>
+
+  <div class="cs-tab-row">
+    <div class="cs-tabs-left">
+      <button class="cs-tab-btn active" id="tab-steam">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.5"/><circle cx="8.7" cy="8.3" r="2.4" fill="currentColor"/><path d="M8.7 8.3L14.2 13.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="14.9" cy="14.6" r="2.1" stroke="currentColor" stroke-width="1.5"/><circle cx="14.9" cy="14.6" r="0.7" fill="currentColor"/></svg>
+        Steam
+      </button>
+      <button class="cs-tab-btn" id="tab-retro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke-linejoin="round"/><path d="M7 5H4v1a4 4 0 004 4M17 5h3v1a4 4 0 01-4 4M9 20h6M12 14v6" stroke-linecap="round"/></svg>
+        RA
+      </button>
+      <button class="cs-tab-btn" id="tab-overall">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="17" rx="1"/></svg>
+        Общая статистика
+      </button>
+    </div>
     <div class="cs-actions">
       <button class="cs-btn-primary" id="refresh-btn" title="Быстро: список игр (+ новые, если появились) и достижения. Цены/отзывы не трогает, картинки подтягивает только для новых игр. На вкладке RA всегда полное обновление — там нет отдельного лёгкого режима.">
-        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M20 11a8 8 0 10-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" width="13" height="13"><path d="M20 11a8 8 0 10-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Обновить
       </button>
       <button class="cs-btn-secondary" id="force-refresh-btn" title="Жёсткий пересчёт с нуля: список игр, картинки, достижения, отзывы и цены — кэш полностью очищается.">Обновить всё</button>
       <button class="cs-btn-primary" id="refresh-both-btn" style="display:none" title="Обновить только достижения на обеих платформах — без картинок/цен/отзывов Steam, но с полным RA-прогоном (нужен для очков по консолям и топ-10 редких)">
-        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M20 11a8 8 0 10-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" width="13" height="13"><path d="M20 11a8 8 0 10-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Обновить достижения
       </button>
     </div>
-  </div>
-
-  <div class="cs-tab-row">
-    <button class="cs-tab-btn active" id="tab-steam">
-      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.5"/><circle cx="8.7" cy="8.3" r="2.4" fill="currentColor"/><path d="M8.7 8.3L14.2 13.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="14.9" cy="14.6" r="2.1" stroke="currentColor" stroke-width="1.5"/><circle cx="14.9" cy="14.6" r="0.7" fill="currentColor"/></svg>
-      Steam
-    </button>
-    <button class="cs-tab-btn" id="tab-retro">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke-linejoin="round"/><path d="M7 5H4v1a4 4 0 004 4M17 5h3v1a4 4 0 01-4 4M9 20h6M12 14v6" stroke-linecap="round"/></svg>
-      RA
-    </button>
-    <button class="cs-tab-btn" id="tab-overall">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="17" rx="1"/></svg>
-      Общая статистика
-    </button>
   </div>
 
   <div class="cs-tab-panel active" id="panel-steam">
@@ -529,30 +545,22 @@ function raritySubText(rarityTiers){
 function buildSkeleton(){
   const content = document.getElementById('content');
   content.innerHTML = \`
-    <div class="cs-stats-grid" id="stats-grid">
-      <div class="box cs-stat-card">
-        <div class="cs-stat-icon">\${ICONS.games}</div>
-        <div class="cs-stat-body">
-          <div class="cs-stat-label">Библиотека</div>
-          <div class="cs-stat-value-row">
-            <div class="cs-stat-value" id="val-games-count">—</div>
-            <div class="cs-stat-value-cost" id="val-cost">—</div>
-          </div>
-        </div>
+    <div class="box cs-stats-tiles" id="stats-grid">
+      <div class="cs-stat-tile">
+        <div class="cs-stat-tile-label">игр</div>
+        <div class="cs-stat-tile-value" id="val-games-count">—</div>
       </div>
-      <div class="box cs-stat-card">
-        <div class="cs-stat-icon">\${ICONS.clock}</div>
-        <div class="cs-stat-body">
-          <div class="cs-stat-label">Общее время</div>
-          <div class="cs-stat-value"><span id="val-total-hours">—</span> <span class="unit">ч.</span></div>
-        </div>
+      <div class="cs-stat-tile">
+        <div class="cs-stat-tile-label">стоимость</div>
+        <div class="cs-stat-tile-value" id="val-cost" style="color:var(--amber)">—</div>
       </div>
-      <div class="box cs-stat-card">
-        <div class="cs-stat-icon">\${ICONS.trophy}</div>
-        <div class="cs-stat-body">
-          <div class="cs-stat-label">Замастерено</div>
-          <div class="cs-stat-value" id="val-mastered" style="color:var(--amber)">—</div>
-        </div>
+      <div class="cs-stat-tile">
+        <div class="cs-stat-tile-label">часов</div>
+        <div class="cs-stat-tile-value" id="val-total-hours">—</div>
+      </div>
+      <div class="cs-stat-tile">
+        <div class="cs-stat-tile-label">замастерено</div>
+        <div class="cs-stat-tile-value" id="val-mastered" style="color:var(--amber)">—</div>
       </div>
     </div>
     <div class="cs-rate-limit-note" id="rate-limit-note" style="display:none"></div>
@@ -600,7 +608,7 @@ function buildSkeleton(){
 }
 
 function updateStats(s){
-  document.getElementById('val-games-count').textContent = s.gamesCount + ' игр';
+  document.getElementById('val-games-count').textContent = s.gamesCount;
   document.getElementById('val-total-hours').textContent = s.totalHours;
   document.getElementById('val-cost').textContent = '$' + s.libraryCostUsd;
   document.getElementById('val-mastered').textContent = s.gamesCompleted100;

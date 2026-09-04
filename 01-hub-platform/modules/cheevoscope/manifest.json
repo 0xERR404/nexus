@@ -1,7 +1,7 @@
 {
   "name": "cheevoscope",
   "displayName": "CheevoScope",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "description": "Статистика игровой библиотеки: Steam + RetroAchievements",
   "port": 4006
 }

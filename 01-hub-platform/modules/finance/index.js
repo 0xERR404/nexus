@@ -28,7 +28,7 @@ const DATA_DIR = process.env.MODULE_DATA_DIR || '/app/data';
 const BALANCES_FILE = path.join(DATA_DIR, 'balances.json');
 const TRANSACTIONS_FILE = path.join(DATA_DIR, 'transactions.jsonl');
 const MAX_TRANSACTIONS_KEPT = 2000; // обрезаем ИСТОРИЮ (отображение), не баланс — см. врезку про applyEffect
-const RATES_CACHE_MS = 10 * 60 * 1000; // 10 минут — курсы не скачут быстрее, незачем дёргать внешние API чаще
+const RATES_CACHE_MS = 3 * 60 * 1000; // 3 минуты — курсы не скачут быстрее секунды, но проверяем чаще, чем раньше (было 10 минут), чтобы временный сбой источника не держал устаревшие цифры подолгу
 
 const ACCOUNTS = {
   card: 'Карта',
@@ -136,15 +136,22 @@ async function fetchCryptoRates() {
 
 let ratesCache = { data: null, fetchedAt: 0 };
 
+// Один неудачный запрос к источнику (ЦБ РФ/CoinGecko временно недоступны)
+// раньше СТИРАЛ последние хорошие цифры на весь следующий RATES_CACHE_MS —
+// человек видел "—" вместо реальных курсов, хотя минуту назад показывались
+// настоящие цифры. Теперь fiat/crypto обновляются НЕЗАВИСИМО друг от
+// друга и только при УСПЕХЕ — неудачная сторона просто оставляет то, что
+// было получено последним удачным разом, а не гасит его до следующей попытки.
 async function getRates() {
   const now = Date.now();
   if (ratesCache.data && now - ratesCache.fetchedAt < RATES_CACHE_MS) {
     return ratesCache.data;
   }
   const [fiatRes, cryptoRes] = await Promise.allSettled([fetchFiatRates(), fetchCryptoRates()]);
+  const previous = ratesCache.data || {};
   const result = {
-    fiat: fiatRes.status === 'fulfilled' ? fiatRes.value : null,
-    crypto: cryptoRes.status === 'fulfilled' ? cryptoRes.value : null,
+    fiat: fiatRes.status === 'fulfilled' ? fiatRes.value : (previous.fiat ?? null),
+    crypto: cryptoRes.status === 'fulfilled' ? cryptoRes.value : (previous.crypto ?? null),
     updatedAt: new Date().toISOString(),
     errors: [
       fiatRes.status === 'rejected' ? String((fiatRes.reason && fiatRes.reason.message) || fiatRes.reason) : null,
