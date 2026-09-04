@@ -455,14 +455,22 @@ const MODULES_SCRIPT = `
   async function refreshCheevoscopeSummary() {
     try {
       const res = await fetch('/modules/cheevoscope/api/summary');
-      const s = await res.json();
       const anchorEl = document.getElementById('cheevoSteamAch');
       if (!anchorEl) return;
+      if (!res.ok) {
+        // Модуль недоступен (offline/ещё не поднялся) — хаб отвечает
+        // {"error": ...} без нужных полей, честно "—", не "undefined/undefined".
+        document.getElementById('cheevoSteamAch').textContent = '\u2014';
+        document.getElementById('cheevoRaAch').textContent = '\u2014';
+        document.getElementById('cheevoHours').textContent = '\u2014';
+        return;
+      }
+      const s = await res.json();
       document.getElementById('cheevoSteamAch').textContent =
-        s.steamAchievementsTotal !== null ? s.steamAchievementsUnlocked + '/' + s.steamAchievementsTotal : '\u2014';
+        s.steamAchievementsTotal !== null && s.steamAchievementsTotal !== undefined ? s.steamAchievementsUnlocked + '/' + s.steamAchievementsTotal : '\u2014';
       document.getElementById('cheevoRaAch').textContent =
-        s.raAchievementsTotal !== null ? s.raAchievementsUnlocked + '/' + s.raAchievementsTotal : '\u2014';
-      document.getElementById('cheevoHours').textContent = s.steamHours !== null ? s.steamHours : '\u2014';
+        s.raAchievementsTotal !== null && s.raAchievementsTotal !== undefined ? s.raAchievementsUnlocked + '/' + s.raAchievementsTotal : '\u2014';
+      document.getElementById('cheevoHours').textContent = s.steamHours !== null && s.steamHours !== undefined ? s.steamHours : '\u2014';
     } catch {}
   }
 
