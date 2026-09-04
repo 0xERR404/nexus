@@ -160,16 +160,25 @@ const EXTRA_HEAD = `
   .cs-btn-primary, .cs-btn-secondary {
     display: inline-flex; align-items: center; gap: 7px;
     font-family: var(--font-sans); font-weight: 700; font-size: 12.5px;
-    padding: 9px 16px; border-radius: 999px; cursor: pointer; border: none;
-    transition: transform .15s ease, filter .15s ease, opacity .15s ease;
+    padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    transition: box-shadow .15s ease, background .15s ease, opacity .15s ease;
   }
-  .cs-btn-primary { background: var(--amber); color: #1a1408; }
-  .cs-btn-primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
-  .cs-btn-primary:disabled { background: rgba(255,255,255,0.08); color: var(--muted); cursor: default; transform: none; }
+  /* Тот же стиль, что у .login-btn (страница входа) — прозрачный фон,
+     фиолетовая рамка/текст в покое, фиолетовое свечение при наведении.
+     Единственная главная кнопка действия в хабе выглядит именно так —
+     сплошная золотая заливка и красная рамка (было раньше) выбивались
+     из общего вида. */
+  .cs-btn-primary { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
+  .cs-btn-primary:hover { background: rgba(179, 136, 255, 0.08); box-shadow: 0 0 18px rgba(179, 136, 255, 0.3); }
+  .cs-btn-primary:disabled { border-color: var(--line); color: var(--muted); cursor: default; background: transparent; box-shadow: none; }
   .cs-btn-primary.spinning svg { animation: cs-spin 0.9s linear infinite; }
-  .cs-btn-secondary { background: transparent; color: var(--red); border: 1px solid var(--line); }
-  .cs-btn-secondary:hover { border-color: var(--red); background: rgba(239,83,80,0.1); }
-  .cs-btn-secondary:disabled { color: var(--muted); border-color: var(--line); cursor: default; background: transparent; }
+  /* "Обновить всё" — та же основа, но рамка приглушённее в покое (не
+     фиолетовая, не красная — просто менее заметная): это более редкое,
+     "тяжёлое" действие, не то, что нужно так же выделять, как обычное
+     "Обновить", но и не сигнализировать цветом тревоги на ровном месте. */
+  .cs-btn-secondary { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .cs-btn-secondary:hover { border-color: var(--accent); color: var(--accent); background: rgba(179, 136, 255, 0.08); box-shadow: 0 0 18px rgba(179, 136, 255, 0.3); }
+  .cs-btn-secondary:disabled { color: var(--muted); border-color: var(--line); cursor: default; background: transparent; opacity: 0.5; }
   @keyframes cs-spin { to { transform: rotate(360deg); } }
 
   .cs-tab-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -228,7 +237,7 @@ const EXTRA_HEAD = `
   .cs-sub strong { color: var(--text); font-weight: 700; }
   .cs-sub .badge { color: var(--amber); font-weight: 700; }
 
-  .cs-rarity-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .cs-rarity-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
   .cs-rarity-chip { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 10.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
   .cs-rarity-chip .dot { width: 8px; height: 8px; flex-shrink: 0; clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%); box-shadow: 0 0 5px currentColor; }
   .cs-rarity-chip .count { color: var(--text); font-family: var(--font-mono); }
@@ -353,7 +362,6 @@ const EXTRA_HEAD = `
     .cs-stats-grid .cs-stat-card:first-child { grid-column: 1 / -1; }
     .cs-games-grid { grid-template-columns: 1fr 1fr; }
     .cs-tab-btn { font-size: 10.5px; padding: 7px 11px; flex: 1 1 auto; justify-content: center; }
-    .cs-rarity-tiers { grid-template-columns: repeat(2, 1fr); }
     .cs-review-badge .cs-review-label { display: none; }
     .cs-rarity-columns { flex-direction: column; }
     .cs-progress-row { flex-direction: column; }
