@@ -160,6 +160,29 @@ function createPipeline({ getStats, statusFile, cacheDir, logger = console }) {
     return { started: true, promise };
   }
 
+  // На старте модуля — если файл статуса говорит "running", это ТОЧНО
+  // эхо предыдущего процесса (isRunning выше только что проинициализирован
+  // в false, реального прогона за этой записью уже нет — процесс,
+  // который её писал, не дожил до своего finally, будь то падение,
+  // перезапуск контейнера при обновлении или простой рестарт сервера).
+  // Без этого сброса — тупик: фронтенд блокирует ОБЕ кнопки ("Обновить"
+  // и "Обновить всё"), пока видит state="running", а обновить эту запись
+  // больше некому и нечем — только новый ручной прогон мог бы её сменить,
+  // а начать его не даёт как раз она сама.
+  (async () => {
+    const current = await readStatus();
+    if (current.state === 'running') {
+      await writeStatus({
+        state: 'error',
+        stage: null,
+        progress: null,
+        secondaryStage: null,
+        secondaryProgress: null,
+        error: 'Обновление прервано перезапуском модуля — нажмите "Обновить" ещё раз',
+      });
+    }
+  })();
+
   return { startRefresh, readStatus };
 }
 

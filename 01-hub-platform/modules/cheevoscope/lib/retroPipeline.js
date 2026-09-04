@@ -79,6 +79,21 @@ function createRetroPipeline({ getRetroStats, statusFile, logger = console }) {
     return { started: true, promise };
   }
 
+  // Тот же сброс "зависшего running", что и в pipeline.js — если статус
+  // на старте модуля говорит "running", это эхо предыдущего процесса,
+  // не что-то реально ещё выполняющееся.
+  (async () => {
+    const current = await readStatus();
+    if (current.state === 'running') {
+      await writeStatus({
+        state: 'error',
+        stage: null,
+        progress: null,
+        error: 'Обновление прервано перезапуском модуля — нажмите "Обновить" ещё раз',
+      });
+    }
+  })();
+
   return { startRefresh, readStatus };
 }
 
