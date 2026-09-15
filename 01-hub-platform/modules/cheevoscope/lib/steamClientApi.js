@@ -201,4 +201,4 @@ async function getOwnedAppsViaClient({ sessionFile, logger = console }) {
   }
 }
 
-module.exports = { runInteractiveLogin, getOwnedAppsViaClient };
+module.exports = { runInteractiveLogin, getOwnedAppsViaClient, saveSession: writeSession };

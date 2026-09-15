@@ -25,6 +25,8 @@ const { createStats, computeRarityTiers } = require('./lib/stats.js');
 const { createRetroStats } = require('./lib/retroStats.js');
 const { createAchievementDetails } = require('./lib/achievementDetails.js');
 const { createPipeline } = require('./lib/pipeline.js');
+const { startQrLogin, getQrLoginStatus } = require('./lib/steamQrLogin.js');
+const { saveSession } = require('./lib/steamClientApi.js');
 const { createRetroPipeline } = require('./lib/retroPipeline.js');
 
 const PORT = process.env.MODULE_PORT || 4006;
@@ -522,6 +524,20 @@ const BODY_CONTENT = `
       </div>
     </div>
   </div>
+
+  <div class="cs-modal-overlay" id="qr-login-overlay">
+    <div class="cs-modal-box" style="max-width:380px;text-align:center;">
+      <div class="cs-modal-head">
+        <h3>Вход в Steam по QR</h3>
+        <button class="cs-modal-close" id="qr-login-close-btn" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="qr-login-body">
+        <div class="cs-modal-loading">Загрузка…</div>
+      </div>
+    </div>
+  </div>
 `;
 
 // --- JS-логика дашборда. Перенос из оригинального index.html — следующий
@@ -733,7 +749,9 @@ function updateStats(s){
   const cl = lc && lc.clientLogin;
   if(cl && cl.needsLogin){
     clientNote.style.display = '';
-    clientNote.textContent = 'ℹ Есть способ увидеть больше игр (в том числе непроверенные Steam новинки, которые публичный API молча пропускает) — вход как владелец аккаунта. Одноразовая настройка: docker exec -it nexus404-module-cheevoscope node lib/steamClientAuth.js (пароль нигде не сохраняется, только токен сессии).';
+    clientNote.innerHTML = 'ℹ Есть способ увидеть больше игр (в том числе непроверенные Steam новинки, которые публичный API молча пропускает) — вход как владелец аккаунта, без пароля, по QR. <button id="qr-login-open-btn" style="margin-left:6px;background:rgba(179,136,255,0.15);border:1px solid var(--accent);color:var(--accent);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;">Войти по QR</button>';
+    const btn = document.getElementById('qr-login-open-btn');
+    if(btn) btn.addEventListener('click', openQrLoginModal);
   } else {
     clientNote.style.display = 'none';
   }
@@ -1665,6 +1683,62 @@ function unlockBackgroundScroll(){
   window.scrollTo(0, savedScrollY);
 }
 
+// --- QR-вход в Steam (без пароля, по запросу "можно на странице хаба?") ---
+let qrLoginPollTimer = null;
+
+async function openQrLoginModal(){
+  const overlay = document.getElementById('qr-login-overlay');
+  const body = document.getElementById('qr-login-body');
+  body.innerHTML = '<div class="cs-modal-loading">Запрашиваю QR-код…</div>';
+  overlay.classList.add('show');
+  lockBackgroundScroll();
+
+  let startResult;
+  try{
+    const res = await fetch('api/steam-qr-login/start', { method: 'POST' });
+    startResult = await res.json();
+    if(!res.ok || startResult.error) throw new Error(startResult.error || ('HTTP ' + res.status));
+  }catch(e){
+    body.innerHTML = \`<div class="cs-modal-empty">Не удалось получить QR-код: \${escapeHtml(e.message)}</div>\`;
+    return;
+  }
+
+  body.innerHTML = \`
+    <img src="\${startResult.qrCodeDataUrl}" alt="QR-код входа в Steam" style="width:220px;height:220px;border-radius:10px;margin:6px auto 14px;display:block;background:#fff;padding:8px;">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Отсканируй мобильным приложением Steam (значок камеры в углу приложения) и подтверди вход там же.</div>
+    <div id="qr-login-status" style="font-size:12.5px;color:var(--accent);">Ожидаю сканирование…</div>
+  \`;
+
+  const statusEl = document.getElementById('qr-login-status');
+  const id = startResult.id;
+  clearInterval(qrLoginPollTimer);
+  qrLoginPollTimer = setInterval(async () => {
+    let statusResult;
+    try{
+      const res = await fetch(\`api/steam-qr-login/status?id=\${encodeURIComponent(id)}\`);
+      statusResult = await res.json();
+    }catch(e){
+      return; // сетевой сбой одного опроса — не страшно, попробуем на следующем тике
+    }
+    if(statusResult.status === 'scanned'){
+      statusEl.textContent = 'QR отсканирован — подтверди вход в приложении Steam на телефоне…';
+    } else if(statusResult.status === 'authenticated'){
+      clearInterval(qrLoginPollTimer);
+      body.innerHTML = \`<div class="cs-modal-empty" style="color:var(--green);">✅ Вход выполнен (SteamID: \${escapeHtml(statusResult.steamID)}). Токен сессии сохранён — следующее обновление уже сможет использовать его.</div>\`;
+    } else if(statusResult.status === 'error'){
+      clearInterval(qrLoginPollTimer);
+      body.innerHTML = \`<div class="cs-modal-empty">⚠ \${escapeHtml(statusResult.error || 'Не удалось войти')}</div>\`;
+    }
+    // 'pending' — просто ждём дальше, ничего не меняем на экране
+  }, 2000);
+}
+
+function closeQrLoginModal(){
+  clearInterval(qrLoginPollTimer);
+  document.getElementById('qr-login-overlay').classList.remove('show');
+  unlockBackgroundScroll();
+}
+
 async function openAchievementsModal(platform, id, title){
   const overlay = document.getElementById('ach-modal-overlay');
   const body = document.getElementById('ach-modal-body');
@@ -1779,6 +1853,8 @@ document.getElementById('force-refresh-btn').addEventListener('click', () => tri
 document.getElementById('refresh-both-btn').addEventListener('click', () => triggerRefreshBoth());
 document.getElementById('ach-modal-close-btn').addEventListener('click', () => closeAchievementsModal());
 document.getElementById('ach-modal-overlay').addEventListener('click', (e) => { if(e.target === e.currentTarget) closeAchievementsModal(); });
+document.getElementById('qr-login-close-btn').addEventListener('click', () => closeQrLoginModal());
+document.getElementById('qr-login-overlay').addEventListener('click', (e) => { if(e.target === e.currentTarget) closeQrLoginModal(); });
 
 switchTab('steam');
 loadReport();
@@ -1993,6 +2069,57 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ started: true, mode }));
+    return;
+  }
+
+  // --- QR-вход как владелец аккаунта (steam-session) ---
+  // Веб-альтернатива CLI-скрипту lib/steamClientAuth.js — по запросу
+  // пользователя ("можно на странице хаба, где API?"). Пароль тут не
+  // участвует вообще: пользователь сканирует QR мобильным Steam и
+  // подтверждает вход там же, мы только показываем картинку и ждём
+  // результата.
+  if (req.method === 'POST' && pathname === '/api/steam-qr-login/start') {
+    try {
+      const { id, qrCodeDataUrl } = await startQrLogin();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id, qrCodeDataUrl }));
+    } catch (e) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/steam-qr-login/status') {
+    const id = url.searchParams.get('id');
+    if (!id) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'нет id' }));
+      return;
+    }
+    const result = getQrLoginStatus(id);
+    if (result.status === 'authenticated') {
+      // Сохраняем ЗДЕСЬ, в единственной точке — та же saveSession, что
+      // использует CLI-путь (lib/steamClientAuth.js), чтобы автоматический
+      // fetchGamesList() подхватил токен одинаково, независимо от того,
+      // каким путём вход был сделан.
+      try {
+        await saveSession(paths.steamSessionFile, {
+          steamID: result.steamID,
+          refreshToken: result.refreshToken,
+          savedAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', error: `Вход прошёл, но не удалось сохранить сессию: ${e.message}` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'authenticated', steamID: result.steamID }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
     return;
   }
 
