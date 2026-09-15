@@ -286,7 +286,19 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
     // раньше) — старое имя пережило две смены смысла (фиксы 11 и 17) и
     // перестало отражать, что тут вообще проверяется; при генеральной
     // уборке кода переименовано на честное.
-    libraryCheck.accessBlocked = libraryCheck.attempted && libraryCheck.ok && libraryCheck.privacyBlocked;
+    //
+    // ВТОРАЯ ПОПРАВКА (найдено по жалобе "зачем это предупреждение, у
+    // нас всё работает"): анонимный обход профиля (HTML/XML) — это
+    // РЕЗЕРВНЫЙ путь, идущий ПОСЛЕ клиентского входа (см. выше по коду
+    // — clientLogin выполняется первым). Если клиентский вход уже
+    // успешно отработал (clientLogin.ok === true) — то, что резервный
+    // анонимный путь СВЕРХУ ЭТОГО получил редирект на логин, уже ни на
+    // что не влияет: главный, более приоритетный источник и так дал
+    // список игр. Предупреждать пользователя об этом — чистый шум, а
+    // не сигнал о реальной проблеме. Показываем предупреждение только
+    // если клиентский вход НЕ настроен или сам не справился.
+    libraryCheck.accessBlocked =
+      libraryCheck.attempted && libraryCheck.ok && libraryCheck.privacyBlocked && !libraryCheck.clientLogin.ok;
 
     const games = Array.from(known.values());
     const totalMinutes = games.reduce((sum, g) => sum + (g.playtime_forever || 0), 0);

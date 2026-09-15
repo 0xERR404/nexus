@@ -153,9 +153,21 @@ async function getRetroStatsInstance() {
 
 // Для модалки "все ачивки" — тоже свежие ключи на каждый запрос, тот же
 // принцип, без отдельного кэширования api-инстансов между вызовами.
+//
+// ВАЖНО (реальный баг, найден по жалобе "модалка виснет на Загрузка…"):
+// раньше здесь использовался keys.steamId НАПРЯМУЮ, в обход
+// resolveConfiguredSteamId() выше — при переходе на вход через Steam
+// (фикс с автоподстановкой SteamID из сессии) это место забыли
+// поправить. Ручное поле теперь пустое у всех, кто вошёл только через
+// Steam-логин, поэтому здесь steamId уходил пустой строкой, схема
+// ачивок ещё как-то получалась (не требует steamid), а личный прогресс
+// (GetPlayerAchievements) — нет, и после нескольких ретраев с
+// экспоненциальной паузой (2+4+8с) модалка выглядела зависшей на
+// "Загрузка…" куда дольше терпения пользователя.
 async function getAchievementDetails() {
   const keys = await getHubKeys();
-  const steamApi = createSteamApi({ apiKey: keys.steamApiKey || '', steamId: keys.steamId || '', logger: console });
+  const steamId = await resolveConfiguredSteamId(keys.steamId);
+  const steamApi = createSteamApi({ apiKey: keys.steamApiKey || '', steamId: steamId || '', logger: console });
   const retroApi = createRetroApi({ username: keys.raUsername || '', apiKey: keys.raApiKey || '', logger: console });
   return createAchievementDetails({ steamApi, retroApi, cache, logger: console });
 }
@@ -759,7 +771,7 @@ function updateStats(s){
     libNote.textContent = \`⚠ Не удалось сверить полный список библиотеки через профиль (\${lc.error}) — если реальных игр больше \${s.gamesCount}, проверь вход через Steam в настройках API.\`;
   } else if(lc && lc.accessBlocked){
     libNote.style.display = '';
-    libNote.textContent = \`⚠ Steam перенаправил запрос списка игр на страницу логина — сверка через публичную библиотеку профиля сейчас не работает. Причина ТОЧНО НЕ настройка приватности «Сведения об играх» (проверялась — она открыта), реальная причина не установлена. Если в счётчике (\${s.gamesCount}) меньше игр, чем у тебя реально есть — добавь недостающие вручную через manual_appids.json.\`;
+    libNote.textContent = \`⚠ Steam перенаправил запрос списка игр на страницу логина — сверка через публичную библиотеку профиля сейчас не работает (причина ТОЧНО НЕ настройка приватности «Сведения об играх» — проверялась, она открыта; реальная причина не установлена). Проще всего — войти через Steam на странице настроек API (это уже обходит это ограничение). Если счётчик (\${s.gamesCount}) всё равно меньше реального — добавь недостающие вручную через manual_appids.json.\`;
   } else {
     libNote.style.display = 'none';
   }
