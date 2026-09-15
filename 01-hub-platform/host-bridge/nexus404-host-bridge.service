@@ -1,0 +1,30 @@
+[Unit]
+Description=NEXUS404 host-bridge — исполнитель привилегированных действий для контейнера хаба
+After=network.target docker.service
+
+# По умолчанию systemd даёт всего 5 автоматических рестартов за 10
+# секунд (StartLimitBurst/StartLimitIntervalSec) — после этого сервис
+# уходит в "failed" НАВСЕГДА и Restart=on-failure ниже перестаёт
+# срабатывать вообще, до явного systemctl restart/reset-failed. Если
+# демон падает несколько раз подряд быстро (например, гонка при самом
+# первом деплое новой версии — между обновлением файлов и созданием
+# SOCKET_DIR) — раньше это означало долгий простой host-bridge до
+# ручного вмешательства, хотя видимой причины "зависания" в логах как
+# раз и не было: сервис просто больше не пытался стартовать. Разрешаем
+# больше попыток в более широком окне — не убираем лимит совсем
+# (StartLimitIntervalSec=0), чтобы по-настоящему сломанный демон
+# (например, путь занят чем-то ещё) всё же не крутился в бесконечном
+# тихом цикле рестартов вечно, а рано или поздно всё равно ушёл в
+# failed и это было видно в systemctl status.
+StartLimitIntervalSec=120
+StartLimitBurst=20
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/nexus404/host-bridge/bridge.py
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=NEXUS404 agent — metrics (monitoring) + local events (notifications)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/nexus404-agent/agent.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
