@@ -26,6 +26,7 @@ const { createRetroStats } = require('./lib/retroStats.js');
 const { createAchievementDetails } = require('./lib/achievementDetails.js');
 const { createPipeline } = require('./lib/pipeline.js');
 const { startQrLogin, getQrLoginStatus } = require('./lib/steamQrLogin.js');
+const { startPasswordLogin, submitPasswordLoginCode } = require('./lib/steamPasswordLogin.js');
 const { saveSession } = require('./lib/steamClientApi.js');
 const { createRetroPipeline } = require('./lib/retroPipeline.js');
 
@@ -61,6 +62,27 @@ const paths = {
 const STATUS_FILE = path.join(DATA_DIR, 'status.json');
 const RETRO_STATUS_FILE = path.join(DATA_DIR, 'retro_status.json');
 
+// Читает и парсит JSON-тело входящего POST-запроса. Нужен только для
+// двух новых роутов входа паролем (login/password/code) — раньше все
+// POST-ручки модуля обходились query-параметрами, тела не читали
+// вообще, готового хелпера под это не было.
+function readJsonBody(req, maxBytes = 4096) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let tooLarge = false;
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) { tooLarge = true; req.destroy(); }
+    });
+    req.on('end', () => {
+      if (tooLarge) return reject(new Error('тело запроса слишком большое'));
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch (e) { reject(new Error('некорректный JSON: ' + e.message)); }
+    });
+    req.on('error', reject);
+  });
+}
+
 function requestHub(hubPath) {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -93,10 +115,32 @@ async function getHubKeys() {
 const cache = makeCache(CACHE_DIR, 24 * 7);
 
 // Пересобирается заново на каждый вызов — см. врезку про getStats выше.
+//
+// SteamID больше НЕ обязателен как отдельное поле в настройках —
+// по итогам разбора в переписке: если вход через Steam (пароль или
+// QR, см. lib/steamQrLogin.js / lib/steamPasswordLogin.js) уже
+// выполнен, реальный SteamID64 уже известен из сохранённой сессии
+// (/app/data/steam_client_session.json) — просить его вводить вручную
+// ЕЩЁ РАЗ избыточно. Поле steamId в настройках оставлено доступным на
+// бэкенде (обратная совместимость — ручной ввод продолжает работать,
+// если кто-то его когда-то настроил или предпочитает без входа через
+// Steam), но приоритет — у сессии, если она есть.
+async function resolveConfiguredSteamId(manualSteamId) {
+  try {
+    const raw = await fs.readFile(paths.steamSessionFile, 'utf-8');
+    const session = JSON.parse(raw);
+    if (session && session.steamID) return session.steamID;
+  } catch {
+    // сессии ещё нет — не ошибка, просто ещё не логинились через Steam
+  }
+  return manualSteamId || null;
+}
+
 async function getSteamStats() {
   const keys = await getHubKeys();
-  if (!keys.steamApiKey || !keys.steamId) return null;
-  const steamApi = createSteamApi({ apiKey: keys.steamApiKey, steamId: keys.steamId, logger: console });
+  const steamId = await resolveConfiguredSteamId(keys.steamId);
+  if (!keys.steamApiKey || !steamId) return null;
+  const steamApi = createSteamApi({ apiKey: keys.steamApiKey, steamId, logger: console });
   return createStats({ steamApi, cache, paths, logger: console });
 }
 
@@ -237,11 +281,6 @@ const EXTRA_HEAD = `
   .cs-stat-value .unit { font-size: 11px; color: var(--muted); font-weight: 600; }
 
   .cs-rate-limit-note { background: rgba(239,83,80,0.1); border: 1px solid rgba(239,83,80,0.3); border-radius: var(--card-radius); padding: 9px 14px; font-size: 12px; color: #f5b3b7; margin-bottom: 16px; }
-  /* Нейтральный info-стиль (var(--accent), не красный) — для
-     необязательной подсказки про вход как владелец аккаунта, не для
-     ошибок. Красный тут был бы неверным сигналом — ничего не сломано,
-     просто есть необязательная возможность включить. */
-  .cs-info-note { background: rgba(179,136,255,0.08); border: 1px solid rgba(179,136,255,0.25); border-radius: var(--card-radius); padding: 9px 14px; font-size: 12px; color: var(--accent); margin-bottom: 16px; }
 
   .cs-section { margin-bottom: 26px; }
   .cs-section h2 {
@@ -524,20 +563,6 @@ const BODY_CONTENT = `
       </div>
     </div>
   </div>
-
-  <div class="cs-modal-overlay" id="qr-login-overlay">
-    <div class="cs-modal-box" style="max-width:380px;text-align:center;">
-      <div class="cs-modal-head">
-        <h3>Вход в Steam по QR</h3>
-        <button class="cs-modal-close" id="qr-login-close-btn" aria-label="Закрыть">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
-        </button>
-      </div>
-      <div id="qr-login-body">
-        <div class="cs-modal-loading">Загрузка…</div>
-      </div>
-    </div>
-  </div>
 `;
 
 // --- JS-логика дашборда. Перенос из оригинального index.html — следующий
@@ -640,7 +665,6 @@ function buildSkeleton(){
     </div>
     <div class="cs-rate-limit-note" id="rate-limit-note" style="display:none"></div>
     <div class="cs-rate-limit-note" id="library-check-note" style="display:none"></div>
-    <div class="cs-info-note" id="client-login-note" style="display:none"></div>
     <div class="cs-progress-row">
     <div class="box cs-mastery-card" id="mastery-card">
       <div class="cs-score-wrap">
@@ -732,28 +756,12 @@ function updateStats(s){
   const libNote = document.getElementById('library-check-note');
   if(lc && lc.error){
     libNote.style.display = '';
-    libNote.textContent = \`⚠ Не удалось сверить полный список библиотеки через профиль (\${lc.error}) — если реальных игр больше \${s.gamesCount}, проверь SteamID в настройках.\`;
-  } else if(lc && lc.zeroFoundButAttempted){
+    libNote.textContent = \`⚠ Не удалось сверить полный список библиотеки через профиль (\${lc.error}) — если реальных игр больше \${s.gamesCount}, проверь вход через Steam в настройках API.\`;
+  } else if(lc && lc.accessBlocked){
     libNote.style.display = '';
     libNote.textContent = \`⚠ Steam перенаправил запрос списка игр на страницу логина — сверка через публичную библиотеку профиля сейчас не работает. Причина ТОЧНО НЕ настройка приватности «Сведения об играх» (проверялась — она открыта), реальная причина не установлена. Если в счётчике (\${s.gamesCount}) меньше игр, чем у тебя реально есть — добавь недостающие вручную через manual_appids.json.\`;
   } else {
     libNote.style.display = 'none';
-  }
-
-  // Необязательная подсказка про вход как владелец аккаунта (см. фикс
-  // с steam-user) — только если он ещё ни разу не настроен. Не
-  // предупреждение об ошибке (нейтральный цвет, не красный) — всё
-  // работает и без этого, просто расширяет видимость на игры, которые
-  // публичный REST API молча фильтрует (skip_unvetted_apps).
-  const clientNote = document.getElementById('client-login-note');
-  const cl = lc && lc.clientLogin;
-  if(cl && cl.needsLogin){
-    clientNote.style.display = '';
-    clientNote.innerHTML = 'ℹ Есть способ увидеть больше игр (в том числе непроверенные Steam новинки, которые публичный API молча пропускает) — вход как владелец аккаунта, без пароля, по QR. <button id="qr-login-open-btn" style="margin-left:6px;background:rgba(179,136,255,0.15);border:1px solid var(--accent);color:var(--accent);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;">Войти по QR</button>';
-    const btn = document.getElementById('qr-login-open-btn');
-    if(btn) btn.addEventListener('click', openQrLoginModal);
-  } else {
-    clientNote.style.display = 'none';
   }
 }
 
@@ -1683,62 +1691,6 @@ function unlockBackgroundScroll(){
   window.scrollTo(0, savedScrollY);
 }
 
-// --- QR-вход в Steam (без пароля, по запросу "можно на странице хаба?") ---
-let qrLoginPollTimer = null;
-
-async function openQrLoginModal(){
-  const overlay = document.getElementById('qr-login-overlay');
-  const body = document.getElementById('qr-login-body');
-  body.innerHTML = '<div class="cs-modal-loading">Запрашиваю QR-код…</div>';
-  overlay.classList.add('show');
-  lockBackgroundScroll();
-
-  let startResult;
-  try{
-    const res = await fetch('api/steam-qr-login/start', { method: 'POST' });
-    startResult = await res.json();
-    if(!res.ok || startResult.error) throw new Error(startResult.error || ('HTTP ' + res.status));
-  }catch(e){
-    body.innerHTML = \`<div class="cs-modal-empty">Не удалось получить QR-код: \${escapeHtml(e.message)}</div>\`;
-    return;
-  }
-
-  body.innerHTML = \`
-    <img src="\${startResult.qrCodeDataUrl}" alt="QR-код входа в Steam" style="width:220px;height:220px;border-radius:10px;margin:6px auto 14px;display:block;background:#fff;padding:8px;">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Отсканируй мобильным приложением Steam (значок камеры в углу приложения) и подтверди вход там же.</div>
-    <div id="qr-login-status" style="font-size:12.5px;color:var(--accent);">Ожидаю сканирование…</div>
-  \`;
-
-  const statusEl = document.getElementById('qr-login-status');
-  const id = startResult.id;
-  clearInterval(qrLoginPollTimer);
-  qrLoginPollTimer = setInterval(async () => {
-    let statusResult;
-    try{
-      const res = await fetch(\`api/steam-qr-login/status?id=\${encodeURIComponent(id)}\`);
-      statusResult = await res.json();
-    }catch(e){
-      return; // сетевой сбой одного опроса — не страшно, попробуем на следующем тике
-    }
-    if(statusResult.status === 'scanned'){
-      statusEl.textContent = 'QR отсканирован — подтверди вход в приложении Steam на телефоне…';
-    } else if(statusResult.status === 'authenticated'){
-      clearInterval(qrLoginPollTimer);
-      body.innerHTML = \`<div class="cs-modal-empty" style="color:var(--green);">✅ Вход выполнен (SteamID: \${escapeHtml(statusResult.steamID)}). Токен сессии сохранён — следующее обновление уже сможет использовать его.</div>\`;
-    } else if(statusResult.status === 'error'){
-      clearInterval(qrLoginPollTimer);
-      body.innerHTML = \`<div class="cs-modal-empty">⚠ \${escapeHtml(statusResult.error || 'Не удалось войти')}</div>\`;
-    }
-    // 'pending' — просто ждём дальше, ничего не меняем на экране
-  }, 2000);
-}
-
-function closeQrLoginModal(){
-  clearInterval(qrLoginPollTimer);
-  document.getElementById('qr-login-overlay').classList.remove('show');
-  unlockBackgroundScroll();
-}
-
 async function openAchievementsModal(platform, id, title){
   const overlay = document.getElementById('ach-modal-overlay');
   const body = document.getElementById('ach-modal-body');
@@ -1853,8 +1805,6 @@ document.getElementById('force-refresh-btn').addEventListener('click', () => tri
 document.getElementById('refresh-both-btn').addEventListener('click', () => triggerRefreshBoth());
 document.getElementById('ach-modal-close-btn').addEventListener('click', () => closeAchievementsModal());
 document.getElementById('ach-modal-overlay').addEventListener('click', (e) => { if(e.target === e.currentTarget) closeAchievementsModal(); });
-document.getElementById('qr-login-close-btn').addEventListener('click', () => closeQrLoginModal());
-document.getElementById('qr-login-overlay').addEventListener('click', (e) => { if(e.target === e.currentTarget) closeQrLoginModal(); });
 
 switchTab('steam');
 loadReport();
@@ -2120,6 +2070,90 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
+    return;
+  }
+
+  // --- Вход паролем (веб-форма, не CLI) ---
+  // Пароль читается из тела запроса, используется ТОЛЬКО для вызова
+  // logOn() внутри lib/steamPasswordLogin.js и никогда никуда не
+  // записывается на диск — то же обещание, что и у QR/CLI-путей.
+  if (req.method === 'POST' && pathname === '/api/steam-password-login/start') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'error', error: e.message }));
+      return;
+    }
+    if (!body.accountName || !body.password) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'error', error: 'нужны accountName и password' }));
+      return;
+    }
+    const result = await startPasswordLogin({ accountName: body.accountName, password: body.password });
+    if (result.status === 'authenticated') {
+      try {
+        await saveSession(paths.steamSessionFile, { steamID: result.steamID, refreshToken: result.refreshToken, savedAt: new Date().toISOString() });
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', error: `Вход прошёл, но не удалось сохранить сессию: ${e.message}` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'authenticated', steamID: result.steamID }));
+      return;
+    }
+    res.writeHead(result.status === 'error' ? 502 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/steam-password-login/code') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'error', error: e.message }));
+      return;
+    }
+    if (!body.id || !body.code) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'error', error: 'нужны id и code' }));
+      return;
+    }
+    const result = await submitPasswordLoginCode(body.id, body.code);
+    if (result.status === 'authenticated') {
+      try {
+        await saveSession(paths.steamSessionFile, { steamID: result.steamID, refreshToken: result.refreshToken, savedAt: new Date().toISOString() });
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', error: `Вход прошёл, но не удалось сохранить сессию: ${e.message}` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'authenticated', steamID: result.steamID }));
+      return;
+    }
+    res.writeHead(result.status === 'error' ? 502 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  // --- Статус входа через Steam (для "лампочки" на странице настроек) ---
+  // Только читает уже сохранённый файл сессии — без сетевого похода в
+  // Steam, чтобы страница настроек не тормозила на каждой загрузке.
+  if (req.method === 'GET' && pathname === '/api/steam-login-status') {
+    try {
+      const raw = await fs.readFile(paths.steamSessionFile, 'utf-8');
+      const session = JSON.parse(raw);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ loggedIn: Boolean(session && session.steamID), steamID: session?.steamID || null }));
+    } catch {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ loggedIn: false, steamID: null }));
+    }
     return;
   }
 

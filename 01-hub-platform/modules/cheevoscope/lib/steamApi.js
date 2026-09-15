@@ -463,7 +463,6 @@ function createSteamApi({ apiKey, steamId, logger = console }) {
   return {
     getOwnedGames,
     getRecentlyPlayedGames,
-    resolveSteamId64,
     getResolvedSteamId,
     getFullLibrary,
     getFullLibraryHtml,

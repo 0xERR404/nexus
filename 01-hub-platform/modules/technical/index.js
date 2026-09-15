@@ -29,6 +29,31 @@ function requestHub(path, method = 'GET') {
     });
 }
 
+// Модалка входа через Steam (пароль или QR) — тот же визуальный
+// принцип, что overlay-модалки в CheevoScope (не переиспользуется
+// напрямую, у этого модуля своя копия chrome.js/своя страница, но
+// минимальный набор классов ради консистентности стиля).
+const EXTRA_HEAD = `
+  .steam-login-overlay { display: none; position: fixed; inset: 0; background: rgba(3,5,9,0.72); align-items: center; justify-content: center; z-index: 100; padding: 20px 16px; }
+  .steam-login-overlay.show { display: flex; }
+  .steam-login-box { background: var(--bg); border: 1px solid rgba(179,136,255,0.3); border-radius: 14px; width: 100%; max-width: 380px; padding: 20px 22px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); text-align: center; }
+  .steam-login-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .steam-login-head h3 { font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--text); margin: 0; }
+  .steam-login-close { background: rgba(179,136,255,0.08); border: 1px solid rgba(179,136,255,0.3); color: var(--text); border-radius: 8px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .steam-login-close:hover { border-color: var(--accent); }
+  .steam-login-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .steam-login-tab { flex: 1; background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 7px; cursor: pointer; font-family: var(--font-mono); font-size: 0.82rem; }
+  .steam-login-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(179,136,255,0.08); }
+  .steam-login-field { width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--text); font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 10px; }
+  .steam-login-field:focus { outline: none; border-color: var(--accent); }
+  .steam-login-submit { width: 100%; background: rgba(179,136,255,0.15); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 8px; cursor: pointer; font-family: var(--font-mono); font-size: 0.85rem; }
+  .steam-login-submit:hover { background: rgba(179,136,255,0.25); }
+  .steam-login-status-line { font-size: 0.8rem; color: var(--accent); margin-top: 10px; font-family: var(--font-mono); }
+  .steam-login-error { font-size: 0.8rem; color: var(--red); margin-top: 10px; font-family: var(--font-mono); }
+  .steam-login-success { font-size: 0.85rem; color: var(--green); font-family: var(--font-mono); }
+  .steam-login-qr-img { width: 200px; height: 200px; border-radius: 10px; margin: 4px auto 12px; display: block; background: #fff; padding: 8px; }
+`;
+
 const BODY_CONTENT = `
   <section>
     <div class="section-title">deepseek — ключ api</div>
@@ -176,15 +201,9 @@ const BODY_CONTENT = `
         </button>
       </div>
       <div class="row" style="margin-top:8px;">
-        <span class="dot unset" id="steamIdDot"></span>
-        <input type="text" id="steamIdInput" placeholder="SteamID64, ник или ссылка на профиль" autocomplete="off" />
-        <button class="icon-btn" id="saveSteamIdBtn" title="сохранить">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-        </button>
+        <span class="dot unset" id="steamLoginDot"></span>
+        <span id="steamLoginText" style="flex:1;color:var(--muted);font-size:13px;">Вход через Steam: не выполнен</span>
+        <button class="icon-btn" id="openSteamLoginBtn" title="войти через Steam">Войти</button>
       </div>
       <div class="row" style="margin-top:8px;">
         <span class="dot unset" id="raUsernameDot"></span>
@@ -208,9 +227,25 @@ const BODY_CONTENT = `
           </svg>
         </button>
       </div>
-      <div class="empty-note" style="margin-top:6px;">Steam API-ключ и SteamID обязательны для вкладки Steam, RetroAchievements — необязательная вторая вкладка, без них дашборд работает, та вкладка просто пустая</div>
+      <div class="empty-note" style="margin-top:6px;">Steam API-ключ обязателен для вкладки Steam — без него дашборд работает, та вкладка просто пустая. SteamID отдельно вводить не нужно — берётся автоматически из входа через Steam (кнопка «Войти» выше).</div>
     </div>
   </section>
+
+  <div class="steam-login-overlay" id="steamLoginOverlay">
+    <div class="steam-login-box">
+      <div class="steam-login-head">
+        <h3>Вход через Steam</h3>
+        <button class="steam-login-close" id="steamLoginCloseBtn" aria-label="Закрыть">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="steam-login-tabs">
+        <button class="steam-login-tab active" id="steamLoginTabPassword">Пароль</button>
+        <button class="steam-login-tab" id="steamLoginTabQr">QR-код</button>
+      </div>
+      <div id="steamLoginBody"></div>
+    </div>
+  </div>
 `;
 
 const EXTRA_SCRIPT = `
@@ -227,12 +262,193 @@ const EXTRA_SCRIPT = `
       document.getElementById('claudeBaseUrlDot').className = 'dot ' + (data.claudeBaseUrl ? 'set' : 'unset');
       document.getElementById('monitoringDot').className = 'dot ' + (data.monitoringAgentToken ? 'set' : 'unset');
       document.getElementById('steamApiKeyDot').className = 'dot ' + (data.steamApiKey ? 'set' : 'unset');
-      document.getElementById('steamIdDot').className = 'dot ' + (data.steamId ? 'set' : 'unset');
       document.getElementById('raUsernameDot').className = 'dot ' + (data.raUsername ? 'set' : 'unset');
       document.getElementById('raApiKeyDot').className = 'dot ' + (data.raApiKey ? 'set' : 'unset');
     } catch {}
   }
   loadKeyStatus();
+
+  // --- Вход через Steam (пароль или QR) — кросс-модульно дёргает уже
+  // готовый бэкенд в модуле cheevoscope (там же живут steam-user/
+  // steam-session, установленные ради этого — дублировать их сюда
+  // смысла нет, хаб реверс-проксирует /modules/cheevoscope/... с любой
+  // страницы одинаково). Пароль/логин нигде не сохраняются на этой
+  // стороне — уходят одним POST-запросом и всё, дальше ими занимается
+  // сам cheevoscope (см. lib/steamPasswordLogin.js/steamQrLogin.js там).
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  const CHEEVO_BASE = '/modules/cheevoscope';
+  let steamLoginActiveTab = 'password';
+  let steamQrPollTimer = null;
+  let steamPendingCodeId = null;
+
+  async function loadSteamLoginStatus(){
+    try{
+      const res = await fetch(CHEEVO_BASE + '/api/steam-login-status');
+      const data = await res.json();
+      const dot = document.getElementById('steamLoginDot');
+      const text = document.getElementById('steamLoginText');
+      if(data.loggedIn){
+        dot.className = 'dot set';
+        text.textContent = 'Вход через Steam: выполнен (SteamID ' + data.steamID + ')';
+      } else {
+        dot.className = 'dot unset';
+        text.textContent = 'Вход через Steam: не выполнен';
+      }
+    }catch{
+      // Модуль cheevoscope временно недоступен (перезапускается и т.п.)
+      // — не считаем это ошибкой входа, просто молчим до следующего
+      // обновления статуса.
+    }
+  }
+  loadSteamLoginStatus();
+
+  function renderPasswordTab(){
+    document.getElementById('steamLoginBody').innerHTML = \`
+      <input type="text" class="steam-login-field" id="steamLoginAccountName" placeholder="Steam-логин (accountName)" autocomplete="off" />
+      <input type="password" class="steam-login-field" id="steamLoginPassword" placeholder="Пароль" autocomplete="off" />
+      <button class="steam-login-submit" id="steamLoginPasswordSubmit">Войти</button>
+      <div id="steamLoginPasswordMsg"></div>
+    \`;
+    document.getElementById('steamLoginPasswordSubmit').addEventListener('click', submitPasswordLogin);
+  }
+
+  async function submitPasswordLogin(){
+    const accountName = document.getElementById('steamLoginAccountName').value.trim();
+    const password = document.getElementById('steamLoginPassword').value;
+    const msg = document.getElementById('steamLoginPasswordMsg');
+    if(!accountName || !password){
+      msg.innerHTML = '<div class="steam-login-error">Заполни логин и пароль</div>';
+      return;
+    }
+    msg.innerHTML = '<div class="steam-login-status-line">Проверяю…</div>';
+    let result;
+    try{
+      const res = await fetch(CHEEVO_BASE + '/api/steam-password-login/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountName, password }),
+      });
+      result = await res.json();
+    }catch(e){
+      msg.innerHTML = '<div class="steam-login-error">Сеть: ' + escapeHtml(e.message) + '</div>';
+      return;
+    }
+    handlePasswordLoginResult(result);
+  }
+
+  function handlePasswordLoginResult(result){
+    const msg = document.getElementById('steamLoginPasswordMsg');
+    if(result.status === 'authenticated'){
+      document.getElementById('steamLoginBody').innerHTML = '<div class="steam-login-success">✅ Вход выполнен (SteamID ' + escapeHtml(result.steamID) + ')</div>';
+      loadSteamLoginStatus();
+      return;
+    }
+    if(result.status === 'needs_code'){
+      steamPendingCodeId = result.id;
+      const where = result.codeType === 'email' ? 'на почту' : 'в приложении Steam Guard/по SMS';
+      document.getElementById('steamLoginBody').innerHTML = \`
+        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:10px;">Код подтверждения отправлен \${where}\${result.wrongCode ? ' (предыдущий код не подошёл, попробуй ещё раз)' : ''}.</div>
+        <input type="text" class="steam-login-field" id="steamLoginCode" placeholder="Код Steam Guard" autocomplete="off" />
+        <button class="steam-login-submit" id="steamLoginCodeSubmit">Подтвердить</button>
+        <div id="steamLoginCodeMsg"></div>
+      \`;
+      document.getElementById('steamLoginCodeSubmit').addEventListener('click', submitLoginCode);
+      return;
+    }
+    msg.innerHTML = '<div class="steam-login-error">⚠ ' + escapeHtml(result.error || 'Не удалось войти') + '</div>';
+  }
+
+  async function submitLoginCode(){
+    const code = document.getElementById('steamLoginCode').value.trim();
+    const msg = document.getElementById('steamLoginCodeMsg');
+    if(!code){ msg.innerHTML = '<div class="steam-login-error">Введи код</div>'; return; }
+    msg.innerHTML = '<div class="steam-login-status-line">Проверяю…</div>';
+    let result;
+    try{
+      const res = await fetch(CHEEVO_BASE + '/api/steam-password-login/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: steamPendingCodeId, code }),
+      });
+      result = await res.json();
+    }catch(e){
+      msg.innerHTML = '<div class="steam-login-error">Сеть: ' + escapeHtml(e.message) + '</div>';
+      return;
+    }
+    handlePasswordLoginResult(result);
+  }
+
+  function renderQrTab(){
+    document.getElementById('steamLoginBody').innerHTML = '<button class="steam-login-submit" id="steamQrStartBtn">Получить QR-код</button>';
+    document.getElementById('steamQrStartBtn').addEventListener('click', startQrLogin);
+  }
+
+  async function startQrLogin(){
+    const body = document.getElementById('steamLoginBody');
+    body.innerHTML = '<div class="steam-login-status-line">Запрашиваю QR-код…</div>';
+    let startResult;
+    try{
+      const res = await fetch(CHEEVO_BASE + '/api/steam-qr-login/start', { method: 'POST' });
+      startResult = await res.json();
+      if(!res.ok || startResult.error) throw new Error(startResult.error || ('HTTP ' + res.status));
+    }catch(e){
+      body.innerHTML = '<div class="steam-login-error">Не удалось получить QR-код: ' + escapeHtml(e.message) + '</div>';
+      return;
+    }
+    body.innerHTML = \`
+      <img src="\${startResult.qrCodeDataUrl}" alt="QR-код входа в Steam" class="steam-login-qr-img">
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Отсканируй мобильным приложением Steam и подтверди вход там же.</div>
+      <div class="steam-login-status-line" id="steamQrStatusLine">Ожидаю сканирование…</div>
+    \`;
+    const statusLine = document.getElementById('steamQrStatusLine');
+    const id = startResult.id;
+    clearInterval(steamQrPollTimer);
+    steamQrPollTimer = setInterval(async () => {
+      let statusResult;
+      try{
+        const res = await fetch(CHEEVO_BASE + '/api/steam-qr-login/status?id=' + encodeURIComponent(id));
+        statusResult = await res.json();
+      }catch{
+        return;
+      }
+      if(statusResult.status === 'scanned'){
+        statusLine.textContent = 'QR отсканирован — подтверди вход в приложении на телефоне…';
+      } else if(statusResult.status === 'authenticated'){
+        clearInterval(steamQrPollTimer);
+        body.innerHTML = '<div class="steam-login-success">✅ Вход выполнен (SteamID ' + escapeHtml(statusResult.steamID) + ')</div>';
+        loadSteamLoginStatus();
+      } else if(statusResult.status === 'error'){
+        clearInterval(steamQrPollTimer);
+        body.innerHTML = '<div class="steam-login-error">⚠ ' + escapeHtml(statusResult.error || 'Не удалось войти') + '</div>';
+      }
+    }, 2000);
+  }
+
+  function switchSteamLoginTab(tab){
+    steamLoginActiveTab = tab;
+    document.getElementById('steamLoginTabPassword').classList.toggle('active', tab === 'password');
+    document.getElementById('steamLoginTabQr').classList.toggle('active', tab === 'qr');
+    clearInterval(steamQrPollTimer);
+    if(tab === 'password') renderPasswordTab(); else renderQrTab();
+  }
+
+  function openSteamLoginModal(){
+    document.getElementById('steamLoginOverlay').classList.add('show');
+    switchSteamLoginTab('password');
+  }
+  function closeSteamLoginModal(){
+    clearInterval(steamQrPollTimer);
+    document.getElementById('steamLoginOverlay').classList.remove('show');
+  }
+
+  document.getElementById('openSteamLoginBtn').addEventListener('click', openSteamLoginModal);
+  document.getElementById('steamLoginCloseBtn').addEventListener('click', closeSteamLoginModal);
+  document.getElementById('steamLoginOverlay').addEventListener('click', (e) => { if(e.target === e.currentTarget) closeSteamLoginModal(); });
+  document.getElementById('steamLoginTabPassword').addEventListener('click', () => switchSteamLoginTab('password'));
+  document.getElementById('steamLoginTabQr').addEventListener('click', () => switchSteamLoginTab('qr'));
 
   document.getElementById('saveDeepseekKeyBtn').addEventListener('click', async () => {
     const input = document.getElementById('deepseekKeyInput');
@@ -364,19 +580,6 @@ const EXTRA_SCRIPT = `
     loadKeyStatus();
   });
 
-  // Без "if (!value) return" — то же самое, что у geminiBaseUrl: пустое
-  // значение здесь осмысленно (стереть SteamID, не секрет).
-  document.getElementById('saveSteamIdBtn').addEventListener('click', async () => {
-    const input = document.getElementById('steamIdInput');
-    const value = input.value.trim();
-    await fetch('/api/settings/keys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ steamId: value }),
-    });
-    loadKeyStatus();
-  });
-
   document.getElementById('saveRaUsernameBtn').addEventListener('click', async () => {
     const input = document.getElementById('raUsernameInput');
     const value = input.value.trim();
@@ -406,6 +609,7 @@ const EXTRA_SCRIPT = `
 const PAGE = renderPage({
     title: 'AI API',
     username: process.env.AUTH_USER || 'user',
+    extraHead: EXTRA_HEAD,
     bodyContent: BODY_CONTENT,
     extraScript: EXTRA_SCRIPT,
 });

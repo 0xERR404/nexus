@@ -130,7 +130,7 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
     let libraryCheck = {
       attempted: false, ok: false, error: null, privacyBlocked: false,
       baseSource: null, baseCount: 0, ownedGamesCount: 0, ownedOnlyCount: 0,
-      extraGamesCount: 0, zeroFoundButAttempted: false, historyCount: 0,
+      extraGamesCount: 0, accessBlocked: false,
     };
 
     const known = new Map(); // appid -> {appid, name, playtime_forever, _unverified?}
@@ -148,7 +148,6 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
             known.set(g.appid, { appid: g.appid, name: g.name, playtime_forever: g.playtime_forever || 0, _unverified: Boolean(g._unverified) });
           }
         }
-        libraryCheck.historyCount = known.size;
       }
     } catch (e) {
       logger.warn(`Не удалось прочитать сохранённый список игр с прошлого раза (не критично, продолжаю без истории): ${e.message}`);
@@ -170,10 +169,13 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
       if (clientResult.apps) {
         for (const g of clientResult.apps) {
           const existing = known.get(g.appid);
+          // Math.max — та же причина, что и у обогащения GetOwnedGames
+          // ниже: playtime не может уменьшиться со временем, max()
+          // безопасен независимо от порядка/актуальности источников.
           known.set(g.appid, {
             appid: g.appid,
             name: g.name,
-            playtime_forever: g.playtime_forever || existing?.playtime_forever || 0,
+            playtime_forever: Math.max(g.playtime_forever || 0, existing?.playtime_forever || 0),
           });
         }
         libraryCheck.clientLogin.ok = true;
@@ -235,7 +237,16 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
       for (const g of owned) {
         const existing = known.get(g.appid);
         if (existing) {
-          existing.playtime_forever = g.playtime_forever || 0;
+          // Math.max, не безусловная перезапись — найдено интеграционным
+          // тестом: раньше GetOwnedGames слепо затирал playtime поверх
+          // уже известного из более приоритетного источника (клиентский
+          // вход, см. выше) даже если тот успел записать более свежее
+          // значение. playtime_forever физически не может УМЕНЬШИТЬСЯ со
+          // временем — max() безопасен независимо от того, какой из двух
+          // источников (формально дёргающих одну и ту же службу Steam,
+          // см. фикс про steam-user) в этот конкретный момент вернул
+          // более актуальное число.
+          existing.playtime_forever = Math.max(existing.playtime_forever || 0, g.playtime_forever || 0);
         } else {
           known.set(g.appid, { appid: g.appid, name: g.name || `appid ${g.appid}`, playtime_forever: g.playtime_forever || 0 });
           ownedOnlyCount++;
@@ -271,7 +282,11 @@ function createStats({ steamApi, cache, paths, apiConcurrency = 10, storeConcurr
     // Steam ЯВНО ответил ошибкой приватности (privacyBlocked=true), не
     // просто "профиль ничего лишнего не добавил". Для подавляющего
     // большинства аккаунтов список из профиля и так покрывает всё.
-    libraryCheck.zeroFoundButAttempted = libraryCheck.attempted && libraryCheck.ok && libraryCheck.privacyBlocked;
+    // Название поля — accessBlocked (не zeroFoundButAttempted, как было
+    // раньше) — старое имя пережило две смены смысла (фиксы 11 и 17) и
+    // перестало отражать, что тут вообще проверяется; при генеральной
+    // уборке кода переименовано на честное.
+    libraryCheck.accessBlocked = libraryCheck.attempted && libraryCheck.ok && libraryCheck.privacyBlocked;
 
     const games = Array.from(known.values());
     const totalMinutes = games.reduce((sum, g) => sum + (g.playtime_forever || 0), 0);
