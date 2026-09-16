@@ -1362,6 +1362,14 @@ ${BASE_STYLES}
     // body.model не передан (см. resolveDeepSeekModel в chat/providers.ts).
     const body = { content: text };
 
+    // Блокируем поле/кнопку на время ожидания ответа — раньше ничего не
+    // мешало отправить второе сообщение, пока первое ещё не пришло: для
+    // FlowMusic это реально ломало логику "один project_id на тему" —
+    // второй запрос стартовал, ещё не увидев project_id, сохранённый
+    // первым (тот сохраняется только ПОСЛЕ полного завершения генерации,
+    // которая может идти минуты), и заводил на стороне FlowMusic вторую
+    // отдельную сессию вместо продолжения одной.
+    setChatEnabled(false);
     try {
       const res = await fetch('/api/chat/' + currentTopicId + '/messages', {
         method: 'POST',
@@ -1380,12 +1388,15 @@ ${BASE_STYLES}
         loadUsage(); // обновить сводку сегодня/всего после реального ответа
       } else if (data.error) {
         // details — реальный текст ошибки от провайдера, показываем сразу.
-        const text = data.details ? data.error + '\\n' + data.details : data.error;
+        const text = data.details ? data.error + '\n' + data.details : data.error;
         addBlock('ассистент', text, { err: true, time: new Date().toISOString() });
       }
     } catch {
       typingBlock.remove();
       addBlock('ассистент', 'не удалось отправить сообщение', { err: true, time: new Date().toISOString() });
+    } finally {
+      setChatEnabled(true);
+      chatInput.focus();
     }
   }
 

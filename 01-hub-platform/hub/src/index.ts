@@ -28,6 +28,7 @@ import { startEventWatcher } from "./eventWatcher.js";
 import { recordUsage, getUsageSummary } from "./chat/usage.js";
 import type { TokenUsage } from "./chat/usage.js";
 import { callHostBridge, waitForHostBridge } from "./hostBridge.js";
+import { withFileLock } from "./fileLock.js";
 
 const MODULES_DIR = process.env.MODULES_DIR ?? "/app/modules";
 const HUB_DATA_DIR = process.env.HUB_DATA_DIR ?? "/app/data";
@@ -281,21 +282,27 @@ async function getReply(
   }
   if (provider === "flowmusic") {
     const lastUserMessage = [...context].reverse().find((m) => m.role === "user");
-    // Переиспользуем project_id из темы, если он уже был создан на
-    // предыдущем сообщении — иначе на стороне FlowMusic каждое сообщение
-    // в одной теме хаба заводило бы отдельную новую сессию/проект.
-    const topic = await getTopic(topicId);
-    const { tracks, projectId } = await askFlowMusic(lastUserMessage?.content ?? "", topic?.flowmusicProjectId);
-    if (!topic?.flowmusicProjectId) {
-      await setTopicFlowMusicProjectId(topicId, projectId).catch(() => {});
-    }
-    const markers: string[] = [];
-    for (const track of tracks) {
-      const saved = await saveChatAttachment(topicId, track.audioBuffer, track.filename);
-      if (!saved) throw new Error("не удалось сохранить сгенерированное аудио — некорректный topicId");
-      markers.push(`!audio(${saved.url})`);
-    }
-    return { content: markers.join("\n") };
+    // Мьютекс по теме — на случай, если два запроса в эту же тему всё же
+    // пришли одновременно (два клика подряд быстрее, чем успела включиться
+    // блокировка поля в браузере, две вкладки/устройства и т.п.): без
+    // этого второй запрос читал бы topic.flowmusicProjectId ДО того, как
+    // первый успел его сохранить (сохранение — только после ПОЛНОГО
+    // завершения генерации, которая может идти минуты), и заводил бы на
+    // стороне FlowMusic отдельную новую сессию вместо продолжения одной.
+    return withFileLock(`flowmusic-topic-${topicId}`, async () => {
+      const topic = await getTopic(topicId);
+      const { tracks, projectId } = await askFlowMusic(lastUserMessage?.content ?? "", topic?.flowmusicProjectId);
+      if (!topic?.flowmusicProjectId) {
+        await setTopicFlowMusicProjectId(topicId, projectId).catch(() => {});
+      }
+      const markers: string[] = [];
+      for (const track of tracks) {
+        const saved = await saveChatAttachment(topicId, track.audioBuffer, track.filename);
+        if (!saved) throw new Error("не удалось сохранить сгенерированное аудио — некорректный topicId");
+        markers.push(`!audio(${saved.url})`);
+      }
+      return { content: markers.join("\n") };
+    });
   }
   return askDeepSeek(context, model);
 }
