@@ -2,7 +2,7 @@
 // провайдера (rate-limit/billing по факту последнего запроса).
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { getDeepSeekKey, getGeminiKey, getGeminiBaseUrl, getClaudeKey, getClaudeBaseUrl, getFlowMusicKey, getFlowMusicBaseUrl } from "../keys.js";
+import { getDeepSeekKey, getGeminiKey, getGeminiBaseUrl, getClaudeKey, getClaudeBaseUrl, getFlowMusicKey, getFlowMusicBaseUrl, setKey } from "../keys.js";
 import type { TokenUsage } from "./usage.js";
 
 export interface ChatMessage {
@@ -273,55 +273,230 @@ export async function askClaude(messages: ChatMessage[]): Promise<ChatReply> {
 }
 
 // ---------- FlowMusic ----------
-// Официальной документации API не было под рукой — контракт по типовому
-// REST-паттерну для генерации музыки, не проверен живым запросом.
+// Официального публичного API нет. Используется тот же приём, что и в
+// открытых сторонних клиентах (изучен исходный код пакета
+// @justmpm/flowmusic, npm, MIT) — токен браузерной сессии (Supabase
+// access_token/refresh_token из куки flowmusic.app), не официальный
+// API-ключ. Пользователь один раз достаёт этот JSON из DevTools/куки
+// своего браузера (см. настройки хаба) и вставляет целиком в поле
+// "FlowMusic ключ" — дальше access_token обновляется автоматически по
+// refresh_token (тот, в отличие от access_token, не истекает сам по
+// себе, пока не разлогиниться явно на flowmusic.app).
+//
+// Эндпоинты (/__api/projects, /__api/conversation, .../stream,
+// /__api/audio-create-song-status/*, /__api/download/audio/*) —
+// не документированы официально нигде, взяты дословно из рабочего
+// стороннего клиента, не наша догадка "по типовому паттерну", как было
+// раньше (тот контракт вообще ни разу не проверялся живым запросом).
 
-const DEFAULT_FLOWMUSIC_BASE_URL = "https://api.flowmusic.ai/v1";
+const DEFAULT_FLOWMUSIC_BASE_URL = "https://www.flowmusic.app";
 const ENV_FLOWMUSIC_BASE_URL = process.env.FLOWMUSIC_BASE_URL;
 const FLOWMUSIC_TIMEOUT_MS = 60_000; // генерация музыки медленнее текста
+const FLOWMUSIC_POLL_INTERVAL_MS = 3_000;
+const FLOWMUSIC_MAX_POLL_ATTEMPTS = 60; // до ~3 минут на генерацию
+// Отдельный Supabase-проект именно для авторизации flowmusic.app — не то
+// же самое, что "свой адрес вместо flowmusic.ai" в настройках (тот — для
+// основного API, на случай воркера/прокси перед ним). Не настраивается —
+// это инфраструктурная деталь самого FlowMusic, не пользовательский выбор.
+const FLOWMUSIC_SUPABASE_AUTH_URL = "https://sb.producer.ai";
 
 export class FlowMusicNotConfiguredError extends Error {
   constructor() {
-    super("FlowMusic API-ключ не задан — введи его в настройках хаба");
+    super("Токен сессии FlowMusic не задан — введи его в настройках хаба");
   }
 }
 
 export interface FlowMusicResult {
-  audioUrl: string;
+  audioBuffer: Buffer;
+  mimeType: string;
+  filename: string;
 }
 
-function sendFlowMusicRequest(baseUrl: string, apiKey: string, prompt: string): Promise<Response> {
-  return fetchWithTimeout(
-    `${baseUrl}/generate`,
-    { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ prompt }) },
-    FLOWMUSIC_TIMEOUT_MS
-  );
+interface FlowMusicSession {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number; // unix-секунды
+}
+
+// Поле "FlowMusic ключ" хранит не строку-токен, а весь JSON сессии
+// целиком ({access_token, refresh_token, expires_at}) — но то, что
+// реально лежит в куке flowmusic.app (Supabase формат), это САМ ЭТОТ
+// JSON, закодированный в base64, часто с префиксом "base64-" (сам
+// Supabase его добавляет). Пробуем сначала как есть (вдруг это уже
+// готовый JSON — например, из session.json стороннего инструмента),
+// и только если это не сработало — снимаем префикс и декодируем base64
+// (тот же порядок, что в decodeSupabaseToken у @justmpm/flowmusic).
+function parseFlowMusicSession(raw: string): FlowMusicSession | null {
+  const tryParse = (text: string): { access_token?: string; refresh_token?: string; expires_at?: number } | null => {
+    try {
+      return JSON.parse(text) as { access_token?: string; refresh_token?: string; expires_at?: number };
+    } catch {
+      return null;
+    }
+  };
+
+  let data = tryParse(raw);
+  if (!data || typeof data.access_token !== "string") {
+    try {
+      const decoded = Buffer.from(raw.replace(/^base64-/, ""), "base64").toString("utf-8");
+      data = tryParse(decoded);
+    } catch {
+      data = null;
+    }
+  }
+  if (!data || typeof data.access_token !== "string") return null;
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : "",
+    expiresAt: typeof data.expires_at === "number" ? data.expires_at : 0,
+  };
+}
+
+// 60с запас до истечения — тот же буфер, что в @justmpm/flowmusic.
+function isFlowMusicTokenExpired(expiresAt: number): boolean {
+  if (!expiresAt) return true;
+  return Date.now() / 1000 >= expiresAt - 60;
+}
+
+async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSession | null> {
+  if (!refreshToken) return null;
+  try {
+    // apikey — не секрет, а имя Supabase-проекта (поддомен перед первой
+    // точкой в FLOWMUSIC_SUPABASE_AUTH_URL) — тот же вывод, что в
+    // @justmpm/flowmusic, не догадка "на глаз".
+    const apikey = FLOWMUSIC_SUPABASE_AUTH_URL.split("//")[1]?.split(".")[0] ?? "";
+    const res = await fetchWithTimeout(`${FLOWMUSIC_SUPABASE_AUTH_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
+    if (!data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureFlowMusicAccessToken(): Promise<string> {
+  const raw = await getFlowMusicKey();
+  if (!raw) throw new FlowMusicNotConfiguredError();
+  const session = parseFlowMusicSession(raw);
+  if (!session) {
+    throw new Error(
+      "Не удалось разобрать токен сессии FlowMusic — вставь значение куки " +
+        "sb-...-auth-token с flowmusic.app как есть (можно с префиксом " +
+        "\"base64-\") либо готовый JSON с access_token/refresh_token/expires_at."
+    );
+  }
+  if (!isFlowMusicTokenExpired(session.expiresAt)) return session.accessToken;
+
+  const refreshed = await refreshFlowMusicToken(session.refreshToken);
+  if (!refreshed) {
+    throw new Error("Сессия FlowMusic истекла и не удалось обновить — зайди на flowmusic.app заново и вставь новый токен в настройках хаба.");
+  }
+  // Сохраняем обновлённый токен на диск — иначе каждый следующий запрос
+  // заново обновлял бы ещё живой access_token без необходимости, а
+  // refresh_token у Supabase одноразовый (после использования выдаётся
+  // новый) — не сохранить его значило бы потерять возможность обновиться
+  // ещё раз после следующего истечения.
+  await setKey(
+    "flowmusic",
+    JSON.stringify({ access_token: refreshed.accessToken, refresh_token: refreshed.refreshToken, expires_at: refreshed.expiresAt })
+  ).catch(() => {});
+  return refreshed.accessToken;
+}
+
+async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await ensureFlowMusicAccessToken();
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
+  if (!headers["Content-Type"] && (init.method === "POST" || init.method === "PUT")) headers["Content-Type"] = "application/json";
+  return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, FLOWMUSIC_TIMEOUT_MS);
+}
+
+// Статус генерации приходит Server-Sent-Events потоком, не обычным JSON —
+// вытаскиваем operation_id/clip_id из событий part построчно.
+function parseFlowMusicStream(streamText: string): { operationId: string | null; clipId: string | null } {
+  let operationId: string | null = null;
+  let clipId: string | null = null;
+  let currentEvent = "";
+  for (const line of streamText.split(/\r?\n/)) {
+    if (line.startsWith("event:")) {
+      currentEvent = line.slice(6).trim();
+      continue;
+    }
+    if (!line.startsWith("data:")) continue;
+    const rawJson = line.slice(5).trim();
+    if (!rawJson || currentEvent !== "part") continue;
+    try {
+      const data = JSON.parse(rawJson) as { part?: { content?: { operation_id?: string; clip_id?: string } } };
+      const content = data.part?.content;
+      if (typeof content?.operation_id === "string") operationId = content.operation_id;
+      if (typeof content?.clip_id === "string") clipId = content.clip_id;
+    } catch {
+      // не JSON-строка потока (комментарий/keep-alive) — пропускаем
+    }
+  }
+  return { operationId, clipId };
 }
 
 // Генерирует не из истории переписки, а из одного промпта — последнего
-// сообщения пользователя.
+// сообщения пользователя. Возвращает готовый буфер аудио — сохранение
+// как вложение чата и построение ссылки делает вызывающий код в index.ts
+// (у него есть topicId, здесь его нет и не должно быть — providers.ts не
+// знает о темах чата вообще, только о самих провайдерах).
 export async function askFlowMusic(prompt: string): Promise<FlowMusicResult> {
-  const apiKey = await getFlowMusicKey();
-  if (!apiKey) throw new FlowMusicNotConfiguredError();
   const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
 
-  let res: Response;
-  try {
-    res = await sendFlowMusicRequest(baseUrl, apiKey, prompt);
-  } catch (err) {
-    if (!(err instanceof Error && err.name === "AbortError")) throw err;
-    await sleep(RETRY_DELAY_MS);
-    try {
-      res = await sendFlowMusicRequest(baseUrl, apiKey, prompt);
-    } catch (err2) {
-      if (err2 instanceof Error && err2.name === "AbortError") throw new Error(`FlowMusic API не ответил вовремя дважды подряд`);
-      throw err2;
-    }
-  }
-  if (!res.ok) throw new Error(`FlowMusic API ошибка ${res.status}: ${await res.text().catch(() => "")}`);
+  const project = (await (
+    await flowMusicFetch(baseUrl, "/__api/projects", {
+      method: "POST",
+      body: JSON.stringify({ title: prompt.slice(0, 100), description: prompt }),
+    })
+  ).json()) as { id?: string };
+  if (!project.id) throw new Error("FlowMusic не вернул id проекта");
 
-  const data = (await res.json()) as { audio_url?: string; url?: string };
-  const audioUrl = data.audio_url ?? data.url;
-  if (!audioUrl) throw new Error("FlowMusic API не вернул ссылку на аудио");
-  return { audioUrl };
+  const job = (await (
+    await flowMusicFetch(baseUrl, "/__api/conversation", {
+      method: "POST",
+      body: JSON.stringify({ parts: [{ content: prompt, part_kind: "user-prompt" }], client_context: {}, project_id: project.id }),
+    })
+  ).json()) as { job_id?: string };
+  if (!job.job_id) throw new Error("FlowMusic не вернул job_id");
+
+  let operationId: string | null = null;
+  let clipId: string | null = null;
+  for (let attempt = 0; attempt < FLOWMUSIC_MAX_POLL_ATTEMPTS; attempt++) {
+    if (!operationId) {
+      const streamText = await (await flowMusicFetch(baseUrl, `/__api/messages/${job.job_id}/stream?last_id=0`)).text();
+      const parsed = parseFlowMusicStream(streamText);
+      operationId = parsed.operationId;
+      clipId = parsed.clipId;
+    }
+    if (operationId && !clipId) {
+      const status = (await (await flowMusicFetch(baseUrl, `/__api/audio-create-song-status/${operationId}`)).json()) as {
+        clip_id?: string;
+        error_type?: string;
+        error_message?: string;
+      };
+      if (status.error_type) {
+        throw new Error(`FlowMusic — ошибка генерации: ${status.error_type}${status.error_message ? " — " + status.error_message : ""}`);
+      }
+      if (status.clip_id) clipId = status.clip_id;
+    }
+    if (clipId) break;
+    await sleep(FLOWMUSIC_POLL_INTERVAL_MS);
+  }
+  if (!clipId) throw new Error("FlowMusic не закончил генерацию за отведённое время — попробуй ещё раз");
+
+  const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${clipId}?format=m4a`);
+  if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
+  const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+  return { audioBuffer, mimeType: "audio/mp4", filename: `${clipId}.m4a` };
 }

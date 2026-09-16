@@ -286,7 +286,7 @@ const EXTRA_SCRIPT = `
     var btn = e.target.closest('.delete-server-btn');
     if (!btn) return;
     var name = btn.getAttribute('data-name');
-    if (!confirm('Удалить сервер "' + name + '" из списка? История метрик тоже удалится безвозвратно.')) return;
+    if (!(await nexusConfirm('Удалить сервер "' + name + '" из списка? История метрик тоже удалится безвозвратно.', { okLabel: 'Удалить', danger: true }))) return;
     try {
       var res = await fetch('api/servers/' + encodeURIComponent(name), { method: 'DELETE' });
       var data = await res.json().catch(function () { return {}; });

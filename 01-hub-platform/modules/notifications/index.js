@@ -419,7 +419,7 @@ const EXTRA_SCRIPT = `
   }
 
   document.getElementById('clearEventsBtn').addEventListener('click', async function () {
-    if (!confirm('Очистить журнал? Текущие записи скроются из списка здесь — сам системный журнал на сервере не трогается и не удаляется, посмотреть его целиком по-прежнему можно напрямую на сервере.')) return;
+    if (!(await nexusConfirm('Очистить журнал? Текущие записи скроются из списка здесь — сам системный журнал на сервере не трогается и не удаляется, посмотреть его целиком по-прежнему можно напрямую на сервере.', { okLabel: 'Очистить', danger: true }))) return;
     var btn = document.getElementById('clearEventsBtn');
     btn.disabled = true;
     try {

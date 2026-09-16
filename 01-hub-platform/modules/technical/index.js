@@ -108,11 +108,11 @@ const BODY_CONTENT = `
   </section>
 
   <section>
-    <div class="section-title">flowmusic — ключ api (генерация музыки)</div>
+    <div class="section-title">flowmusic — токен сессии (генерация музыки)</div>
     <div class="box">
       <div class="row">
         <span class="dot unset" id="flowmusicDot"></span>
-        <input type="password" id="flowmusicKeyInput" placeholder="FlowMusic API-ключ" autocomplete="off" />
+        <input type="password" id="flowmusicKeyInput" placeholder="Токен сессии FlowMusic — весь JSON целиком" autocomplete="off" />
         <button class="icon-btn" id="saveFlowmusicKeyBtn" title="сохранить">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -123,7 +123,7 @@ const BODY_CONTENT = `
       </div>
       <div class="row" style="margin-top:8px;">
         <span class="dot unset" id="flowmusicBaseUrlDot"></span>
-        <input type="text" id="flowmusicBaseUrlInput" placeholder="Свой адрес вместо flowmusic.ai (необязательно)" autocomplete="off" />
+        <input type="text" id="flowmusicBaseUrlInput" placeholder="Свой адрес вместо flowmusic.app (необязательно)" autocomplete="off" />
         <button class="icon-btn" id="saveFlowmusicBaseUrlBtn" title="сохранить">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -132,7 +132,19 @@ const BODY_CONTENT = `
           </svg>
         </button>
       </div>
-      <div class="empty-note" style="margin-top:6px;">выбирается прямо над чатом, отдельно на каждое сообщение — отвечает аудио, не текстом. Второе поле — не ключ, а базовый адрес запроса, пусто = адрес по умолчанию</div>
+      <div class="empty-note" style="margin-top:6px;">
+        У FlowMusic нет официального API — вместо ключа нужен токен браузерной
+        сессии. На flowmusic.app, залогинившись, открой DevTools → Application →
+        Cookies, найди куку вида "sb-...-auth-token" (или несколько
+        "sb-...-auth-token.0/.1/..." — тогда склей их значения по порядку) и
+        вставь сюда как есть, целиком (можно с префиксом "base64-" — он
+        обрежется сам). Внутри — access_token/refresh_token/expires_at:
+        access_token живёт около часа, но обновляется автоматически по
+        refresh_token, пока не разлогинишься на самом flowmusic.app. Выбирается
+        прямо над чатом, отдельно на каждое сообщение — отвечает аудио, не
+        текстом. Второе поле — не ключ, а базовый адрес запроса, пусто = адрес
+        по умолчанию.
+      </div>
     </div>
   </section>
 

@@ -88,6 +88,29 @@ const SHARED_STYLES = `
   .empty-note { color: var(--muted); font-size: 0.85rem; font-family: var(--font-mono); }
   .item-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 4px; }
   .forget-btn { cursor: pointer; color: var(--red); flex: none; }
+
+  /* ===== Окно подтверждения — замена системного confirm() браузера =====
+     Тот же визуальный язык, что у модалки достижений в cheevoscope
+     (тёмный блюр-оверлей + карточка с фиолетовой рамкой), чтобы не
+     выбиваться чужеродным системным попапом посреди тёмной темы. */
+  .nx-confirm-overlay {
+    position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+    padding: 20px 16px; background: rgba(3, 5, 9, 0.72); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none; transition: opacity 0.15s;
+  }
+  .nx-confirm-overlay.show { opacity: 1; pointer-events: auto; }
+  .nx-confirm-box {
+    background: var(--bg); border: 1px solid rgba(179, 136, 255, 0.3); border-radius: 14px;
+    width: 100%; max-width: 420px; padding: 20px 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    transform: translateY(8px); transition: transform 0.15s;
+  }
+  .nx-confirm-overlay.show .nx-confirm-box { transform: translateY(0); }
+  .nx-confirm-title { font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+  .nx-confirm-message { font-family: var(--font-sans); font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 20px; white-space: pre-wrap; }
+  .nx-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  .nx-confirm-actions button { margin: 0; }
+  .nx-confirm-ok.danger { background: rgba(239, 83, 80, 0.14); border-color: rgba(239, 83, 80, 0.4); color: #ff8a80; }
+  .nx-confirm-ok.danger:hover { background: rgba(239, 83, 80, 0.24); border-color: rgba(239, 83, 80, 0.5); box-shadow: 0 0 14px rgba(239, 83, 80, 0.25); }
 `;
 
 const HEADER_SCRIPT = `
@@ -125,6 +148,58 @@ const HEADER_SCRIPT = `
     if (isEditable) return;
     window.location.href = '/';
   });
+
+  // Замена системного confirm() браузера — тот показывает адрес хаба и
+  // выглядит инородно поверх тёмной темы (плюс на части браузеров/ОС
+  // выглядит по-разному). window.nexusConfirm(message, opts) — тот же
+  // смысл (Promise<boolean>, true = подтвердил), но в стилистике
+  // приложения. opts.danger — красная кнопка подтверждения для
+  // необратимых действий (удаление и т.п.), opts.okLabel/cancelLabel —
+  // подписи кнопок, opts.title — заголовок окна.
+  window.nexusConfirm = function (message, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'nx-confirm-overlay';
+      overlay.innerHTML =
+        '<div class="nx-confirm-box">' +
+          '<div class="nx-confirm-title"></div>' +
+          '<div class="nx-confirm-message"></div>' +
+          '<div class="nx-confirm-actions">' +
+            '<button class="nx-confirm-cancel" type="button"></button>' +
+            '<button class="nx-confirm-ok" type="button"></button>' +
+          '</div>' +
+        '</div>';
+      overlay.querySelector('.nx-confirm-title').textContent = opts.title || 'Подтвердите действие';
+      overlay.querySelector('.nx-confirm-message').textContent = message;
+      overlay.querySelector('.nx-confirm-cancel').textContent = opts.cancelLabel || 'Отмена';
+      var okBtn = overlay.querySelector('.nx-confirm-ok');
+      okBtn.textContent = opts.okLabel || 'OK';
+      if (opts.danger) okBtn.classList.add('danger');
+      document.body.appendChild(overlay);
+      // requestAnimationFrame — иначе браузер схлопывает добавление класса
+      // с начальным рендером в один кадр, transition для появления не
+      // успевает сыграть (элемент сразу "already shown").
+      requestAnimationFrame(function () { overlay.classList.add('show'); });
+
+      function close(result) {
+        document.removeEventListener('keydown', onKeydown);
+        overlay.classList.remove('show');
+        setTimeout(function () { overlay.remove(); }, 150);
+        resolve(result);
+      }
+      // Только Escape — Enter уже работает нативно на сфокусированной
+      // кнопке (иначе Tab на "Отмена" + Enter всё равно подтверждал бы).
+      function onKeydown(e) {
+        if (e.key === 'Escape') close(false);
+      }
+      document.addEventListener('keydown', onKeydown);
+      okBtn.addEventListener('click', function () { close(true); });
+      overlay.querySelector('.nx-confirm-cancel').addEventListener('click', function () { close(false); });
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+      okBtn.focus();
+    });
+  };
 `;
 
 // title — заголовок модуля. extraHead — доп. <style>/<meta>. bodyContent —

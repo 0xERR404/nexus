@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import fastifyCookie from "@fastify/cookie";
 import fastifyFormbody from "@fastify/formbody";
 import fastifyMultipart from "@fastify/multipart";
-import { mkdir, appendFile, readFile } from "node:fs/promises";
+import { mkdir, appendFile, readFile, writeFile } from "node:fs/promises";
 import { createWriteStream, readFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
@@ -270,7 +270,8 @@ type Provider = "deepseek" | "gemini" | "flowmusic" | "claude";
 async function getReply(
   context: { role: "system" | "user" | "assistant"; content: string }[],
   provider: Provider,
-  model?: string
+  model: string | undefined,
+  topicId: string
 ): Promise<{ content: string; usage?: TokenUsage; model?: string }> {
   if (provider === "gemini") {
     return askGemini(context);
@@ -280,8 +281,10 @@ async function getReply(
   }
   if (provider === "flowmusic") {
     const lastUserMessage = [...context].reverse().find((m) => m.role === "user");
-    const { audioUrl } = await askFlowMusic(lastUserMessage?.content ?? "");
-    return { content: `!audio(${audioUrl})` };
+    const { audioBuffer, filename } = await askFlowMusic(lastUserMessage?.content ?? "");
+    const saved = await saveChatAttachment(topicId, audioBuffer, filename);
+    if (!saved) throw new Error("не удалось сохранить сгенерированное аудио — некорректный topicId");
+    return { content: `!audio(${saved.url})` };
   }
   return askDeepSeek(context, model);
 }
@@ -304,7 +307,41 @@ function safeJoin(baseDir: string, ...segments: string[]): string | null {
   return target;
 }
 
-// Файл сохраняется на диск, в сообщение уходит только короткая ссылка.
+// Общее место сохранения для аудио, сгенерированного FlowMusic (см.
+// getReply ниже) — тот же каталог и та же схема ссылки, что и у файлов,
+// загруженных пользователем (см. маршрут ниже), но принимает готовый
+// Buffer, а не поток — у FlowMusic это уже скачанный целиком файл.
+async function saveChatAttachment(topicId: string, buffer: Buffer, filename: string): Promise<{ id: string; url: string } | null> {
+  const safeName = filename.replace(/[^\w.\-а-яА-ЯёЁ]/g, "_");
+  const id = crypto.randomUUID();
+  const dir = safeJoin(HUB_DATA_DIR, "chat", "attachments", topicId);
+  if (!dir) return null;
+  await mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, `${id}-${safeName}`);
+  await writeFile(filePath, buffer);
+  return { id, url: `/api/chat/${topicId}/attachments/${id}-${encodeURIComponent(safeName)}` };
+}
+
+// Расширение -> Content-Type для отдачи вложений ниже. Раньше вообще не
+// выставлялся (Fastify отдавал бы Buffer как application/octet-stream по
+// умолчанию) — для <img> браузеры почти всегда распознают формат по
+// содержимому и без него, а вот <audio> (см. !audio(URL) в dashboard.ts)
+// куда менее терпим к отсутствию/неверному Content-Type.
+const ATTACHMENT_CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+};
+
+// Файл сохраняется на диск потоково (не буферизуется целиком в памяти,
+// в отличие от saveChatAttachment выше — там уже готовый Buffer, тут
+// поток из multipart-формы), в сообщение уходит только короткая ссылка.
 app.post<{ Params: { topicId: string } }>("/api/chat/:topicId/attachments", async (request, reply) => {
   const data = await request.file();
   if (!data) {
@@ -336,6 +373,8 @@ app.get<{ Params: { topicId: string; filename: string } }>(
     }
     try {
       const data = await readFile(filePath);
+      const ext = path.extname(request.params.filename).toLowerCase();
+      reply.header("Content-Type", ATTACHMENT_CONTENT_TYPES[ext] ?? "application/octet-stream");
       reply.header("Content-Disposition", `inline; filename="${request.params.filename}"`);
       return data;
     } catch {
@@ -396,7 +435,7 @@ app.post<{ Params: { topicId: string }; Body: { content?: string; model?: string
 
     try {
       const context = await buildContext(topicId);
-      const { content: replyContent, usage, model: resolvedModel } = await getReply(context, provider, model);
+      const { content: replyContent, usage, model: resolvedModel } = await getReply(context, provider, model, topicId);
       const assistantMessage = newMessage("assistant", replyContent, provider, usage, resolvedModel);
       await appendMessage(topicId, assistantMessage);
       if (usage) {

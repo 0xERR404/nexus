@@ -414,7 +414,7 @@ const EXTRA_SCRIPT = `
     }
 
     if (delBtn) {
-      if (!confirm('Удалить эту операцию?')) return;
+      if (!(await nexusConfirm('Удалить эту операцию?', { okLabel: 'Удалить', danger: true }))) return;
       try {
         await fetch('api/transactions/' + encodeURIComponent(id), { method: 'DELETE' });
         loadState();
