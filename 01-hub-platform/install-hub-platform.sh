@@ -17,7 +17,14 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || true
+# export LC_ALL=X 2>/dev/null || ... не защищает ни от чего — export
+# никогда не возвращает ошибку, даже для несуществующей локали. Проверяем
+# через locale -a перед выбором (тот же фикс, что и в nexus404-base-setup.sh).
+if locale -a 2>/dev/null | grep -qix 'C\.utf8'; then
+    export LC_ALL=C.UTF-8
+elif locale -a 2>/dev/null | grep -qix 'en_US\.utf8'; then
+    export LC_ALL=en_US.UTF-8
+fi
 
 # IS_TTY запоминаем СЕЙЧАС, до enable_full_logging ниже — тот делает
 # exec > >(tee ...), после чего [ -t 1 ] всегда лжёт (stdout стал
@@ -39,6 +46,13 @@ STATEFILE="$STATE_DIR/state"
 LOGFILE="$STATE_DIR/install.log"
 mkdir -p "$STATE_DIR"
 touch "$STATEFILE" "$LOGFILE"
+
+# Глобально, не внутри отдельного шага — раньше объявлялась только в
+# ветке "else" шага 4 ("файлы хаба и Caddy"), и на сервере, где этот шаг
+# уже пройден в прошлый раз (та ветка пропускается), к шагу 4b
+# переменная оставалась необъявленной — "SCRIPT_DIR: unbound variable"
+# под set -u. Нужна почти на каждом шаге, объявляем один раз здесь.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Логирование в файл + вывод в терминал, как в базовом скрипте ---
 enable_full_logging() {
@@ -445,7 +459,6 @@ else
     echo "${YELLOW}[?]${NC} Ожидается, что этот скрипт лежит рядом с docker-compose.yml,"
     echo "    Caddyfile и папкой hub/ (из репозитория) — копирую их в $NEXUS_DIR"
 
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     for f in docker-compose.yml Caddyfile; do
         if [ ! -f "$SCRIPT_DIR/$f" ]; then
             echo "${RED}[!]${NC} Не найден $SCRIPT_DIR/$f — проверь, что запускаешь из"
