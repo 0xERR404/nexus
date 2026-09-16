@@ -1,0 +1,16 @@
+{
+  "name": "nexus404-host-bridge",
+  "version": "1.5.19",
+  "private": true,
+  "description": "NEXUS404 — host-bridge (демон на хосте, исполняет привилегированные действия по белому списку)",
+  "type": "module",
+  "main": "dist/bridge.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/bridge.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^20.14.0"
+  }
+}
