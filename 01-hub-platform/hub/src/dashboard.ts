@@ -712,7 +712,13 @@ ${BASE_STYLES}
      .msg-block.role-assistant явный align-self: flex-start (не stretch),
      без ширины блок садится по размеру своего содержимого (shrink-to-fit)
      и остаётся узким, max-width лишь разрешает быть шире, не заставляет. */
+  /* 50% на широком экране — на телефоне (<560px) элементы плеера
+     (кнопка+полоса+время+скачать) физически не влезли бы в такую узкую
+     половину, там оставляем на всю ширину. */
   .msg-block.has-audio { max-width: 100%; width: 100%; }
+  @media (min-width: 560px) {
+    .msg-block.has-audio { max-width: 50%; width: 50%; }
+  }
   .msg-block.role-assistant { align-self: flex-start; margin-right: auto; background: rgba(255, 204, 102, 0.04); border: 1px solid rgba(255, 204, 102, 0.12); }
   .msg-block.role-user { align-self: flex-end; margin-left: auto; background: rgba(179, 136, 255, 0.07); border: 1px solid rgba(179, 136, 255, 0.15); box-shadow: 0 0 14px rgba(179, 136, 255, 0.08); }
   .msg-block.typing { box-shadow: 0 0 14px rgba(255, 204, 102, 0.1); }
@@ -755,6 +761,13 @@ ${BASE_STYLES}
     box-shadow: 0 0 8px rgba(179, 136, 255, 0.5); pointer-events: none;
   }
   .chat-audio-time { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); }
+  .chat-audio-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .chat-audio-download {
+    flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); border-radius: 4px; transition: color 0.15s, background 0.15s;
+  }
+  .chat-audio-download svg { width: 13px; height: 13px; }
+  .chat-audio-download:hover { color: var(--accent); background: rgba(179, 136, 255, 0.1); }
   .chat-audio-player.loading .chat-audio-play { opacity: 0.5; pointer-events: none; }
 
   /* Блок кода из ответа модели (тройные бэктики) — раньше рендерился
@@ -1111,7 +1124,12 @@ ${BASE_STYLES}
         '</button>' +
         '<div class="chat-audio-body">' +
           '<div class="chat-audio-track"><div class="chat-audio-track-bar"><div class="chat-audio-progress"></div></div></div>' +
-          '<span class="chat-audio-time">0:00</span>' +
+          '<div class="chat-audio-meta">' +
+            '<span class="chat-audio-time">0:00</span>' +
+            '<a class="chat-audio-download" href="' + url + '" download title="Скачать">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
+            '</a>' +
+          '</div>' +
         '</div>' +
         '<audio preload="metadata" src="' + url + '"></audio>' +
       '</div>';

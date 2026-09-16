@@ -2,8 +2,8 @@ import Fastify from "fastify";
 import fastifyCookie from "@fastify/cookie";
 import fastifyFormbody from "@fastify/formbody";
 import fastifyMultipart from "@fastify/multipart";
-import { mkdir, appendFile, readFile, writeFile } from "node:fs/promises";
-import { createWriteStream, readFileSync } from "node:fs";
+import { mkdir, appendFile, readFile, writeFile, stat } from "node:fs/promises";
+import { createReadStream, createWriteStream, readFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -382,16 +382,47 @@ app.get<{ Params: { topicId: string; filename: string } }>(
       reply.code(400);
       return { error: "некорректный путь" };
     }
+    let fileStat;
     try {
-      const data = await readFile(filePath);
-      const ext = path.extname(request.params.filename).toLowerCase();
-      reply.header("Content-Type", ATTACHMENT_CONTENT_TYPES[ext] ?? "application/octet-stream");
-      reply.header("Content-Disposition", `inline; filename="${request.params.filename}"`);
-      return data;
+      fileStat = await stat(filePath);
     } catch {
       reply.code(404);
       return { error: "не найдено" };
     }
+
+    const ext = path.extname(request.params.filename).toLowerCase();
+    reply.header("Content-Type", ATTACHMENT_CONTENT_TYPES[ext] ?? "application/octet-stream");
+    reply.header("Content-Disposition", `inline; filename="${request.params.filename}"`);
+    // Accept-Ranges — рекламируем поддержку Range всегда, даже вне самого
+    // Range-запроса, иначе некоторые браузеры/плееры не станут ПРОБОВАТЬ
+    // сикать вообще, посчитав сервер неспособным на это в принципе.
+    reply.header("Accept-Ranges", "bytes");
+
+    // Раньше файл всегда читался и отдавался целиком (200), без учёта
+    // заголовка Range — HTML5 <audio> перематывает через ЧАСТИЧНЫЙ запрос
+    // байт (Range: bytes=X-Y, ожидает 206), особенно для больших
+    // несжатых wav; без поддержки Range клик по таймлайну у части
+    // браузеров вместо перемотки на самом деле просто перезапускает
+    // проигрывание с начала (жалоба пользователя — ровно этот симптом).
+    const rangeHeader = request.headers.range;
+    if (!rangeHeader) {
+      reply.header("Content-Length", fileStat.size);
+      return createReadStream(filePath);
+    }
+
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    const start = match?.[1] ? parseInt(match[1], 10) : 0;
+    const end = match?.[2] ? parseInt(match[2], 10) : fileStat.size - 1;
+    if (!match || Number.isNaN(start) || Number.isNaN(end) || start > end || end >= fileStat.size) {
+      reply.code(416); // Range Not Satisfiable
+      reply.header("Content-Range", `bytes */${fileStat.size}`);
+      return reply.send();
+    }
+
+    reply.code(206);
+    reply.header("Content-Range", `bytes ${start}-${end}/${fileStat.size}`);
+    reply.header("Content-Length", end - start + 1);
+    return createReadStream(filePath, { start, end });
   }
 );
 
