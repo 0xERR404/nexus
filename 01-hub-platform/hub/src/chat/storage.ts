@@ -14,6 +14,11 @@ export interface Topic {
   provider: "deepseek" | "gemini" | "flowmusic" | "claude";
   createdAt: string;
   lastMessageAt: string | null;
+  // Только для provider === "flowmusic" — id проекта на стороне FlowMusic,
+  // переиспользуется на каждое следующее сообщение в этой же теме, а не
+  // создаётся заново — иначе на стороне самого FlowMusic каждое сообщение
+  // в одной теме хаба превращалось бы в отдельную новую сессию/проект.
+  flowmusicProjectId?: string;
 }
 
 export interface Message {
@@ -130,6 +135,19 @@ export async function appendMessage(topicId: string, message: Message): Promise<
     const t = topics.find((x) => x.id === topicId);
     if (t) {
       t.lastMessageAt = message.timestamp;
+      await writeTopicsRaw(topics);
+    }
+  });
+}
+
+// Сохраняется один раз при первом сообщении FlowMusic в теме, дальше
+// переиспользуется — см. Topic.flowmusicProjectId.
+export async function setTopicFlowMusicProjectId(topicId: string, projectId: string): Promise<void> {
+  await withFileLock(TOPICS_FILE, async () => {
+    const topics = await readTopicsRaw();
+    const t = topics.find((x) => x.id === topicId);
+    if (t) {
+      t.flowmusicProjectId = projectId;
       await writeTopicsRaw(topics);
     }
   });

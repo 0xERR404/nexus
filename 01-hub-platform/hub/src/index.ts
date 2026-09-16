@@ -20,7 +20,7 @@ import {
 } from "./auth.js";
 import { renderDashboard, renderChatPage } from "./dashboard.js";
 import { getKeyStatus, setKey, clearKey, getMonitoringAgentToken, getSteamApiKey, getSteamId, getRaUsername, getRaApiKey } from "./keys.js";
-import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage } from "./chat/storage.js";
+import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage, setTopicFlowMusicProjectId } from "./chat/storage.js";
 import { buildContext } from "./chat/context.js";
 import { askDeepSeek, DeepSeekNotConfiguredError, getDeepSeekBalance, getProviderStatus, askGemini, GeminiNotConfiguredError, askFlowMusic, FlowMusicNotConfiguredError, askClaude, ClaudeNotConfiguredError } from "./chat/providers.js";
 import { getVapidKeys, addSubscription, removeSubscription, sendPushToAll, getSubscriptionCount } from "./push.js";
@@ -281,10 +281,14 @@ async function getReply(
   }
   if (provider === "flowmusic") {
     const lastUserMessage = [...context].reverse().find((m) => m.role === "user");
-    // FlowMusic обычно отдаёт сразу несколько вариантов (по опыту
-    // пользователя — 2) на один запрос — сохраняем и показываем ВСЕ,
-    // не только первый (раньше терялись остальные молча).
-    const tracks = await askFlowMusic(lastUserMessage?.content ?? "");
+    // Переиспользуем project_id из темы, если он уже был создан на
+    // предыдущем сообщении — иначе на стороне FlowMusic каждое сообщение
+    // в одной теме хаба заводило бы отдельную новую сессию/проект.
+    const topic = await getTopic(topicId);
+    const { tracks, projectId } = await askFlowMusic(lastUserMessage?.content ?? "", topic?.flowmusicProjectId);
+    if (!topic?.flowmusicProjectId) {
+      await setTopicFlowMusicProjectId(topicId, projectId).catch(() => {});
+    }
     const markers: string[] = [];
     for (const track of tracks) {
       const saved = await saveChatAttachment(topicId, track.audioBuffer, track.filename);

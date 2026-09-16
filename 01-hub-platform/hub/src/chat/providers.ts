@@ -493,21 +493,36 @@ interface FlowMusicTrackState {
 // каждого как отдельное вложение чата и построение ссылок делает
 // вызывающий код в index.ts (у него есть topicId, здесь его нет и не
 // должно быть — providers.ts не знает о темах чата вообще).
-export async function askFlowMusic(prompt: string): Promise<FlowMusicResult[]> {
+export interface FlowMusicGenerateResult {
+  tracks: FlowMusicResult[];
+  projectId: string;
+}
+
+// existingProjectId — если задан (тема уже генерировала музыку раньше),
+// НЕ создаём новый проект на стороне FlowMusic — переиспользуем тот же,
+// иначе там каждое сообщение внутри одной темы хаба превращалось бы в
+// отдельную новую сессию (реальная жалоба: "в самом FlowMusic создалась
+// новая сессия"). Возвращаем projectId всегда — вызывающий код в
+// index.ts сохраняет его в теме при первом же сообщении.
+export async function askFlowMusic(prompt: string, existingProjectId?: string): Promise<FlowMusicGenerateResult> {
   const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
 
-  const project = (await (
-    await flowMusicFetch(baseUrl, "/__api/projects", {
-      method: "POST",
-      body: JSON.stringify({ title: prompt.slice(0, 100), description: prompt }),
-    })
-  ).json()) as { id?: string };
-  if (!project.id) throw new Error("FlowMusic не вернул id проекта");
+  let projectId = existingProjectId;
+  if (!projectId) {
+    const project = (await (
+      await flowMusicFetch(baseUrl, "/__api/projects", {
+        method: "POST",
+        body: JSON.stringify({ title: prompt.slice(0, 100), description: prompt }),
+      })
+    ).json()) as { id?: string };
+    if (!project.id) throw new Error("FlowMusic не вернул id проекта");
+    projectId = project.id;
+  }
 
   const job = (await (
     await flowMusicFetch(baseUrl, "/__api/conversation", {
       method: "POST",
-      body: JSON.stringify({ parts: [{ content: prompt, part_kind: "user-prompt" }], client_context: {}, project_id: project.id }),
+      body: JSON.stringify({ parts: [{ content: prompt, part_kind: "user-prompt" }], client_context: {}, project_id: projectId }),
     })
   ).json()) as { job_id?: string };
   if (!job.job_id) throw new Error("FlowMusic не вернул job_id");
@@ -559,5 +574,5 @@ export async function askFlowMusic(prompt: string): Promise<FlowMusicResult[]> {
     const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
     results.push({ audioBuffer, mimeType: "audio/wav", filename: `${track.clipId}.wav` });
   }
-  return results;
+  return { tracks: results, projectId };
 }
