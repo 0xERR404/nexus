@@ -707,8 +707,12 @@ ${BASE_STYLES}
   .msg-block { font-family: var(--font-mono); font-size: 0.9rem; max-width: 88%; padding: 8px 10px; border-radius: 8px; }
   /* Сообщения с плеером FlowMusic — на всю доступную ширину, не 88%: у
      текстовых сообщений узкий блок читается лучше, у плеера — наоборот,
-     чем шире, тем удобнее целиться в полосу перемотки, особенно с пальца. */
-  .msg-block.has-audio { max-width: 100%; }
+     чем шире, тем удобнее целиться в полосу перемотки, особенно с пальца.
+     width, не только max-width — .terminal-lines это flex-column, а у
+     .msg-block.role-assistant явный align-self: flex-start (не stretch),
+     без ширины блок садится по размеру своего содержимого (shrink-to-fit)
+     и остаётся узким, max-width лишь разрешает быть шире, не заставляет. */
+  .msg-block.has-audio { max-width: 100%; width: 100%; }
   .msg-block.role-assistant { align-self: flex-start; margin-right: auto; background: rgba(255, 204, 102, 0.04); border: 1px solid rgba(255, 204, 102, 0.12); }
   .msg-block.role-user { align-self: flex-end; margin-left: auto; background: rgba(179, 136, 255, 0.07); border: 1px solid rgba(179, 136, 255, 0.15); box-shadow: 0 0 14px rgba(179, 136, 255, 0.08); }
   .msg-block.typing { box-shadow: 0 0 14px rgba(255, 204, 102, 0.1); }
