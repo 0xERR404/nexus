@@ -517,8 +517,9 @@ export async function askFlowMusic(prompt: string): Promise<FlowMusicResult> {
   }
   if (!clipId) throw new Error("FlowMusic не закончил генерацию за отведённое время — попробуй ещё раз");
 
-  const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${clipId}?format=m4a`);
+  // wav — без потерь (m4a легче, но по запросу пользователя точность важнее размера).
+  const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${clipId}?format=wav`);
   if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
   const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-  return { audioBuffer, mimeType: "audio/mp4", filename: `${clipId}.m4a` };
+  return { audioBuffer, mimeType: "audio/wav", filename: `${clipId}.wav` };
 }

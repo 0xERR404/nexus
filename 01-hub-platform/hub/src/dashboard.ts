@@ -714,7 +714,36 @@ ${BASE_STYLES}
   .msg-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
   .msg-text.err { color: var(--red); }
   .msg-text .chat-image { max-width: 100%; border-radius: var(--card-radius); border: 1px solid var(--line); margin-top: 6px; display: block; }
-  .msg-text .chat-audio { width: 100%; margin-top: 6px; display: block; }
+
+  /* Плеер FlowMusic — раньше был голый <audio controls>, у каждого
+     браузера/ОС свой вид (часто нечитаемая заглушка, пока preload="none"
+     не дал метаданных, как на скриншоте с жалобой) — теперь свой, тот же
+     язык оформления, что у блока кода выше (карточка, граница, шапка). */
+  .chat-audio-player {
+    display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 8px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.25);
+  }
+  .chat-audio-play {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; background: rgba(179, 136, 255, 0.14);
+    border: 1px solid rgba(179, 136, 255, 0.4); color: var(--accent); cursor: pointer; padding: 0;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .chat-audio-play:hover { background: rgba(179, 136, 255, 0.24); box-shadow: 0 0 12px rgba(179, 136, 255, 0.25); }
+  .chat-audio-play svg { width: 14px; height: 14px; }
+  /* margin-left: 2px — визуальный центр треугольника play чуть смещён
+     влево от геометрического, без сдвига он выглядит "не по центру". */
+  .chat-audio-play .icon-play { margin-left: 2px; }
+  .chat-audio-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .chat-audio-track {
+    position: relative; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); cursor: pointer;
+  }
+  .chat-audio-progress {
+    position: absolute; inset: 0; width: 0%; border-radius: 3px; background: var(--accent);
+    box-shadow: 0 0 8px rgba(179, 136, 255, 0.5); pointer-events: none;
+  }
+  .chat-audio-time { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); }
+  .chat-audio-player.loading .chat-audio-play { opacity: 0.5; pointer-events: none; }
 
   /* Блок кода из ответа модели (тройные бэктики) — раньше рендерился
      как обычный текст в общем pre-wrap потоке ("простыня"), теперь —
@@ -976,6 +1005,64 @@ ${BASE_STYLES}
     return LANG_EXTENSIONS[key] || 'txt';
   }
 
+  // Своя карточка плеера вместо системного <audio controls> (см. CSS
+  // .chat-audio-player выше и разметку в formatMessageText ниже) — click/
+  // play/pause через делегирование не годится: события <audio> (timeupdate,
+  // ended, loadedmetadata) не всплывают по спецификации HTML5 вообще,
+  // единственный способ — навесить слушатели на каждый <audio> отдельно,
+  // сразу после того, как он реально попал в DOM (innerHTML не запускает
+  // никакие обработчики сам по себе).
+  function wireAudioPlayers(container) {
+    container.querySelectorAll('[data-audio-player]').forEach(function (player) {
+      const audio = player.querySelector('audio');
+      const playBtn = player.querySelector('.chat-audio-play');
+      const iconPlay = player.querySelector('.icon-play');
+      const iconPause = player.querySelector('.icon-pause');
+      const track = player.querySelector('.chat-audio-track');
+      const progress = player.querySelector('.chat-audio-progress');
+      const timeEl = player.querySelector('.chat-audio-time');
+
+      function fmt(seconds) {
+        if (!isFinite(seconds) || seconds < 0) return '0:00';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      playBtn.addEventListener('click', function () {
+        if (audio.paused) audio.play().catch(function () {}); else audio.pause();
+      });
+      audio.addEventListener('play', function () {
+        iconPlay.style.display = 'none';
+        iconPause.style.display = '';
+      });
+      audio.addEventListener('pause', function () {
+        iconPlay.style.display = '';
+        iconPause.style.display = 'none';
+      });
+      audio.addEventListener('ended', function () {
+        iconPlay.style.display = '';
+        iconPause.style.display = 'none';
+        progress.style.width = '0%';
+      });
+      audio.addEventListener('loadedmetadata', function () {
+        timeEl.textContent = fmt(0) + ' / ' + fmt(audio.duration);
+      });
+      audio.addEventListener('timeupdate', function () {
+        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        progress.style.width = pct + '%';
+        timeEl.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration || 0);
+      });
+      // Клик по треку — перемотка на позицию клика, не только play/pause.
+      track.addEventListener('click', function (e) {
+        if (!audio.duration) return;
+        const rect = track.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        audio.currentTime = pct * audio.duration;
+      });
+    });
+  }
+
   // Простой markdown: код тройными бэктиками, **жирный**, картинки ![alt](url).
   // Код вырезается первым и заменяется заглушкой — иначе ** внутри кода
   // задело бы последующий replace для жирного текста.
@@ -990,8 +1077,25 @@ ${BASE_STYLES}
     });
 
     result = result.replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1" class="chat-image" loading="lazy" />');
-    // FlowMusic отдаёт !audio(URL) — превращаем в плеер, как картинки выше.
-    result = result.replace(/!audio\\(([^)]+)\\)/g, '<audio controls preload="none" src="$1" class="chat-audio"></audio>');
+    // FlowMusic отдаёт !audio(URL) — своя карточка с play/pause и прогресс-
+    // баром (тот же язык оформления, что у блока кода выше), не голый
+    // системный <audio controls> — у того на разных браузерах/ОС разный
+    // вид, часто нечитаемая заглушка, пока preload="none" не подтянул
+    // метаданные. url уже прошёл escapeHtml вместе со всем текстом
+    // выше — та же безопасная схема, что и у ![alt](url) для картинок.
+    result = result.replace(/!audio\\(([^)]+)\\)/g, function (match, url) {
+      return '<div class="chat-audio-player" data-audio-player>' +
+        '<button class="chat-audio-play" type="button" aria-label="Играть">' +
+          '<svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>' +
+          '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
+        '</button>' +
+        '<div class="chat-audio-body">' +
+          '<div class="chat-audio-track"><div class="chat-audio-progress"></div></div>' +
+          '<span class="chat-audio-time">0:00</span>' +
+        '</div>' +
+        '<audio preload="metadata" src="' + url + '"></audio>' +
+      '</div>';
+    });
     result = result.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
 
     result = result.replace(/\u0000CODEBLOCK(\\d+)\u0000/g, function (m, i) {
@@ -1042,6 +1146,7 @@ ${BASE_STYLES}
       textEl.textContent = text;
     } else {
       textEl.innerHTML = formatMessageText(text);
+      wireAudioPlayers(textEl);
     }
     block.appendChild(roleEl);
     block.appendChild(textEl);
