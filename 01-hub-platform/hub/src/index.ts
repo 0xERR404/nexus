@@ -281,10 +281,17 @@ async function getReply(
   }
   if (provider === "flowmusic") {
     const lastUserMessage = [...context].reverse().find((m) => m.role === "user");
-    const { audioBuffer, filename } = await askFlowMusic(lastUserMessage?.content ?? "");
-    const saved = await saveChatAttachment(topicId, audioBuffer, filename);
-    if (!saved) throw new Error("не удалось сохранить сгенерированное аудио — некорректный topicId");
-    return { content: `!audio(${saved.url})` };
+    // FlowMusic обычно отдаёт сразу несколько вариантов (по опыту
+    // пользователя — 2) на один запрос — сохраняем и показываем ВСЕ,
+    // не только первый (раньше терялись остальные молча).
+    const tracks = await askFlowMusic(lastUserMessage?.content ?? "");
+    const markers: string[] = [];
+    for (const track of tracks) {
+      const saved = await saveChatAttachment(topicId, track.audioBuffer, track.filename);
+      if (!saved) throw new Error("не удалось сохранить сгенерированное аудио — некорректный topicId");
+      markers.push(`!audio(${saved.url})`);
+    }
+    return { content: markers.join("\n") };
   }
   return askDeepSeek(context, model);
 }

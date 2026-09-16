@@ -292,6 +292,13 @@ export async function askClaude(messages: ChatMessage[]): Promise<ChatReply> {
 const DEFAULT_FLOWMUSIC_BASE_URL = "https://www.flowmusic.app";
 const ENV_FLOWMUSIC_BASE_URL = process.env.FLOWMUSIC_BASE_URL;
 const FLOWMUSIC_TIMEOUT_MS = 60_000; // генерация музыки медленнее текста
+// Отдельный, куда более щедрый лимит именно на скачивание готового файла —
+// wav (без потерь, по запросу) весит на порядок больше m4a, обычный
+// 60-секундный таймаут на ЛЮБОЙ запрос к FlowMusic не рассчитан на
+// скачивание тела в несколько мегабайт целиком, а не только на ответ
+// заголовков. Реальный случай — "terminated" (так Node сообщает именно
+// об обрыве ПОСРЕДИ чтения тела ответа по таймауту, не о сетевой ошибке).
+const FLOWMUSIC_DOWNLOAD_TIMEOUT_MS = 300_000;
 const FLOWMUSIC_POLL_INTERVAL_MS = 3_000;
 const FLOWMUSIC_MAX_POLL_ATTEMPTS = 60; // до ~3 минут на генерацию
 // Отдельный Supabase-проект именно для авторизации flowmusic.app — не то
@@ -435,18 +442,23 @@ async function ensureFlowMusicAccessToken(): Promise<string> {
   return refreshed.accessToken;
 }
 
-async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}): Promise<Response> {
+async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}, timeoutMs = FLOWMUSIC_TIMEOUT_MS): Promise<Response> {
   const token = await ensureFlowMusicAccessToken();
   const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
   if (!headers["Content-Type"] && (init.method === "POST" || init.method === "PUT")) headers["Content-Type"] = "application/json";
-  return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, FLOWMUSIC_TIMEOUT_MS);
+  return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, timeoutMs);
 }
 
-// Статус генерации приходит Server-Sent-Events потоком, не обычным JSON —
-// вытаскиваем operation_id/clip_id из событий part построчно.
-function parseFlowMusicStream(streamText: string): { operationId: string | null; clipId: string | null } {
-  let operationId: string | null = null;
-  let clipId: string | null = null;
+// Статус генерации приходит Server-Sent-Events потоком, не обычным JSON.
+// FlowMusic обычно генерирует сразу НЕСКОЛЬКО вариантов на один запрос
+// (по опыту пользователя — обычно 2), у каждого варианта свой
+// operation_id в отдельном событии part — раньше здесь бралось только
+// ПОСЛЕДНЕЕ увиденное значение (перезаписывалось на каждой итерации),
+// первый вариант потерялся бы молча. Возвращаем ВСЕ различные
+// operation_id, в порядке первого появления, а не один.
+function parseFlowMusicStreamOperationIds(streamText: string): string[] {
+  const seen = new Set<string>();
+  const order: string[] = [];
   let currentEvent = "";
   for (const line of streamText.split(/\r?\n/)) {
     if (line.startsWith("event:")) {
@@ -457,23 +469,31 @@ function parseFlowMusicStream(streamText: string): { operationId: string | null;
     const rawJson = line.slice(5).trim();
     if (!rawJson || currentEvent !== "part") continue;
     try {
-      const data = JSON.parse(rawJson) as { part?: { content?: { operation_id?: string; clip_id?: string } } };
-      const content = data.part?.content;
-      if (typeof content?.operation_id === "string") operationId = content.operation_id;
-      if (typeof content?.clip_id === "string") clipId = content.clip_id;
+      const data = JSON.parse(rawJson) as { part?: { content?: { operation_id?: string } } };
+      const opId = data.part?.content?.operation_id;
+      if (typeof opId === "string" && !seen.has(opId)) {
+        seen.add(opId);
+        order.push(opId);
+      }
     } catch {
       // не JSON-строка потока (комментарий/keep-alive) — пропускаем
     }
   }
-  return { operationId, clipId };
+  return order;
+}
+
+interface FlowMusicTrackState {
+  clipId: string | null;
+  error: string | null;
 }
 
 // Генерирует не из истории переписки, а из одного промпта — последнего
-// сообщения пользователя. Возвращает готовый буфер аудио — сохранение
-// как вложение чата и построение ссылки делает вызывающий код в index.ts
-// (у него есть topicId, здесь его нет и не должно быть — providers.ts не
-// знает о темах чата вообще, только о самих провайдерах).
-export async function askFlowMusic(prompt: string): Promise<FlowMusicResult> {
+// сообщения пользователя. Возвращает МАССИВ готовых треков (обычно 2,
+// FlowMusic генерирует сразу несколько вариантов на запрос) — сохранение
+// каждого как отдельное вложение чата и построение ссылок делает
+// вызывающий код в index.ts (у него есть topicId, здесь его нет и не
+// должно быть — providers.ts не знает о темах чата вообще).
+export async function askFlowMusic(prompt: string): Promise<FlowMusicResult[]> {
   const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
 
   const project = (await (
@@ -492,34 +512,52 @@ export async function askFlowMusic(prompt: string): Promise<FlowMusicResult> {
   ).json()) as { job_id?: string };
   if (!job.job_id) throw new Error("FlowMusic не вернул job_id");
 
-  let operationId: string | null = null;
-  let clipId: string | null = null;
+  // operationId -> состояние. Перечитываем поток КАЖДУЮ итерацию (не
+  // только пока пусто) — operation_id второго/третьего варианта может
+  // появиться в потоке позже первого, не одновременно с ним.
+  const tracks = new Map<string, FlowMusicTrackState>();
   for (let attempt = 0; attempt < FLOWMUSIC_MAX_POLL_ATTEMPTS; attempt++) {
-    if (!operationId) {
-      const streamText = await (await flowMusicFetch(baseUrl, `/__api/messages/${job.job_id}/stream?last_id=0`)).text();
-      const parsed = parseFlowMusicStream(streamText);
-      operationId = parsed.operationId;
-      clipId = parsed.clipId;
+    const streamText = await (await flowMusicFetch(baseUrl, `/__api/messages/${job.job_id}/stream?last_id=0`)).text();
+    for (const opId of parseFlowMusicStreamOperationIds(streamText)) {
+      if (!tracks.has(opId)) tracks.set(opId, { clipId: null, error: null });
     }
-    if (operationId && !clipId) {
-      const status = (await (await flowMusicFetch(baseUrl, `/__api/audio-create-song-status/${operationId}`)).json()) as {
+
+    for (const [opId, state] of tracks) {
+      if (state.clipId || state.error) continue; // этот вариант уже готов или уже упал с ошибкой
+      const status = (await (await flowMusicFetch(baseUrl, `/__api/audio-create-song-status/${opId}`)).json()) as {
         clip_id?: string;
         error_type?: string;
         error_message?: string;
       };
       if (status.error_type) {
-        throw new Error(`FlowMusic — ошибка генерации: ${status.error_type}${status.error_message ? " — " + status.error_message : ""}`);
+        state.error = `${status.error_type}${status.error_message ? " — " + status.error_message : ""}`;
+      } else if (status.clip_id) {
+        state.clipId = status.clip_id;
       }
-      if (status.clip_id) clipId = status.clip_id;
     }
-    if (clipId) break;
+
+    const allSettled = tracks.size > 0 && Array.from(tracks.values()).every((t) => t.clipId || t.error);
+    if (allSettled) break;
     await sleep(FLOWMUSIC_POLL_INTERVAL_MS);
   }
-  if (!clipId) throw new Error("FlowMusic не закончил генерацию за отведённое время — попробуй ещё раз");
 
-  // wav — без потерь (m4a легче, но по запросу пользователя точность важнее размера).
-  const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${clipId}?format=wav`);
-  if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
-  const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-  return { audioBuffer, mimeType: "audio/wav", filename: `${clipId}.wav` };
+  const ready = Array.from(tracks.values()).filter((t): t is FlowMusicTrackState & { clipId: string } => Boolean(t.clipId));
+  if (ready.length === 0) {
+    const firstError = Array.from(tracks.values()).find((t) => t.error)?.error;
+    if (firstError) throw new Error(`FlowMusic — ошибка генерации: ${firstError}`);
+    throw new Error("FlowMusic не закончил генерацию за отведённое время — попробуй ещё раз");
+  }
+
+  // wav — без потерь (m4a легче, но по запросу пользователя точность важнее
+  // размера). Файл ощутимо больше m4a — отдельный, более щедрый таймаут
+  // именно на скачивание (см. FLOWMUSIC_DOWNLOAD_TIMEOUT_MS), обычный
+  // 60-секундный на скачивание нескольких мегабайт целиком не рассчитан.
+  const results: FlowMusicResult[] = [];
+  for (const track of ready) {
+    const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${track.clipId}?format=wav`, {}, FLOWMUSIC_DOWNLOAD_TIMEOUT_MS);
+    if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
+    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+    results.push({ audioBuffer, mimeType: "audio/wav", filename: `${track.clipId}.wav` });
+  }
+  return results;
 }
