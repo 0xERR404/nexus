@@ -590,3 +590,51 @@ export async function askFlowMusic(
   }
   return { tracks: results, projectId };
 }
+
+// Баланс — эндпоинт найден не у @justmpm/flowmusic (тот его не вызывает
+// вообще), а у более полной сторонней реализации FlowMusic2API (Go, с
+// БД и тестами, github.com/genz27/FlowMusic2API) — GET
+// /__api/billing/credits возвращает {data: {credits_remaining,
+// tokens_remaining}}, отдельно GET /__api/billing/subscription —
+// {data: {subscription_tier}}. Токен обновляется тем же механизмом,
+// что и для генерации (flowMusicFetch сам вызывает
+// ensureFlowMusicAccessToken()).
+export type FlowMusicBalanceResult =
+  | { configured: false }
+  | { configured: true; ok: true; creditsRemaining: number; tokensRemaining: number; subscriptionTier: string | null }
+  | { configured: true; ok: false; error: string };
+
+export async function getFlowMusicBalance(): Promise<FlowMusicBalanceResult> {
+  const raw = await getFlowMusicKey();
+  if (!raw) return { configured: false };
+  const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
+  try {
+    const creditsRes = await flowMusicFetch(baseUrl, "/__api/billing/credits");
+    if (!creditsRes.ok) return { configured: true, ok: false, error: `FlowMusic API ошибка ${creditsRes.status}: ${await creditsRes.text().catch(() => "")}` };
+    const creditsJson = (await creditsRes.json()) as { data?: { credits_remaining?: number; tokens_remaining?: number } };
+
+    // Подписка — отдельный запрос, необязательный: если этот конкретный
+    // эндпоинт недоступен/поменялся, показываем хотя бы кредиты, не
+    // проваливаем всё целиком из-за второстепенного поля.
+    let subscriptionTier: string | null = null;
+    try {
+      const subRes = await flowMusicFetch(baseUrl, "/__api/billing/subscription");
+      if (subRes.ok) {
+        const subJson = (await subRes.json()) as { data?: { subscription_tier?: string } };
+        subscriptionTier = subJson.data?.subscription_tier ?? null;
+      }
+    } catch {
+      // необязательно — молча пропускаем
+    }
+
+    return {
+      configured: true,
+      ok: true,
+      creditsRemaining: creditsJson.data?.credits_remaining ?? 0,
+      tokensRemaining: creditsJson.data?.tokens_remaining ?? 0,
+      subscriptionTier,
+    };
+  } catch (err) {
+    return { configured: true, ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

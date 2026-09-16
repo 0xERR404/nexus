@@ -427,7 +427,19 @@ const MODULES_SCRIPT = `
       } else {
         document.getElementById('billGeminiBalance').textContent = '\u043d/\u0434';
       }
-      document.getElementById('billFlowmusicBalance').textContent = keys.flowmusic ? '\u043d/\u0434' : '\u043d\u0435\u0442 \u043a\u043b\u044e\u0447\u0430';
+      const fmEl = document.getElementById('billFlowmusicBalance');
+      if (!keys.flowmusic) {
+        fmEl.textContent = '\u043d\u0435\u0442 \u043a\u043b\u044e\u0447\u0430';
+      } else {
+        const b = s.flowmusicBalance;
+        if (b && b.ok === true) {
+          fmEl.textContent = b.creditsRemaining + ' \u043a\u0440.';
+        } else if (b && b.ok === false) {
+          fmEl.textContent = '\u043e\u0448\u0438\u0431\u043a\u0430';
+        } else {
+          fmEl.textContent = '\u043f\u0440\u043e\u0432\u0435\u0440\u044f\u044e...';
+        }
+      }
       document.getElementById('billClaudeBalance').textContent = keys.claude ? '\u043d/\u0434' : '\u043d\u0435\u0442 \u043a\u043b\u044e\u0447\u0430';
 
       const dsEl = document.getElementById('billDeepseekBalance');

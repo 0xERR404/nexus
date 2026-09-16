@@ -40,9 +40,10 @@ function requestHub(path, method = 'GET') {
 // всегда есть, баланс только у DeepSeek, статус только у Gemini. Статус
 // ключей сюда намеренно не входит — его читает браузер напрямую.
 async function collectSummary() {
-  const [usageRes, balanceRes, geminiStatusRes] = await Promise.all([
+  const [usageRes, balanceRes, flowmusicBalanceRes, geminiStatusRes] = await Promise.all([
     requestHub('/internal/chat-usage'),
     requestHub('/internal/provider-balance/deepseek'),
+    requestHub('/internal/provider-balance/flowmusic'),
     requestHub('/internal/provider-status/gemini'),
   ]);
 
@@ -59,6 +60,7 @@ async function collectSummary() {
     byProviderLastDay: usage?.byProviderLastDay || {},
     byProviderLastMonth: usage?.byProviderLastMonth || {},
     deepseekBalance: balanceRes.status === 200 ? balanceRes.body : { configured: false },
+    flowmusicBalance: flowmusicBalanceRes.status === 200 ? flowmusicBalanceRes.body : { configured: false },
     geminiStatus: geminiStatusRes.status === 200 ? geminiStatusRes.body.status : null,
   };
 }
@@ -183,10 +185,19 @@ const EXTRA_SCRIPT = `
           // нужен Google Cloud Billing API). "Бесплатно" всегда, пока
           // ключ задан — точка рядом уже показывает, есть ли проблема.
           line.textContent = 'Бесплатно';
+        } else if (id === 'flowmusic') {
+          const b = s.flowmusicBalance;
+          if (b.ok === false) {
+            line.textContent = 'не удалось получить кредиты: ' + (b.error || 'неизвестная ошибка');
+          } else if (b.ok === true) {
+            line.textContent = 'кредиты: ' + b.creditsRemaining + (b.subscriptionTier ? ' (' + b.subscriptionTier + ')' : '');
+          } else {
+            line.textContent = 'кредиты: проверяю...';
+          }
         } else {
-          // FlowMusic/Claude — публичного REST-эндпоинта баланса по
-          // API-ключу нет (см. честные оговорки в flowmusic.ts/claude.ts)
-          // — ключ задан, но саму цифру баланса показать нечем.
+          // Claude — публичного REST-эндпоинта баланса по API-ключу нет
+          // (см. честные оговорки в chat/providers.ts) — ключ задан, но
+          // саму цифру баланса показать нечем.
           line.textContent = 'ключ задан — баланс через API не поддерживается';
         }
       });

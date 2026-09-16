@@ -22,7 +22,7 @@ import { renderDashboard, renderChatPage } from "./dashboard.js";
 import { getKeyStatus, setKey, clearKey, getMonitoringAgentToken, getSteamApiKey, getSteamId, getRaUsername, getRaApiKey } from "./keys.js";
 import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage, setTopicFlowMusicProjectId } from "./chat/storage.js";
 import { buildContext } from "./chat/context.js";
-import { askDeepSeek, DeepSeekNotConfiguredError, getDeepSeekBalance, getProviderStatus, askGemini, GeminiNotConfiguredError, askFlowMusic, FlowMusicNotConfiguredError, askClaude, ClaudeNotConfiguredError } from "./chat/providers.js";
+import { askDeepSeek, DeepSeekNotConfiguredError, getDeepSeekBalance, getProviderStatus, askGemini, GeminiNotConfiguredError, askFlowMusic, getFlowMusicBalance, FlowMusicNotConfiguredError, askClaude, ClaudeNotConfiguredError } from "./chat/providers.js";
 import { getVapidKeys, addSubscription, removeSubscription, sendPushToAll, getSubscriptionCount } from "./push.js";
 import { startEventWatcher } from "./eventWatcher.js";
 import { recordUsage, getUsageSummary } from "./chat/usage.js";
@@ -689,13 +689,23 @@ app.get("/internal/chat-usage", async (request, reply) => {
 });
 
 // GET /internal/provider-balance/deepseek — баланс через тот же ключ,
-// что у чата, сам ключ модулю не передаётся. У Gemini/Claude/FlowMusic
-// такого API нет вообще — честно показываем ограничение, не изображаем.
+// что у чата, сам ключ модулю не передаётся. У Gemini/Claude такого
+// публичного API нет вообще — честно показываем ограничение, не
+// изображаем. У FlowMusic есть (см. ниже) — просто не задокументирован
+// официально нигде, найден в исходниках сторонней реализации.
 //
 // Для Gemini есть другое — /internal/provider-status/gemini ниже:
 // последний реально увиденный статус по факту запросов, не баланс.
 app.get("/internal/provider-balance/deepseek", async (request, reply) => {
   return await getDeepSeekBalance();
+});
+
+// GET /internal/provider-balance/flowmusic — кредиты аккаунта, тот же
+// принцип, что у DeepSeek выше, но не публичный официальный API — сам
+// эндпоинт найден в исходниках стороннего проекта (см. честную оговорку
+// в getFlowMusicBalance).
+app.get("/internal/provider-balance/flowmusic", async (request, reply) => {
+  return await getFlowMusicBalance();
 });
 
 app.get("/internal/provider-status/gemini", async (request, reply) => {
