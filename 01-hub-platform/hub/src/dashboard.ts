@@ -705,6 +705,10 @@ ${BASE_STYLES}
     background: rgba(12, 11, 20, 0.4); box-shadow: 0 0 24px rgba(179, 136, 255, 0.05);
   }
   .msg-block { font-family: var(--font-mono); font-size: 0.9rem; max-width: 88%; padding: 8px 10px; border-radius: 8px; }
+  /* Сообщения с плеером FlowMusic — на всю доступную ширину, не 88%: у
+     текстовых сообщений узкий блок читается лучше, у плеера — наоборот,
+     чем шире, тем удобнее целиться в полосу перемотки, особенно с пальца. */
+  .msg-block.has-audio { max-width: 100%; }
   .msg-block.role-assistant { align-self: flex-start; margin-right: auto; background: rgba(255, 204, 102, 0.04); border: 1px solid rgba(255, 204, 102, 0.12); }
   .msg-block.role-user { align-self: flex-end; margin-left: auto; background: rgba(179, 136, 255, 0.07); border: 1px solid rgba(179, 136, 255, 0.15); box-shadow: 0 0 14px rgba(179, 136, 255, 0.08); }
   .msg-block.typing { box-shadow: 0 0 14px rgba(255, 204, 102, 0.1); }
@@ -734,10 +738,14 @@ ${BASE_STYLES}
   /* margin-left: 2px — визуальный центр треугольника play чуть смещён
      влево от геометрического, без сдвига он выглядит "не по центру". */
   .chat-audio-play .icon-play { margin-left: 2px; }
-  .chat-audio-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-  .chat-audio-track {
-    position: relative; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); cursor: pointer;
-  }
+  .chat-audio-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  /* height: 28px — реальная область клика/тапа под палец, не только
+     визуальная толщина полосы (та осталась тонкой — .chat-audio-track-bar
+     ниже, по центру благодаря flex). 5px, как было раньше, на телефоне
+     физически невозможно точно зацепить пальцем — отсюда и просьба
+     "чтобы было удобно кликом, особенно на телефоне". */
+  .chat-audio-track { position: relative; height: 28px; display: flex; align-items: center; cursor: pointer; }
+  .chat-audio-track-bar { position: relative; width: 100%; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); }
   .chat-audio-progress {
     position: absolute; inset: 0; width: 0%; border-radius: 3px; background: var(--accent);
     box-shadow: 0 0 8px rgba(179, 136, 255, 0.5); pointer-events: none;
@@ -1044,6 +1052,14 @@ ${BASE_STYLES}
         iconPlay.style.display = '';
         iconPause.style.display = 'none';
         progress.style.width = '0%';
+        // Проигрывание по порядку сверху вниз — не только внутри одного
+        // сообщения (FlowMusic обычно даёт сразу 2 варианта), а по всему
+        // чату целиком: следующий трек — это следующий <audio> в DOM,
+        // а DOM-порядок и есть порядок сообщений на экране.
+        const allPlayers = terminal.querySelectorAll('[data-audio-player] audio');
+        const idx = Array.prototype.indexOf.call(allPlayers, audio);
+        const next = allPlayers[idx + 1];
+        if (next) next.play().catch(function () {});
       });
       audio.addEventListener('loadedmetadata', function () {
         timeEl.textContent = fmt(0) + ' / ' + fmt(audio.duration);
@@ -1090,7 +1106,7 @@ ${BASE_STYLES}
           '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
         '</button>' +
         '<div class="chat-audio-body">' +
-          '<div class="chat-audio-track"><div class="chat-audio-progress"></div></div>' +
+          '<div class="chat-audio-track"><div class="chat-audio-track-bar"><div class="chat-audio-progress"></div></div></div>' +
           '<span class="chat-audio-time">0:00</span>' +
         '</div>' +
         '<audio preload="metadata" src="' + url + '"></audio>' +
@@ -1147,6 +1163,7 @@ ${BASE_STYLES}
     } else {
       textEl.innerHTML = formatMessageText(text);
       wireAudioPlayers(textEl);
+      if (textEl.querySelector('[data-audio-player]')) block.classList.add('has-audio');
     }
     block.appendChild(roleEl);
     block.appendChild(textEl);
