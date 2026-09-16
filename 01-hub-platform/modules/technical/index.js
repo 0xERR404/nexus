@@ -110,10 +110,12 @@ const BODY_CONTENT = `
   <section>
     <div class="section-title">flowmusic — токен сессии (генерация музыки)</div>
     <div class="box">
-      <div class="row">
-        <span class="dot unset" id="flowmusicDot"></span>
-        <input type="password" id="flowmusicKeyInput" placeholder="Токен сессии FlowMusic — весь JSON целиком" autocomplete="off" />
-        <button class="icon-btn" id="saveFlowmusicKeyBtn" title="сохранить">
+      <div class="row" style="align-items:flex-start;">
+        <span class="dot unset" id="flowmusicDot" style="margin-top:9px;"></span>
+        <textarea id="flowmusicKeyInput" rows="3" style="flex:1; min-width:0; margin-top:0;"
+          placeholder="Токен сессии FlowMusic — одна строка (одна кука) или несколько строк подряд, если Supabase разбил её на части (.0, .1, ... — по одной части на строку, по порядку)"
+          autocomplete="off"></textarea>
+        <button class="icon-btn" id="saveFlowmusicKeyBtn" title="сохранить" style="margin-top:9px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
             <polyline points="17 21 17 13 7 13 7 21"></polyline>
@@ -135,15 +137,18 @@ const BODY_CONTENT = `
       <div class="empty-note" style="margin-top:6px;">
         У FlowMusic нет официального API — вместо ключа нужен токен браузерной
         сессии. На flowmusic.app, залогинившись, открой DevTools → Application →
-        Cookies, найди куку вида "sb-...-auth-token" (или несколько
-        "sb-...-auth-token.0/.1/..." — тогда склей их значения по порядку) и
-        вставь сюда как есть, целиком (можно с префиксом "base64-" — он
-        обрежется сам). Внутри — access_token/refresh_token/expires_at:
-        access_token живёт около часа, но обновляется автоматически по
-        refresh_token, пока не разлогинишься на самом flowmusic.app. Выбирается
-        прямо над чатом, отдельно на каждое сообщение — отвечает аудио, не
-        текстом. Второе поле — не ключ, а базовый адрес запроса, пусто = адрес
-        по умолчанию.
+        Cookies, найди куку "sb-...-auth-token" и вставь её значение как есть
+        (можно с префиксом "base64-" — обрежется сам). <strong>Если значение
+        длинное, Supabase может разбить его на несколько кук подряд — "sb-...
+        -auth-token.0", ".1" и так далее</strong> (у браузера есть предел
+        размера одной куки, обычный размер сессии его превышает) — в этом
+        случае вставь ВСЕ части, по одной на строку, в порядке .0, .1, ... —
+        поле ниже принимает и то, и другое. Внутри —
+        access_token/refresh_token/expires_at: access_token живёт около часа,
+        но обновляется автоматически по refresh_token, пока не разлогинишься
+        на самом flowmusic.app. Выбирается прямо над чатом, отдельно на каждое
+        сообщение — отвечает аудио, не текстом. Второе поле — не ключ, а
+        базовый адрес запроса, пусто = адрес по умолчанию.
       </div>
     </div>
   </section>

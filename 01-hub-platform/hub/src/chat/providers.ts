@@ -326,6 +326,15 @@ interface FlowMusicSession {
 // готовый JSON — например, из session.json стороннего инструмента),
 // и только если это не сработало — снимаем префикс и декодируем base64
 // (тот же порядок, что в decodeSupabaseToken у @justmpm/flowmusic).
+// Supabase режет большие значения куки на несколько частей —
+// sb-...-auth-token.0, .1, .2... (у браузеров лимит размера ОДНОЙ куки,
+// ~4КБ, а сессия с access_token+refresh_token+данными профиля Google
+// легко его превышает). Реальный случай, не гипотетический — поймано
+// напрямую: пользователь скопировал только .0, JSON обрывался ровно на
+// границе частей. Принимаем и одну строку (простая сессия уместилась
+// в одну куку), и НЕСКОЛЬКО строк подряд (каждая часть — .0, затем .1,
+// в этом порядке) — склеиваем перед декодированием, тот же приём, что
+// и в @justmpm/flowmusic (extractFromCookies).
 function parseFlowMusicSession(raw: string): FlowMusicSession | null {
   const tryParse = (text: string): { access_token?: string; refresh_token?: string; expires_at?: number } | null => {
     try {
@@ -335,13 +344,26 @@ function parseFlowMusicSession(raw: string): FlowMusicSession | null {
     }
   };
 
-  let data = tryParse(raw);
+  // Сценарий 1: уже готовый JSON целиком (например, из session.json стороннего инструмента).
+  let data = tryParse(raw.trim());
+
+  // Сценарий 2: одна или несколько строк base64 (по одной на часть куки,
+  // .0/.1/... по порядку) — снимаем префикс "base64-" с каждой части
+  // отдельно (Supabase иногда добавляет его на каждую, не только на
+  // первую) и склеиваем перед декодированием.
   if (!data || typeof data.access_token !== "string") {
-    try {
-      const decoded = Buffer.from(raw.replace(/^base64-/, ""), "base64").toString("utf-8");
-      data = tryParse(decoded);
-    } catch {
-      data = null;
+    const parts = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^base64-/, ""));
+    if (parts.length > 0) {
+      try {
+        const decoded = Buffer.from(parts.join(""), "base64").toString("utf-8");
+        data = tryParse(decoded);
+      } catch {
+        data = null;
+      }
     }
   }
   if (!data || typeof data.access_token !== "string") return null;
