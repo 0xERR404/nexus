@@ -1388,7 +1388,7 @@ ${BASE_STYLES}
         loadUsage(); // обновить сводку сегодня/всего после реального ответа
       } else if (data.error) {
         // details — реальный текст ошибки от провайдера, показываем сразу.
-        const text = data.details ? data.error + '\n' + data.details : data.error;
+        const text = data.details ? data.error + '\\n' + data.details : data.error;
         addBlock('ассистент', text, { err: true, time: new Date().toISOString() });
       }
     } catch {
