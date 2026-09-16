@@ -104,6 +104,30 @@ run_spinner() {
     fi
 }
 
+# --- apt с повторными попытками (сеть иногда моргает) ---
+# Использование: retry_apt "описание" "apt-команда одной строкой"
+retry_apt() {
+    local desc="$1"; local cmd="$2"; local tries=0; local max=3
+    echo "${CYAN}[*]${NC} ${desc}..."
+    while true; do
+        setsid bash -c "$cmd" </dev/null >> "$LOGFILE" 2>&1 &
+        local pid=$!
+        _spin_wait "$pid" "$desc"
+        if wait "$pid"; then
+            echo "${GREEN}[✓]${NC} ${desc} — готово"
+            return 0
+        fi
+        tries=$((tries + 1))
+        if [ "$tries" -ge "$max" ]; then
+            echo "${RED}[!]${NC} ${desc} — не удалось после ${max} попыток"
+            tail -n 15 "$LOGFILE"
+            exit 1
+        fi
+        echo "${YELLOW}[?]${NC} Попытка ${tries} не удалась, жду 3с и пробую снова..."
+        sleep 3
+    done
+}
+
 # То же, но с захватом stdout (VAR=$(...)) — статус/анимация идут в
 # stderr, чтобы не попасть в переменную вместе с результатом команды.
 run_spinner_capture() {
