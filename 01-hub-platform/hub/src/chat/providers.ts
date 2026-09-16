@@ -504,7 +504,20 @@ export interface FlowMusicGenerateResult {
 // отдельную новую сессию (реальная жалоба: "в самом FlowMusic создалась
 // новая сессия"). Возвращаем projectId всегда — вызывающий код в
 // index.ts сохраняет его в теме при первом же сообщении.
-export async function askFlowMusic(prompt: string, existingProjectId?: string): Promise<FlowMusicGenerateResult> {
+// onProjectCreated — вызывается СРАЗУ, как только projectId известен (новый
+// или переданный существующий), а не только при успешном завершении всей
+// функции. Раньше id сохранялся в тему только после полного успеха
+// (генерация + опрос + скачивание) — если что-то падало ПОСЛЕ создания
+// проекта (таймаут на опросе/скачивании и т.п.), сам проект на стороне
+// FlowMusic уже существовал, но у нас не сохранялся; следующая попытка
+// (ретрай/повторное сообщение) не видела его и создавала ЕЩЁ один —
+// реальная причина "на FlowMusic всё равно две сессии", а не сама логика
+// переиспользования (та отдельно проверена и работает).
+export async function askFlowMusic(
+  prompt: string,
+  existingProjectId?: string,
+  onProjectCreated?: (id: string) => void
+): Promise<FlowMusicGenerateResult> {
   const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
 
   let projectId = existingProjectId;
@@ -518,6 +531,7 @@ export async function askFlowMusic(prompt: string, existingProjectId?: string): 
     if (!project.id) throw new Error("FlowMusic не вернул id проекта");
     projectId = project.id;
   }
+  onProjectCreated?.(projectId);
 
   const job = (await (
     await flowMusicFetch(baseUrl, "/__api/conversation", {

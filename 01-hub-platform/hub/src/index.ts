@@ -291,10 +291,16 @@ async function getReply(
     // стороне FlowMusic отдельную новую сессию вместо продолжения одной.
     return withFileLock(`flowmusic-topic-${topicId}`, async () => {
       const topic = await getTopic(topicId);
-      const { tracks, projectId } = await askFlowMusic(lastUserMessage?.content ?? "", topic?.flowmusicProjectId);
-      if (!topic?.flowmusicProjectId) {
-        await setTopicFlowMusicProjectId(topicId, projectId).catch(() => {});
-      }
+      // onProjectCreated — сохраняем id СРАЗУ, как только он известен, не
+      // дожидаясь конца всей функции (генерация+опрос+скачивание может
+      // упасть по таймауту уже ПОСЛЕ создания проекта — раньше в этом
+      // случае id проекта нигде не сохранялся, и повторная попытка не
+      // видела уже существующий проект, создавая на FlowMusic ещё один).
+      const { tracks } = await askFlowMusic(lastUserMessage?.content ?? "", topic?.flowmusicProjectId, (id) => {
+        if (!topic?.flowmusicProjectId) {
+          setTopicFlowMusicProjectId(topicId, id).catch(() => {});
+        }
+      });
       const markers: string[] = [];
       for (const track of tracks) {
         const saved = await saveChatAttachment(topicId, track.audioBuffer, track.filename);
