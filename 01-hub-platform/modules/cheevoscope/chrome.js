@@ -55,7 +55,7 @@ const SHARED_STYLES = `
   /* flex-start (не center) — кнопка "Назад" физически выше заголовка
      (свой padding), при center заголовок съезжал бы вниз по её высоте. */
   .title-row { display: flex; align-items: flex-start; gap: 10px; }
-  h1 { font-family: var(--font-mono); font-size: 1.2rem; border-left: 3px solid var(--accent); padding-left: 12px; text-shadow: 0 0 18px rgba(179, 136, 255, 0.35); }
+  h1 { font-family: var(--font-mono); font-size: 1.2rem; line-height: 1.4rem; border-left: 3px solid var(--accent); padding-left: 12px; text-shadow: 0 0 18px rgba(179, 136, 255, 0.35); }
   .back-btn {
     background: transparent; border: 1px solid var(--line); color: var(--accent); border-radius: 4px;
     padding: 5px 12px; cursor: pointer; font-family: var(--font-mono); font-size: 0.8rem;

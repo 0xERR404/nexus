@@ -183,9 +183,9 @@ const EXTRA_HEAD = `
   .cs-header {
     margin-bottom: 14px;
   }
-  .cs-title { font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
-  .cs-subtitle { color: var(--muted); font-size: 11px; margin-top: 3px; }
-  #status-line { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .cs-title { font-family: var(--font-sans); font-size: 20px; line-height: 24px; font-weight: 700; color: var(--text); margin: 0; }
+  .cs-status-row { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  #status-line:not(:empty)::before { content: " · "; }
   #status-line.error { color: var(--red); }
 
   /* Вкладки слева, кнопки обновления справа — одна строка, не два
@@ -345,13 +345,18 @@ const EXTRA_HEAD = `
 
   .cs-toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: nowrap; }
   .cs-toolbar input, .cs-toolbar select {
-    background: rgba(12,11,20,0.5); border: 1px solid var(--line); color: var(--text);
+    background: transparent; border: 1px solid var(--line); color: var(--text);
     font-family: var(--font-sans); font-size: 12px; padding: 8px 11px; border-radius: var(--card-radius); outline: none;
   }
   .cs-toolbar input { flex: 1 1 auto; min-width: 0; }
   .cs-toolbar select { flex: 0 0 auto; max-width: 46%; }
   .cs-toolbar input::placeholder { color: var(--muted); }
   .cs-toolbar input:focus, .cs-toolbar select:focus { border-color: rgba(179,136,255,0.4); }
+  /* Сам <select> прозрачный, но раскрывающийся список опций браузер
+     рисует своими стилями (обычно белый/системный) — большинство
+     браузеров всё же учитывают background-color/color на <option>
+     (тот же приём, что у выбора темы/ИИ в чате, см. dashboard.ts). */
+  .cs-toolbar option { background: var(--bg); color: var(--text); }
 
   /* flex-column + max-height на самом боксе (не только на списке внутри) —
      раньше высоту ограничивал только .cs-ach-modal-list (60vh), а сам бокс
@@ -453,7 +458,7 @@ const EXTRA_HEAD = `
     .cs-progress-row { flex-direction: column; }
     .cs-actions { width: 100%; gap: 12px; }
     .cs-btn-primary, .cs-btn-secondary { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
-    .cs-title { font-size: 17px; }
+    .cs-title { font-size: 17px; line-height: 21px; }
     .cs-score { font-size: 24px; }
     .cs-mastery-card, .cs-rarity-card { padding: 14px 16px; gap: 14px; }
   }
@@ -470,9 +475,10 @@ const EXTRA_HEAD = `
 const BODY_CONTENT = `
   <div class="cs-header">
     <div>
-      <h1 class="cs-title" id="page-title">CheevoScope</h1>
-      <div class="cs-subtitle" id="last-updated">данных пока нет</div>
-      <div id="status-line"></div>
+      <h1 class="cs-title" id="page-title"><span style="color:var(--accent)">Steam</span></h1>
+      <div class="cs-status-row">
+        <span id="last-updated">данных пока нет</span><span id="status-line"></span>
+      </div>
     </div>
   </div>
 
@@ -1099,9 +1105,9 @@ function switchTab(t){
   });
   activeTab = t;
   const titles = {
-    steam: \`CheevoScope <span style="color:var(--accent)">· Steam</span>\`,
-    retro: \`CheevoScope <span style="color:var(--amber)">· RetroAchievements</span>\`,
-    overall: \`CheevoScope <span style="color:var(--amber)">· Общая</span>\`,
+    steam: \`<span style="color:var(--accent)">Steam</span>\`,
+    retro: \`<span style="color:var(--amber)">RetroAchievements</span>\`,
+    overall: \`<span style="color:var(--amber)">Общая</span>\`,
   };
   document.getElementById('page-title').innerHTML = titles[t];
 
@@ -1403,19 +1409,43 @@ function filterGamesGrid(gridId, searchId, sortId){
     });
     sorted.forEach(tile => grid.appendChild(tile));
   } else {
-    let currentLabel = null;
-    let visibleCount = 0;
-    const finalize = () => { if(currentLabel) currentLabel.style.display = visibleCount ? '' : 'none'; };
-    Array.from(grid.children).forEach(el => {
-      if(el.classList.contains('cs-group-label')){
-        finalize();
-        currentLabel = el;
-        visibleCount = 0;
-      } else if((el.classList.contains('cs-tile') || el.classList.contains('cs-retro-row')) && el.style.display !== 'none'){
-        visibleCount++;
-      }
-    });
-    finalize();
+    // Восстанавливаем алфавитный порядок — раньше просто чинилась
+    // видимость подписей групп, ПРЕДПОЛАГАЯ, что DOM уже отсортирован по
+    // имени. Но сортировка по часам/% выше физически переставляет плитки
+    // (grid.appendChild меняет порядок в самом DOM) — при возврате на
+    // "По алфавиту" реального пересортировки не происходило, плитки
+    // оставались в порядке последней НЕ-алфавитной сортировки, хотя
+    // видимо это выглядело как "ничего не произошло".
+    if(labels.length){
+      // Steam: группы "с достижениями"/"без" (см. updateGamesGrid) — тот
+      // же признак принадлежности, achpct === -1 значит "без".
+      const groups = { with: [], without: [] };
+      tiles.forEach(tile => {
+        groups[Number(tile.dataset.achpct) === -1 ? 'without' : 'with'].push(tile);
+      });
+      groups.with.sort((a, b) => (a.dataset.name || '').localeCompare(b.dataset.name || ''));
+      groups.without.sort((a, b) => (a.dataset.name || '').localeCompare(b.dataset.name || ''));
+
+      const labelByGroup = {};
+      labels.forEach(l => { labelByGroup[l.classList.contains('without') ? 'without' : 'with'] = l; });
+
+      ['with', 'without'].forEach(group => {
+        const label = labelByGroup[group];
+        const groupTiles = groups[group];
+        if(!groupTiles.length){ if(label) label.style.display = 'none'; return; }
+        if(label){ grid.appendChild(label); label.style.display = ''; }
+        let visibleCount = 0;
+        groupTiles.forEach(tile => {
+          grid.appendChild(tile);
+          if(tile.style.display !== 'none') visibleCount++;
+        });
+        if(label) label.style.display = visibleCount ? '' : 'none';
+      });
+    } else {
+      // RetroAchievements — плоский список, без групп "с/без достижений".
+      const sortedByName = tiles.slice().sort((a, b) => (a.dataset.name || '').localeCompare(b.dataset.name || ''));
+      sortedByName.forEach(tile => grid.appendChild(tile));
+    }
   }
 }
 
