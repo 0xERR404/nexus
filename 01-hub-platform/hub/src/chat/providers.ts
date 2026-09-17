@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getDeepSeekKey, getGeminiKey, getGeminiBaseUrl, getClaudeKey, getClaudeBaseUrl, getFlowMusicKey, getFlowMusicBaseUrl, setKey } from "../keys.js";
 import { withFileLock } from "../fileLock.js";
+import { Impit, type RequestInit as ImpitRequestInit, type ImpitResponse } from "impit";
 import type { TokenUsage } from "./usage.js";
 
 export interface ChatMessage {
@@ -370,26 +371,26 @@ function isFlowMusicTokenExpired(expiresAt: number): boolean {
 // Заголовки браузера — HTTP 403 с HTML-телом (а не JSON-ошибкой Supabase)
 // похоже на блокировку WAF/бот-защитой ДО того, как запрос вообще дошёл
 // до логики Supabase: голый серверный fetch без User-Agent/Origin/Referer
-// не похож на настоящий браузер flowmusic.app. Не гарантия обхода любой
-// защиты, но самое дешёвое и обоснованное, что можно попробовать первым.
-const BROWSER_LIKE_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+// Единый клиент с имперсонацией Chrome (браузерный TLS-отпечаток, не
+// только заголовки) — обычный fetch() из Node (undici) отличим по
+// TLS-рукопожатию от настоящего браузера независимо от заголовков сверху,
+// это и давало HTTP 403 с HTML на голых запросах. impit — компактный
+// (нативный бинарник на Rust, без Chromium) drop-in для fetch с реальной
+// подменой отпечатка, см. https://github.com/apify/impit. Origin/Referer
+// оставлены вручную — это контекст конкретной страницы, не характеристика
+// браузера, impit сам их не знает; User-Agent/sec-ch-ua и т.п. impit
+// подставляет сам, согласованно с TLS-профилем — свои поверх не добавляем,
+// иначе получилось бы рассогласование (заголовки от одной версии Chrome,
+// TLS-отпечаток от другой), что заметнее, чем вообще ничего не подделывать.
+const flowMusicClient = new Impit({ browser: "chrome", vanillaFallback: true });
+const FLOWMUSIC_CONTEXT_HEADERS = {
   Origin: "https://www.flowmusic.app",
   Referer: "https://www.flowmusic.app/",
-  Accept: "*/*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
-  "sec-ch-ua-mobile": "?0",
-  "sec-ch-ua-platform": '"Windows"',
-  "Sec-Fetch-Dest": "empty",
-  "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Site": "same-site",
 };
 
 // Одна повторная попытка с паузой при сбое обновления токена — часть
 // сбоев может быть переходной (сетевой обрыв, кратковременный WAF-челлендж),
-// не постоянной блокировкой. Не решает саму блокировку, если она стабильная
-// (см. обсуждение TLS-отпечатка), но не помешает и дёшево.
+// не постоянной блокировкой.
 async function refreshFlowMusicTokenWithRetry(refreshToken: string): Promise<FlowMusicSession | null> {
   const first = await refreshFlowMusicToken(refreshToken);
   if (first) return first;
@@ -404,10 +405,11 @@ async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSes
     // точкой в FLOWMUSIC_SUPABASE_AUTH_URL) — тот же вывод, что в
     // @justmpm/flowmusic, не догадка "на глаз".
     const apikey = FLOWMUSIC_SUPABASE_AUTH_URL.split("//")[1]?.split(".")[0] ?? "";
-    const res = await fetchWithTimeout(`${FLOWMUSIC_SUPABASE_AUTH_URL}/auth/v1/token?grant_type=refresh_token`, {
+    const res = await flowMusicClient.fetch(`${FLOWMUSIC_SUPABASE_AUTH_URL}/auth/v1/token?grant_type=refresh_token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey, ...BROWSER_LIKE_HEADERS },
+      headers: { "Content-Type": "application/json", apikey, ...FLOWMUSIC_CONTEXT_HEADERS },
       body: JSON.stringify({ refresh_token: refreshToken }),
+      timeout: FLOWMUSIC_TIMEOUT_MS,
     });
     if (!res.ok) {
       // Раньше молча возвращали null — единственный сигнал пользователю
@@ -475,15 +477,15 @@ async function ensureFlowMusicAccessToken(): Promise<string> {
   });
 }
 
-async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}, timeoutMs = FLOWMUSIC_TIMEOUT_MS): Promise<Response> {
+async function flowMusicFetch(baseUrl: string, path: string, init: ImpitRequestInit = {}, timeoutMs = FLOWMUSIC_TIMEOUT_MS): Promise<ImpitResponse> {
   const token = await ensureFlowMusicAccessToken();
   const headers: Record<string, string> = {
-    ...BROWSER_LIKE_HEADERS,
+    ...FLOWMUSIC_CONTEXT_HEADERS,
     ...(init.headers as Record<string, string> | undefined),
     Authorization: `Bearer ${token}`,
   };
   if (!headers["Content-Type"] && (init.method === "POST" || init.method === "PUT")) headers["Content-Type"] = "application/json";
-  return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, timeoutMs);
+  return flowMusicClient.fetch(`${baseUrl}${path}`, { ...init, headers, timeout: timeoutMs });
 }
 
 // Статус приходит SSE-потоком. FlowMusic обычно даёт сразу несколько
