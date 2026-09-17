@@ -535,6 +535,32 @@ export interface FlowMusicGenerateResult {
 // известен, — не в конце всей функции: иначе сбой на более позднем шаге
 // (опрос/скачивание) терял бы id несохранённым, и ретрай снова создавал
 // бы новый проект вместо использования уже существующего.
+// "Error reading response stream ... TimedOut" — обрыв ПОСЛЕ успешного
+// ответа заголовков, при чтении самого тела; пойман и на маленьком
+// JSON-ответе (проверка баланса), не только на скачивании большого wav —
+// значит, причина не размер тела, а сетевая нестабильность на любой
+// запрос. Общая обёртка fetch+чтение с одним повтором — для всех
+// вызовов к FlowMusic, а не только для скачивания, как было раньше.
+async function flowMusicRequest<T>(
+  baseUrl: string,
+  path: string,
+  init: ImpitRequestInit,
+  timeoutMs: number,
+  read: (res: ImpitResponse) => Promise<T>
+): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAY_MS);
+    try {
+      const res = await flowMusicFetch(baseUrl, path, init, timeoutMs);
+      return await read(res);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("FlowMusic — запрос не удался после повторной попытки");
+}
+
 export async function askFlowMusic(
   prompt: string,
   existingProjectId?: string,
@@ -544,23 +570,25 @@ export async function askFlowMusic(
 
   let projectId = existingProjectId;
   if (!projectId) {
-    const project = (await (
-      await flowMusicFetch(baseUrl, "/__api/projects", {
-        method: "POST",
-        body: JSON.stringify({ title: prompt.slice(0, 100), description: prompt }),
-      })
-    ).json()) as { id?: string };
+    const project = (await flowMusicRequest(
+      baseUrl,
+      "/__api/projects",
+      { method: "POST", body: JSON.stringify({ title: prompt.slice(0, 100), description: prompt }) },
+      FLOWMUSIC_TIMEOUT_MS,
+      (res) => res.json()
+    )) as { id?: string };
     if (!project.id) throw new Error("FlowMusic не вернул id проекта");
     projectId = project.id;
   }
   onProjectCreated?.(projectId);
 
-  const job = (await (
-    await flowMusicFetch(baseUrl, "/__api/conversation", {
-      method: "POST",
-      body: JSON.stringify({ parts: [{ content: prompt, part_kind: "user-prompt" }], client_context: {}, project_id: projectId }),
-    })
-  ).json()) as { job_id?: string };
+  const job = (await flowMusicRequest(
+    baseUrl,
+    "/__api/conversation",
+    { method: "POST", body: JSON.stringify({ parts: [{ content: prompt, part_kind: "user-prompt" }], client_context: {}, project_id: projectId }) },
+    FLOWMUSIC_TIMEOUT_MS,
+    (res) => res.json()
+  )) as { job_id?: string };
   if (!job.job_id) throw new Error("FlowMusic не вернул job_id");
 
   // operationId -> состояние. Перечитываем поток КАЖДУЮ итерацию (не
@@ -568,14 +596,14 @@ export async function askFlowMusic(
   // появиться в потоке позже первого, не одновременно с ним.
   const tracks = new Map<string, FlowMusicTrackState>();
   for (let attempt = 0; attempt < FLOWMUSIC_MAX_POLL_ATTEMPTS; attempt++) {
-    const streamText = await (await flowMusicFetch(baseUrl, `/__api/messages/${job.job_id}/stream?last_id=0`)).text();
+    const streamText = await flowMusicRequest(baseUrl, `/__api/messages/${job.job_id}/stream?last_id=0`, {}, FLOWMUSIC_TIMEOUT_MS, (res) => res.text());
     for (const opId of parseFlowMusicStreamOperationIds(streamText)) {
       if (!tracks.has(opId)) tracks.set(opId, { clipId: null, error: null });
     }
 
     for (const [opId, state] of tracks) {
       if (state.clipId || state.error) continue; // этот вариант уже готов или уже упал с ошибкой
-      const status = (await (await flowMusicFetch(baseUrl, `/__api/audio-create-song-status/${opId}`)).json()) as {
+      const status = (await flowMusicRequest(baseUrl, `/__api/audio-create-song-status/${opId}`, {}, FLOWMUSIC_TIMEOUT_MS, (res) => res.json())) as {
         clip_id?: string;
         error_type?: string;
         error_message?: string;
@@ -601,30 +629,13 @@ export async function askFlowMusic(
 
   // wav — без потерь (m4a легче, но по запросу пользователя точность важнее
   // размера). Файл ощутимо больше m4a — отдельный, более щедрый таймаут
-  // именно на скачивание (см. FLOWMUSIC_DOWNLOAD_TIMEOUT_MS), обычный
-  // 60-секундный на скачивание нескольких мегабайт целиком не рассчитан.
-  //
-  // Повтор — реальный случай от пользователя: "Error reading response
-  // stream ... Io(Kind(TimedOut))" уже ПОСЛЕ успешного ответа заголовков
-  // (audioRes.ok был true), обрыв случился именно при чтении тела через
-  // .arrayBuffer() — сетевая нестабильность посреди долгой передачи может
-  // быть разовой, не постоянной; retry всей связки fetch+чтение, не
-  // только самого fetch, раз падает именно на чтении, а не на запросе.
+  // именно на скачивание (см. FLOWMUSIC_DOWNLOAD_TIMEOUT_MS).
   const results: FlowMusicResult[] = [];
   for (const track of ready) {
-    let audioBuffer: Buffer | null = null;
-    let lastError: unknown = null;
-    for (let attempt = 0; attempt < 2 && !audioBuffer; attempt++) {
-      if (attempt > 0) await sleep(RETRY_DELAY_MS);
-      try {
-        const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${track.clipId}?format=wav`, {}, FLOWMUSIC_DOWNLOAD_TIMEOUT_MS);
-        if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
-        audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    if (!audioBuffer) throw lastError instanceof Error ? lastError : new Error("FlowMusic — не удалось скачать готовое аудио после повторной попытки");
+    const audioBuffer = await flowMusicRequest(baseUrl, `/__api/download/audio/${track.clipId}?format=wav`, {}, FLOWMUSIC_DOWNLOAD_TIMEOUT_MS, async (res) => {
+      if (!res.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    });
     results.push({ audioBuffer, mimeType: "audio/wav", filename: `${track.clipId}.wav` });
   }
   return { tracks: results, projectId };
@@ -644,20 +655,21 @@ export async function getFlowMusicBalance(): Promise<FlowMusicBalanceResult> {
   if (!raw) return { configured: false };
   const baseUrl = (await getFlowMusicBaseUrl()) || ENV_FLOWMUSIC_BASE_URL || DEFAULT_FLOWMUSIC_BASE_URL;
   try {
-    const creditsRes = await flowMusicFetch(baseUrl, "/__api/billing/credits");
-    if (!creditsRes.ok) return { configured: true, ok: false, error: `FlowMusic API ошибка ${creditsRes.status}: ${await creditsRes.text().catch(() => "")}` };
-    const creditsJson = (await creditsRes.json()) as { data?: { credits_remaining?: number; tokens_remaining?: number } };
+    const creditsJson = (await flowMusicRequest(baseUrl, "/__api/billing/credits", {}, FLOWMUSIC_TIMEOUT_MS, async (res) => {
+      if (!res.ok) throw new Error(`FlowMusic API ошибка ${res.status}: ${await res.text().catch(() => "")}`);
+      return res.json();
+    })) as { data?: { credits_remaining?: number; tokens_remaining?: number } };
 
     // Подписка — отдельный запрос, необязательный: если этот конкретный
     // эндпоинт недоступен/поменялся, показываем хотя бы кредиты, не
     // проваливаем всё целиком из-за второстепенного поля.
     let subscriptionTier: string | null = null;
     try {
-      const subRes = await flowMusicFetch(baseUrl, "/__api/billing/subscription");
-      if (subRes.ok) {
-        const subJson = (await subRes.json()) as { data?: { subscription_tier?: string } };
-        subscriptionTier = subJson.data?.subscription_tier ?? null;
-      }
+      const subJson = (await flowMusicRequest(baseUrl, "/__api/billing/subscription", {}, FLOWMUSIC_TIMEOUT_MS, async (res) => {
+        if (!res.ok) throw new Error(`нет подписки: HTTP ${res.status}`);
+        return res.json();
+      })) as { data?: { subscription_tier?: string } };
+      subscriptionTier = subJson.data?.subscription_tier ?? null;
     } catch {
       // необязательно — молча пропускаем
     }
