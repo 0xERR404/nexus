@@ -44,7 +44,7 @@ sudo bash update.sh
 
 ```bash
 curl https://ваш-домен/health
-# {"status":"ok","version":"1.6.0","uptime_seconds":N}
+# {"status":"ok","version":"1.6.1","uptime_seconds":N}
 ```
 
 Сертификат — боевой Let's Encrypt с первого выпуска (staging CA убран из

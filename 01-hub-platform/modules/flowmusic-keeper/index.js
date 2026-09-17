@@ -249,7 +249,7 @@ const BODY_CONTENT = `
 
 const EXTRA_SCRIPT = `
   async function loadState() {
-    const res = await fetch('/state');
+    const res = await fetch('state');
     const s = await res.json();
     const box = document.getElementById('statusBox');
     const labels = {
@@ -274,7 +274,7 @@ const EXTRA_SCRIPT = `
     if (!value) return;
     result.textContent = 'применяю...';
     try {
-      const res = await fetch('/api/seed', {
+      const res = await fetch('api/seed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw: value }),
