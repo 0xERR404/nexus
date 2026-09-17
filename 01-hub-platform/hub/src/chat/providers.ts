@@ -603,11 +603,28 @@ export async function askFlowMusic(
   // размера). Файл ощутимо больше m4a — отдельный, более щедрый таймаут
   // именно на скачивание (см. FLOWMUSIC_DOWNLOAD_TIMEOUT_MS), обычный
   // 60-секундный на скачивание нескольких мегабайт целиком не рассчитан.
+  //
+  // Повтор — реальный случай от пользователя: "Error reading response
+  // stream ... Io(Kind(TimedOut))" уже ПОСЛЕ успешного ответа заголовков
+  // (audioRes.ok был true), обрыв случился именно при чтении тела через
+  // .arrayBuffer() — сетевая нестабильность посреди долгой передачи может
+  // быть разовой, не постоянной; retry всей связки fetch+чтение, не
+  // только самого fetch, раз падает именно на чтении, а не на запросе.
   const results: FlowMusicResult[] = [];
   for (const track of ready) {
-    const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${track.clipId}?format=wav`, {}, FLOWMUSIC_DOWNLOAD_TIMEOUT_MS);
-    if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+    let audioBuffer: Buffer | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2 && !audioBuffer; attempt++) {
+      if (attempt > 0) await sleep(RETRY_DELAY_MS);
+      try {
+        const audioRes = await flowMusicFetch(baseUrl, `/__api/download/audio/${track.clipId}?format=wav`, {}, FLOWMUSIC_DOWNLOAD_TIMEOUT_MS);
+        if (!audioRes.ok) throw new Error(`FlowMusic — не удалось скачать готовое аудио: ${audioRes.status}`);
+        audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (!audioBuffer) throw lastError instanceof Error ? lastError : new Error("FlowMusic — не удалось скачать готовое аудио после повторной попытки");
     results.push({ audioBuffer, mimeType: "audio/wav", filename: `${track.clipId}.wav` });
   }
   return { tracks: results, projectId };
