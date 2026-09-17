@@ -3,6 +3,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getDeepSeekKey, getGeminiKey, getGeminiBaseUrl, getClaudeKey, getClaudeBaseUrl, getFlowMusicKey, getFlowMusicBaseUrl, setKey } from "../keys.js";
+import { withFileLock } from "../fileLock.js";
 import type { TokenUsage } from "./usage.js";
 
 export interface ChatMessage {
@@ -134,9 +135,11 @@ async function readProviderStatusAll(): Promise<ProviderStatusMap> {
 
 export async function recordProviderStatus(provider: string, status: ProviderStatusValue): Promise<void> {
   await mkdir(HUB_DATA_DIR, { recursive: true });
-  const all = await readProviderStatusAll();
-  all[provider] = { status, at: new Date().toISOString() };
-  await writeFile(STATUS_FILE, JSON.stringify(all, null, 2));
+  await withFileLock(STATUS_FILE, async () => {
+    const all = await readProviderStatusAll();
+    all[provider] = { status, at: new Date().toISOString() };
+    await writeFile(STATUS_FILE, JSON.stringify(all, null, 2));
+  });
 }
 
 export async function getProviderStatus(provider: string) {
@@ -273,31 +276,19 @@ export async function askClaude(messages: ChatMessage[]): Promise<ChatReply> {
 }
 
 // ---------- FlowMusic ----------
-// Официального публичного API нет. Используется тот же приём, что и в
-// открытых сторонних клиентах (изучен исходный код пакета
-// @justmpm/flowmusic, npm, MIT) — токен браузерной сессии (Supabase
-// access_token/refresh_token из куки flowmusic.app), не официальный
-// API-ключ. Пользователь один раз достаёт этот JSON из DevTools/куки
-// своего браузера (см. настройки хаба) и вставляет целиком в поле
-// "FlowMusic ключ" — дальше access_token обновляется автоматически по
-// refresh_token (тот, в отличие от access_token, не истекает сам по
-// себе, пока не разлогиниться явно на flowmusic.app).
-//
+// Официального API нет — токен браузерной сессии (Supabase
+// access_token/refresh_token из куки flowmusic.app), не ключ. Вставляется
+// целиком в настройках, access_token обновляется сам по refresh_token
+// (тот не истекает, пока не разлогиниться на flowmusic.app явно).
 // Эндпоинты (/__api/projects, /__api/conversation, .../stream,
-// /__api/audio-create-song-status/*, /__api/download/audio/*) —
-// не документированы официально нигде, взяты дословно из рабочего
-// стороннего клиента, не наша догадка "по типовому паттерну", как было
-// раньше (тот контракт вообще ни разу не проверялся живым запросом).
+// /__api/audio-create-song-status/*, /__api/download/audio/*) взяты из
+// рабочего стороннего клиента (@justmpm/flowmusic, npm, MIT), не догадка.
 
 const DEFAULT_FLOWMUSIC_BASE_URL = "https://www.flowmusic.app";
 const ENV_FLOWMUSIC_BASE_URL = process.env.FLOWMUSIC_BASE_URL;
 const FLOWMUSIC_TIMEOUT_MS = 60_000; // генерация музыки медленнее текста
-// Отдельный, куда более щедрый лимит именно на скачивание готового файла —
-// wav (без потерь, по запросу) весит на порядок больше m4a, обычный
-// 60-секундный таймаут на ЛЮБОЙ запрос к FlowMusic не рассчитан на
-// скачивание тела в несколько мегабайт целиком, а не только на ответ
-// заголовков. Реальный случай — "terminated" (так Node сообщает именно
-// об обрыве ПОСРЕДИ чтения тела ответа по таймауту, не о сетевой ошибке).
+// Отдельный лимит на скачивание — wav весит на порядок больше m4a,
+// обычный 60-секундный таймаут не рассчитан на несколько мегабайт тела.
 const FLOWMUSIC_DOWNLOAD_TIMEOUT_MS = 300_000;
 const FLOWMUSIC_POLL_INTERVAL_MS = 3_000;
 const FLOWMUSIC_MAX_POLL_ATTEMPTS = 60; // до ~3 минут на генерацию
@@ -325,23 +316,11 @@ interface FlowMusicSession {
   expiresAt: number; // unix-секунды
 }
 
-// Поле "FlowMusic ключ" хранит не строку-токен, а весь JSON сессии
-// целиком ({access_token, refresh_token, expires_at}) — но то, что
-// реально лежит в куке flowmusic.app (Supabase формат), это САМ ЭТОТ
-// JSON, закодированный в base64, часто с префиксом "base64-" (сам
-// Supabase его добавляет). Пробуем сначала как есть (вдруг это уже
-// готовый JSON — например, из session.json стороннего инструмента),
-// и только если это не сработало — снимаем префикс и декодируем base64
-// (тот же порядок, что в decodeSupabaseToken у @justmpm/flowmusic).
-// Supabase режет большие значения куки на несколько частей —
-// sb-...-auth-token.0, .1, .2... (у браузеров лимит размера ОДНОЙ куки,
-// ~4КБ, а сессия с access_token+refresh_token+данными профиля Google
-// легко его превышает). Реальный случай, не гипотетический — поймано
-// напрямую: пользователь скопировал только .0, JSON обрывался ровно на
-// границе частей. Принимаем и одну строку (простая сессия уместилась
-// в одну куку), и НЕСКОЛЬКО строк подряд (каждая часть — .0, затем .1,
-// в этом порядке) — склеиваем перед декодированием, тот же приём, что
-// и в @justmpm/flowmusic (extractFromCookies).
+// Значение куки — base64(JSON), часто с префиксом "base64-". Пробуем
+// сначала как готовый JSON, потом снимаем префикс и декодируем base64
+// (как в decodeSupabaseToken у @justmpm/flowmusic). Supabase иногда режет
+// большую куку на части (sb-...-auth-token.0/.1/...) — принимаем и
+// несколько строк подряд, склеиваем перед декодированием.
 function parseFlowMusicSession(raw: string): FlowMusicSession | null {
   const tryParse = (text: string): { access_token?: string; refresh_token?: string; expires_at?: number } | null => {
     try {
@@ -400,46 +379,70 @@ async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSes
       headers: { "Content-Type": "application/json", apikey },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Раньше молча возвращали null — единственный сигнал пользователю
+      // был "истекла и не удалось обновить", без единой зацепки, ПОЧЕМУ
+      // (неверный apikey, invalid_grant из-за уже использованного
+      // refresh_token, рейт-лимит Supabase и т.п.). В логи хаба — реальный
+      // ответ, не только факт неудачи.
+      const bodyText = await res.text().catch(() => "");
+      console.error(`[flowmusic] обновление токена не удалось: HTTP ${res.status} — ${bodyText.slice(0, 500)}`);
+      return null;
+    }
     const data = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
-    if (!data.access_token) return null;
+    if (!data.access_token) {
+      console.error(`[flowmusic] Supabase ответил 200, но без access_token: ${JSON.stringify(data).slice(0, 500)}`);
+      return null;
+    }
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token || refreshToken,
       expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600),
     };
-  } catch {
+  } catch (err) {
+    console.error(`[flowmusic] обновление токена — сетевая ошибка: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
 
+// Токен FlowMusic — один общий на весь хаб (одна запись в keys.json), не
+// по темам. Мьютекс по теме в index.ts (flowmusic-topic-${topicId})
+// защищает только project_id ЭТОЙ темы — если две РАЗНЫЕ темы одновременно
+// увидят истекший токен, обе дёрнули бы Supabase одним и тем же
+// refresh_token (тот одноразовый) — вторая получила бы invalid_grant.
+// Отдельная, глобальная блокировка здесь — под тем же фиксированным
+// ключом для любого вызова, независимо от темы.
 async function ensureFlowMusicAccessToken(): Promise<string> {
-  const raw = await getFlowMusicKey();
-  if (!raw) throw new FlowMusicNotConfiguredError();
-  const session = parseFlowMusicSession(raw);
-  if (!session) {
-    throw new Error(
-      "Не удалось разобрать токен сессии FlowMusic — вставь значение куки " +
-        "sb-...-auth-token с flowmusic.app как есть (можно с префиксом " +
-        "\"base64-\") либо готовый JSON с access_token/refresh_token/expires_at."
-    );
-  }
-  if (!isFlowMusicTokenExpired(session.expiresAt)) return session.accessToken;
+  return withFileLock("flowmusic-token-refresh", async () => {
+    const raw = await getFlowMusicKey();
+    if (!raw) throw new FlowMusicNotConfiguredError();
+    const session = parseFlowMusicSession(raw);
+    if (!session) {
+      throw new Error(
+        "Не удалось разобрать токен сессии FlowMusic — вставь значение куки " +
+          "sb-...-auth-token с flowmusic.app как есть (можно с префиксом " +
+          "\"base64-\") либо готовый JSON с access_token/refresh_token/expires_at."
+      );
+    }
+    if (!isFlowMusicTokenExpired(session.expiresAt)) return session.accessToken;
 
-  const refreshed = await refreshFlowMusicToken(session.refreshToken);
-  if (!refreshed) {
-    throw new Error("Сессия FlowMusic истекла и не удалось обновить — зайди на flowmusic.app заново и вставь новый токен в настройках хаба.");
-  }
-  // Сохраняем обновлённый токен на диск — иначе каждый следующий запрос
-  // заново обновлял бы ещё живой access_token без необходимости, а
-  // refresh_token у Supabase одноразовый (после использования выдаётся
-  // новый) — не сохранить его значило бы потерять возможность обновиться
-  // ещё раз после следующего истечения.
-  await setKey(
-    "flowmusic",
-    JSON.stringify({ access_token: refreshed.accessToken, refresh_token: refreshed.refreshToken, expires_at: refreshed.expiresAt })
-  ).catch(() => {});
-  return refreshed.accessToken;
+    const refreshed = await refreshFlowMusicToken(session.refreshToken);
+    if (!refreshed) {
+      throw new Error("Сессия FlowMusic истекла и не удалось обновить — зайди на flowmusic.app заново и вставь новый токен в настройках хаба.");
+    }
+    // refresh_token у Supabase одноразовый — не сохранить обновлённый
+    // означало бы потерять возможность обновиться в следующий раз. Ошибку
+    // записи логируем, не глотаем — молчание тут маскировало бы реальную причину.
+    try {
+      await setKey(
+        "flowmusic",
+        JSON.stringify({ access_token: refreshed.accessToken, refresh_token: refreshed.refreshToken, expires_at: refreshed.expiresAt })
+      );
+    } catch (err) {
+      console.error(`[flowmusic] обновлённый токен получен, но НЕ СОХРАНЁН на диск: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return refreshed.accessToken;
+  });
 }
 
 async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}, timeoutMs = FLOWMUSIC_TIMEOUT_MS): Promise<Response> {
@@ -449,13 +452,8 @@ async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit =
   return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, timeoutMs);
 }
 
-// Статус генерации приходит Server-Sent-Events потоком, не обычным JSON.
-// FlowMusic обычно генерирует сразу НЕСКОЛЬКО вариантов на один запрос
-// (по опыту пользователя — обычно 2), у каждого варианта свой
-// operation_id в отдельном событии part — раньше здесь бралось только
-// ПОСЛЕДНЕЕ увиденное значение (перезаписывалось на каждой итерации),
-// первый вариант потерялся бы молча. Возвращаем ВСЕ различные
-// operation_id, в порядке первого появления, а не один.
+// Статус приходит SSE-потоком. FlowMusic обычно даёт сразу несколько
+// вариантов на запрос — возвращаем ВСЕ operation_id, не только последний.
 function parseFlowMusicStreamOperationIds(streamText: string): string[] {
   const seen = new Set<string>();
   const order: string[] = [];
@@ -487,32 +485,20 @@ interface FlowMusicTrackState {
   error: string | null;
 }
 
-// Генерирует не из истории переписки, а из одного промпта — последнего
-// сообщения пользователя. Возвращает МАССИВ готовых треков (обычно 2,
-// FlowMusic генерирует сразу несколько вариантов на запрос) — сохранение
-// каждого как отдельное вложение чата и построение ссылок делает
-// вызывающий код в index.ts (у него есть topicId, здесь его нет и не
-// должно быть — providers.ts не знает о темах чата вообще).
+// Генерирует по одному промпту (последнее сообщение пользователя).
+// Возвращает массив треков (обычно 2) — сохранение как вложений делает
+// index.ts (providers.ts не знает о темах чата вообще).
 export interface FlowMusicGenerateResult {
   tracks: FlowMusicResult[];
   projectId: string;
 }
 
-// existingProjectId — если задан (тема уже генерировала музыку раньше),
-// НЕ создаём новый проект на стороне FlowMusic — переиспользуем тот же,
-// иначе там каждое сообщение внутри одной темы хаба превращалось бы в
-// отдельную новую сессию (реальная жалоба: "в самом FlowMusic создалась
-// новая сессия"). Возвращаем projectId всегда — вызывающий код в
-// index.ts сохраняет его в теме при первом же сообщении.
-// onProjectCreated — вызывается СРАЗУ, как только projectId известен (новый
-// или переданный существующий), а не только при успешном завершении всей
-// функции. Раньше id сохранялся в тему только после полного успеха
-// (генерация + опрос + скачивание) — если что-то падало ПОСЛЕ создания
-// проекта (таймаут на опросе/скачивании и т.п.), сам проект на стороне
-// FlowMusic уже существовал, но у нас не сохранялся; следующая попытка
-// (ретрай/повторное сообщение) не видела его и создавала ЕЩЁ один —
-// реальная причина "на FlowMusic всё равно две сессии", а не сама логика
-// переиспользования (та отдельно проверена и работает).
+// existingProjectId — переиспользуем project_id темы вместо создания
+// нового на каждое сообщение (иначе FlowMusic заводил бы отдельную
+// сессию на каждое). onProjectCreated вызывается СРАЗУ, как только id
+// известен, — не в конце всей функции: иначе сбой на более позднем шаге
+// (опрос/скачивание) терял бы id несохранённым, и ретрай снова создавал
+// бы новый проект вместо использования уже существующего.
 export async function askFlowMusic(
   prompt: string,
   existingProjectId?: string,
@@ -591,14 +577,10 @@ export async function askFlowMusic(
   return { tracks: results, projectId };
 }
 
-// Баланс — эндпоинт найден не у @justmpm/flowmusic (тот его не вызывает
-// вообще), а у более полной сторонней реализации FlowMusic2API (Go, с
-// БД и тестами, github.com/genz27/FlowMusic2API) — GET
-// /__api/billing/credits возвращает {data: {credits_remaining,
-// tokens_remaining}}, отдельно GET /__api/billing/subscription —
-// {data: {subscription_tier}}. Токен обновляется тем же механизмом,
-// что и для генерации (flowMusicFetch сам вызывает
-// ensureFlowMusicAccessToken()).
+// Эндпоинт найден у другого стороннего проекта (FlowMusic2API, Go,
+// github.com/genz27/FlowMusic2API), не у @justmpm/flowmusic. GET
+// /__api/billing/credits -> {data:{credits_remaining,tokens_remaining}},
+// GET /__api/billing/subscription -> {data:{subscription_tier}}.
 export type FlowMusicBalanceResult =
   | { configured: false }
   | { configured: true; ok: true; creditsRemaining: number; tokensRemaining: number; subscriptionTier: string | null }

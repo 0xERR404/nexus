@@ -760,6 +760,17 @@ ${BASE_STYLES}
   /* margin-left: 2px — визуальный центр треугольника play чуть смещён
      влево от геометрического, без сдвига он выглядит "не по центру". */
   .chat-audio-play .icon-play { margin-left: 2px; }
+  /* prev/next — по запросу "управлять треками", листать вручную, не
+     дожидаясь конца текущего трека для автоперехода. */
+  .chat-audio-nav { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .chat-audio-prev, .chat-audio-next {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; background: transparent;
+    border: 1px solid var(--line); color: var(--muted); cursor: pointer; padding: 0;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .chat-audio-prev svg, .chat-audio-next svg { width: 12px; height: 12px; }
+  .chat-audio-prev:hover, .chat-audio-next:hover { color: var(--accent); border-color: rgba(179, 136, 255, 0.4); background: rgba(179, 136, 255, 0.08); }
   .chat-audio-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   /* height: 28px — реальная область клика/тапа под палец, не только
      визуальная толщина полосы (та осталась тонкой — .chat-audio-track-bar
@@ -780,6 +791,15 @@ ${BASE_STYLES}
   }
   .chat-audio-download svg { width: 13px; height: 13px; }
   .chat-audio-download:hover { color: var(--accent); background: rgba(179, 136, 255, 0.1); }
+  .chat-audio-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .chat-audio-delete {
+    flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); border-radius: 4px; background: transparent; border: none; cursor: pointer; padding: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .chat-audio-delete svg { width: 13px; height: 13px; }
+  .chat-audio-delete:hover { color: var(--red); background: rgba(239, 83, 80, 0.1); }
+  .chat-audio-delete:disabled { opacity: 0.4; pointer-events: none; }
   .chat-audio-player.loading .chat-audio-play { opacity: 0.5; pointer-events: none; }
 
   /* Блок кода из ответа модели (тройные бэктики) — раньше рендерился
@@ -1042,17 +1062,26 @@ ${BASE_STYLES}
     return LANG_EXTENSIONS[key] || 'txt';
   }
 
-  // Своя карточка плеера вместо системного <audio controls> (см. CSS
-  // .chat-audio-player выше и разметку в formatMessageText ниже) — click/
-  // play/pause через делегирование не годится: события <audio> (timeupdate,
-  // ended, loadedmetadata) не всплывают по спецификации HTML5 вообще,
-  // единственный способ — навесить слушатели на каждый <audio> отдельно,
-  // сразу после того, как он реально попал в DOM (innerHTML не запускает
-  // никакие обработчики сам по себе).
+  // Своя карточка плеера вместо системного <audio controls> — события
+  // <audio> не всплывают по спецификации HTML5, слушатели вешаем на
+  // каждый отдельно сразу после появления в DOM.
   function wireAudioPlayers(container) {
+    // Общая для авто-перехода (по 'ended') и ручных кнопок prev/next —
+    // ищем по всему чату (DOM-порядок = порядок сообщений на экране), не
+    // только внутри одного сообщения.
+    function playTrackAt(offset, fromAudio) {
+      const allPlayers = terminal.querySelectorAll('[data-audio-player] audio');
+      const idx = Array.prototype.indexOf.call(allPlayers, fromAudio);
+      const target = allPlayers[idx + offset];
+      if (target) target.play().catch(function () {});
+    }
+
     container.querySelectorAll('[data-audio-player]').forEach(function (player) {
       const audio = player.querySelector('audio');
       const playBtn = player.querySelector('.chat-audio-play');
+      const prevBtn = player.querySelector('.chat-audio-prev');
+      const nextBtn = player.querySelector('.chat-audio-next');
+      const deleteBtn = player.querySelector('.chat-audio-delete');
       const iconPlay = player.querySelector('.icon-play');
       const iconPause = player.querySelector('.icon-pause');
       const track = player.querySelector('.chat-audio-track');
@@ -1069,6 +1098,16 @@ ${BASE_STYLES}
       playBtn.addEventListener('click', function () {
         if (audio.paused) audio.play().catch(function () {}); else audio.pause();
       });
+      // Пауза у остальных треков — иначе play() на соседнем при уже
+      // играющем текущем звучали бы одновременно, наложением.
+      prevBtn.addEventListener('click', function () {
+        audio.pause();
+        playTrackAt(-1, audio);
+      });
+      nextBtn.addEventListener('click', function () {
+        audio.pause();
+        playTrackAt(1, audio);
+      });
       audio.addEventListener('play', function () {
         iconPlay.style.display = 'none';
         iconPause.style.display = '';
@@ -1083,12 +1122,8 @@ ${BASE_STYLES}
         progress.style.width = '0%';
         // Проигрывание по порядку сверху вниз — не только внутри одного
         // сообщения (FlowMusic обычно даёт сразу 2 варианта), а по всему
-        // чату целиком: следующий трек — это следующий <audio> в DOM,
-        // а DOM-порядок и есть порядок сообщений на экране.
-        const allPlayers = terminal.querySelectorAll('[data-audio-player] audio');
-        const idx = Array.prototype.indexOf.call(allPlayers, audio);
-        const next = allPlayers[idx + 1];
-        if (next) next.play().catch(function () {});
+        // чату целиком.
+        playTrackAt(1, audio);
       });
       audio.addEventListener('loadedmetadata', function () {
         timeEl.textContent = fmt(0) + ' / ' + fmt(audio.duration);
@@ -1105,13 +1140,49 @@ ${BASE_STYLES}
         const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
         audio.currentTime = pct * audio.duration;
       });
+
+      // Удаление ОДНОГО трека из сообщения (не всего сообщения целиком) —
+      // FlowMusic обычно даёт сразу несколько вариантов, не все нравятся.
+      deleteBtn.addEventListener('click', async function () {
+        const ok = await nexusConfirm('Удалить этот трек? Файл удалится безвозвратно.', { okLabel: 'Удалить', danger: true });
+        if (!ok) return;
+        const topicId = player.dataset.topicId;
+        const messageId = player.dataset.messageId;
+        const url = player.dataset.url;
+        if (!messageId) {
+          // Сообщение ещё печаталось (typing-заглушка) либо id по какой-то
+          // причине не пришёл с сервера — не пытаемся звать API вслепую.
+          player.remove();
+          return;
+        }
+        deleteBtn.disabled = true;
+        try {
+          const res = await fetch('/api/chat/' + topicId + '/messages/' + messageId + '/attachments', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url }),
+          });
+          if (!res.ok) throw new Error('http ' + res.status);
+          audio.pause();
+          const msgText = player.closest('.msg-text');
+          player.remove();
+          // Если это был последний трек в сообщении — сам текстовый блок
+          // сообщения пуст, не оставляем пустую рамку без содержимого.
+          if (msgText && !msgText.querySelector('[data-audio-player]') && !msgText.textContent.trim()) {
+            msgText.closest('.msg-block').remove();
+          }
+        } catch {
+          deleteBtn.disabled = false;
+          addBlock('ассистент', 'не удалось удалить трек — попробуй ещё раз', { err: true, time: new Date().toISOString() });
+        }
+      });
     });
   }
 
   // Простой markdown: код тройными бэктиками, **жирный**, картинки ![alt](url).
   // Код вырезается первым и заменяется заглушкой — иначе ** внутри кода
   // задело бы последующий replace для жирного текста.
-  function formatMessageText(text) {
+  function formatMessageText(text, messageId) {
     let result = escapeHtml(text);
 
     const codeBlocks = [];
@@ -1122,25 +1193,35 @@ ${BASE_STYLES}
     });
 
     result = result.replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1" class="chat-image" loading="lazy" />');
-    // FlowMusic отдаёт !audio(URL) — своя карточка с play/pause и прогресс-
-    // баром (тот же язык оформления, что у блока кода выше), не голый
-    // системный <audio controls> — у того на разных браузерах/ОС разный
-    // вид, часто нечитаемая заглушка, пока preload="none" не подтянул
-    // метаданные. url уже прошёл escapeHtml вместе со всем текстом
-    // выше — та же безопасная схема, что и у ![alt](url) для картинок.
+    // FlowMusic отдаёт !audio(URL) — своя карточка, не системный
+    // <audio controls>. url уже прошёл escapeHtml вместе с текстом выше —
+    // та же безопасная схема, что и у ![alt](url) для картинок.
     result = result.replace(/!audio\\(([^)]+)\\)/g, function (match, url) {
-      return '<div class="chat-audio-player" data-audio-player>' +
-        '<button class="chat-audio-play" type="button" aria-label="Играть">' +
-          '<svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>' +
-          '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
-        '</button>' +
+      return '<div class="chat-audio-player" data-audio-player data-message-id="' + (messageId || '') + '" data-topic-id="' + currentTopicId + '" data-url="' + url + '">' +
+        '<div class="chat-audio-nav">' +
+          '<button class="chat-audio-prev" type="button" aria-label="Предыдущий трек">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5-6l8.5 6V6z"></path></svg>' +
+          '</button>' +
+          '<button class="chat-audio-play" type="button" aria-label="Играть">' +
+            '<svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>' +
+            '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
+          '</button>' +
+          '<button class="chat-audio-next" type="button" aria-label="Следующий трек">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"></path></svg>' +
+          '</button>' +
+        '</div>' +
         '<div class="chat-audio-body">' +
           '<div class="chat-audio-track"><div class="chat-audio-track-bar"><div class="chat-audio-progress"></div></div></div>' +
           '<div class="chat-audio-meta">' +
             '<span class="chat-audio-time">0:00</span>' +
-            '<a class="chat-audio-download" href="' + url + '" download title="Скачать">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
-            '</a>' +
+            '<div class="chat-audio-actions">' +
+              '<a class="chat-audio-download" href="' + url + '" download title="Скачать">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
+              '</a>' +
+              '<button class="chat-audio-delete" type="button" title="Удалить трек">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>' +
+              '</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<audio preload="metadata" src="' + url + '"></audio>' +
@@ -1195,7 +1276,7 @@ ${BASE_STYLES}
     if (opts.typing || opts.err) {
       textEl.textContent = text;
     } else {
-      textEl.innerHTML = formatMessageText(text);
+      textEl.innerHTML = formatMessageText(text, opts.id);
       wireAudioPlayers(textEl);
       if (textEl.querySelector('[data-audio-player]')) block.classList.add('has-audio');
     }
@@ -1319,7 +1400,7 @@ ${BASE_STYLES}
     const res = await fetch('/api/chat/' + currentTopicId + '/messages');
     const data = await res.json();
     (data.messages || []).forEach(function (m) {
-      addBlock(m.role === 'user' ? 'ты' : 'ассистент', m.content, { time: m.timestamp, provider: m.provider, model: m.model, usage: m.usage });
+      addBlock(m.role === 'user' ? 'ты' : 'ассистент', m.content, { id: m.id, time: m.timestamp, provider: m.provider, model: m.model, usage: m.usage });
     });
   }
 
@@ -1374,13 +1455,9 @@ ${BASE_STYLES}
     // body.model не передан (см. resolveDeepSeekModel в chat/providers.ts).
     const body = { content: text };
 
-    // Блокируем поле/кнопку на время ожидания ответа — раньше ничего не
-    // мешало отправить второе сообщение, пока первое ещё не пришло: для
-    // FlowMusic это реально ломало логику "один project_id на тему" —
-    // второй запрос стартовал, ещё не увидев project_id, сохранённый
-    // первым (тот сохраняется только ПОСЛЕ полного завершения генерации,
-    // которая может идти минуты), и заводил на стороне FlowMusic вторую
-    // отдельную сессию вместо продолжения одной.
+    // Блокируем поле/кнопку на время ожидания ответа — иначе второй
+    // запрос стартует раньше, чем первый сохранит flowmusicProjectId, и
+    // FlowMusic заведёт отдельную сессию вместо продолжения.
     setChatEnabled(false);
     try {
       const res = await fetch('/api/chat/' + currentTopicId + '/messages', {
@@ -1392,6 +1469,7 @@ ${BASE_STYLES}
       typingBlock.remove();
       if (data.assistantMessage) {
         addBlock('ассистент', data.assistantMessage.content, {
+          id: data.assistantMessage.id,
           time: data.assistantMessage.timestamp,
           provider: data.assistantMessage.provider,
           model: data.assistantMessage.model,

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import fastifyCookie from "@fastify/cookie";
 import fastifyFormbody from "@fastify/formbody";
 import fastifyMultipart from "@fastify/multipart";
-import { mkdir, appendFile, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, appendFile, readFile, writeFile, stat, unlink } from "node:fs/promises";
 import { createReadStream, createWriteStream, readFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
@@ -20,7 +20,7 @@ import {
 } from "./auth.js";
 import { renderDashboard, renderChatPage } from "./dashboard.js";
 import { getKeyStatus, setKey, clearKey, getMonitoringAgentToken, getSteamApiKey, getSteamId, getRaUsername, getRaApiKey } from "./keys.js";
-import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage, setTopicFlowMusicProjectId } from "./chat/storage.js";
+import { listTopics, createTopic, deleteTopic, getTopic, getMessages, appendMessage, newMessage, setTopicFlowMusicProjectId, removeAttachmentFromMessage } from "./chat/storage.js";
 import { buildContext } from "./chat/context.js";
 import { askDeepSeek, DeepSeekNotConfiguredError, getDeepSeekBalance, getProviderStatus, askGemini, GeminiNotConfiguredError, askFlowMusic, getFlowMusicBalance, FlowMusicNotConfiguredError, askClaude, ClaudeNotConfiguredError } from "./chat/providers.js";
 import { getVapidKeys, addSubscription, removeSubscription, sendPushToAll, getSubscriptionCount } from "./push.js";
@@ -282,13 +282,9 @@ async function getReply(
   }
   if (provider === "flowmusic") {
     const lastUserMessage = [...context].reverse().find((m) => m.role === "user");
-    // Мьютекс по теме — на случай, если два запроса в эту же тему всё же
-    // пришли одновременно (два клика подряд быстрее, чем успела включиться
-    // блокировка поля в браузере, две вкладки/устройства и т.п.): без
-    // этого второй запрос читал бы topic.flowmusicProjectId ДО того, как
-    // первый успел его сохранить (сохранение — только после ПОЛНОГО
-    // завершения генерации, которая может идти минуты), и заводил бы на
-    // стороне FlowMusic отдельную новую сессию вместо продолжения одной.
+    // Мьютекс по теме — защита от гонки (два клика/вкладки одновременно):
+    // без него второй запрос читал бы ещё не сохранённый flowmusicProjectId
+    // и завёл бы отдельную сессию на стороне FlowMusic вместо продолжения.
     return withFileLock(`flowmusic-topic-${topicId}`, async () => {
       const topic = await getTopic(topicId);
       // onProjectCreated — сохраняем id СРАЗУ, как только он известен, не
@@ -411,12 +407,9 @@ app.get<{ Params: { topicId: string; filename: string } }>(
     // сикать вообще, посчитав сервер неспособным на это в принципе.
     reply.header("Accept-Ranges", "bytes");
 
-    // Раньше файл всегда читался и отдавался целиком (200), без учёта
-    // заголовка Range — HTML5 <audio> перематывает через ЧАСТИЧНЫЙ запрос
-    // байт (Range: bytes=X-Y, ожидает 206), особенно для больших
-    // несжатых wav; без поддержки Range клик по таймлайну у части
-    // браузеров вместо перемотки на самом деле просто перезапускает
-    // проигрывание с начала (жалоба пользователя — ровно этот симптом).
+    // <audio> перематывает через частичный запрос байт (Range: bytes=X-Y,
+    // ожидает 206) — без поддержки клик по таймлайну на части браузеров
+    // не перематывает, а перезапускает воспроизведение с начала.
     const rangeHeader = request.headers.range;
     if (!rangeHeader) {
       reply.header("Content-Length", fileStat.size);
@@ -436,6 +429,39 @@ app.get<{ Params: { topicId: string; filename: string } }>(
     reply.header("Content-Range", `bytes ${start}-${end}/${fileStat.size}`);
     reply.header("Content-Length", end - start + 1);
     return createReadStream(filePath, { start, end });
+  }
+);
+
+// Удаление одного трека из сообщения, не всего сообщения целиком —
+// FlowMusic обычно даёт сразу несколько вариантов. url — та же ссылка,
+// что в !audio(url) внутри content, ей же адресуем и файл на диске.
+app.delete<{ Params: { topicId: string; messageId: string }; Body: { url?: string } }>(
+  "/api/chat/:topicId/messages/:messageId/attachments",
+  async (request, reply) => {
+    const url = request.body?.url;
+    if (!url) {
+      reply.code(400);
+      return { error: "не передан url трека" };
+    }
+    const updated = await removeAttachmentFromMessage(request.params.topicId, request.params.messageId, url);
+    if (!updated) {
+      reply.code(404);
+      return { error: "сообщение не найдено" };
+    }
+
+    // UUID в имени файла исключает коллизию между сообщениями — можно
+    // удалить с диска, не просто отвязать ссылку. Не критично при неудаче.
+    try {
+      const filename = url.split("/").pop();
+      if (filename) {
+        const filePath = safeJoin(HUB_DATA_DIR, "chat", "attachments", request.params.topicId, filename);
+        if (filePath) await unlink(filePath);
+      }
+    } catch {
+      // не критично
+    }
+
+    return { message: updated };
   }
 );
 
@@ -667,12 +693,9 @@ app.get("/internal/monitoring-token", async (request, reply) => {
   return { token: (await getMonitoringAgentToken()) ?? null };
 });
 
-// GET /internal/cheevoscope-keys — в отличие от чат-провайдеров (там
-// хаб сам делает запрос и отдаёт модулю только готовый результат, ключ
-// наружу не выходит), здесь модуль сам обращается к Steam/RA API — ему
-// нужен настоящий ключ, не обработанный ответ. Спрашивает заново при
-// каждом запуске пайплайна, не кэширует у себя — смена в интерфейсе
-// действует сразу, тем же принципом, что и у токена агентов выше.
+// В отличие от чат-провайдеров (хаб сам делает запрос, ключ наружу не
+// выходит) — cheevoscope сам обращается к Steam/RA API, нужен настоящий
+// ключ. Спрашивает заново при каждом запуске, не кэширует у себя.
 app.get("/internal/cheevoscope-keys", async (request, reply) => {
   return {
     steamApiKey: (await getSteamApiKey()) ?? null,
@@ -688,14 +711,9 @@ app.get("/internal/chat-usage", async (request, reply) => {
   return { usage: await getUsageSummary() };
 });
 
-// GET /internal/provider-balance/deepseek — баланс через тот же ключ,
-// что у чата, сам ключ модулю не передаётся. У Gemini/Claude такого
-// публичного API нет вообще — честно показываем ограничение, не
-// изображаем. У FlowMusic есть (см. ниже) — просто не задокументирован
-// официально нигде, найден в исходниках сторонней реализации.
-//
-// Для Gemini есть другое — /internal/provider-status/gemini ниже:
-// последний реально увиденный статус по факту запросов, не баланс.
+// Баланс через тот же ключ, что у чата, сам ключ модулю не передаётся.
+// У Gemini/Claude публичного API баланса нет вообще. Для Gemini есть
+// другое — /internal/provider-status/gemini: статус по факту запросов.
 app.get("/internal/provider-balance/deepseek", async (request, reply) => {
   return await getDeepSeekBalance();
 });

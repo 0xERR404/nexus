@@ -44,6 +44,17 @@ async function writeBalances(balances) {
   await fs.writeFile(BALANCES_FILE, JSON.stringify(balances, null, 2));
 }
 
+// Простой in-process мьютекс — без него два одновременных запроса
+// (добавление/правка/удаление операции) читают баланс+историю, меняют и
+// пишут независимо, один перезаписывает правки другого поверх (тот же
+// класс гонки, что уже находился и чинился в хабе — keys.json/topics.json).
+let financeLock = Promise.resolve();
+function withFinanceLock(fn) {
+  const run = financeLock.then(fn, fn);
+  financeLock = run.catch(() => {});
+  return run;
+}
+
 async function readTransactions() {
   try {
     const raw = await fs.readFile(TRANSACTIONS_FILE, 'utf-8');
@@ -709,14 +720,17 @@ const server = http.createServer(async (req, res) => {
           timestamp: new Date().toISOString(),
         };
 
-        const balances = await readBalances();
-        applyEffect(balances, entry, +1);
-        balances.card = round2(balances.card);
-        balances.deposit = round2(balances.deposit);
-        await writeBalances(balances);
+        const balances = await withFinanceLock(async () => {
+          const b = await readBalances();
+          applyEffect(b, entry, +1);
+          b.card = round2(b.card);
+          b.deposit = round2(b.deposit);
+          await writeBalances(b);
 
-        const transactions = await readTransactions();
-        await writeTransactions([...transactions, entry]);
+          const transactions = await readTransactions();
+          await writeTransactions([...transactions, entry]);
+          return b;
+        });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, balances, entry }));
@@ -738,23 +752,27 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'DELETE') {
       try {
-        const [balances, transactions] = await Promise.all([readBalances(), readTransactions()]);
-        const idx = transactions.findIndex((t) => t.id === id);
-        if (idx === -1) {
+        const result = await withFinanceLock(async () => {
+          const [balances, transactions] = await Promise.all([readBalances(), readTransactions()]);
+          const idx = transactions.findIndex((t) => t.id === id);
+          if (idx === -1) return null;
+          applyEffect(balances, transactions[idx], -1);
+          balances.card = round2(balances.card);
+          balances.deposit = round2(balances.deposit);
+          await writeBalances(balances);
+
+          transactions.splice(idx, 1);
+          await writeTransactions(transactions);
+          return balances;
+        });
+        if (!result) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'операция не найдена' }));
           return;
         }
-        applyEffect(balances, transactions[idx], -1);
-        balances.card = round2(balances.card);
-        balances.deposit = round2(balances.deposit);
-        await writeBalances(balances);
-
-        transactions.splice(idx, 1);
-        await writeTransactions(transactions);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, balances }));
+        res.end(JSON.stringify({ ok: true, balances: result }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'не удалось удалить', details: String(err) }));
@@ -775,33 +793,39 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const [balances, transactions] = await Promise.all([readBalances(), readTransactions()]);
-        const idx = transactions.findIndex((t) => t.id === id);
-        if (idx === -1) {
+        const result = await withFinanceLock(async () => {
+          const [balances, transactions] = await Promise.all([readBalances(), readTransactions()]);
+          const idx = transactions.findIndex((t) => t.id === id);
+          if (idx === -1) return { error: 'not_found' };
+          const old = transactions[idx];
+          const description = old.account === 'deposit' ? '' : String(parsed.description || '').trim().slice(0, 200);
+          if (old.account === 'card' && !description) return { error: 'description_required' };
+
+          applyEffect(balances, old, -1); // откатить старое значение
+          const updated = { ...old, amount: round2(amount), description, editedAt: new Date().toISOString() };
+          applyEffect(balances, updated, +1); // применить новое
+          balances.card = round2(balances.card);
+          balances.deposit = round2(balances.deposit);
+          await writeBalances(balances);
+
+          transactions[idx] = updated;
+          await writeTransactions(transactions);
+          return { balances, entry: updated };
+        });
+
+        if (result.error === 'not_found') {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'операция не найдена' }));
           return;
         }
-        const old = transactions[idx];
-        const description = old.account === 'deposit' ? '' : String(parsed.description || '').trim().slice(0, 200);
-        if (old.account === 'card' && !description) {
+        if (result.error === 'description_required') {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'description обязателен' }));
           return;
         }
 
-        applyEffect(balances, old, -1); // откатить старое значение
-        const updated = { ...old, amount: round2(amount), description, editedAt: new Date().toISOString() };
-        applyEffect(balances, updated, +1); // применить новое
-        balances.card = round2(balances.card);
-        balances.deposit = round2(balances.deposit);
-        await writeBalances(balances);
-
-        transactions[idx] = updated;
-        await writeTransactions(transactions);
-
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, balances, entry: updated }));
+        res.end(JSON.stringify({ ok: true, balances: result.balances, entry: result.entry }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'некорректное тело запроса', details: String(err) }));

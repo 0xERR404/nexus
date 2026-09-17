@@ -1,11 +1,8 @@
 'use strict';
 
-// Вход через клиентский протокол Steam (как у десктопного клиента) —
-// getUserOwnedApps() дёргает ту же службу Player.GetOwnedGames#1, разница
-// в одном параметре, skip_unvetted_apps (default=true), которого нет в
-// публичном REST API (подтверждено protobuf-схемой Steam). Не решает
-// Family Sharing и не гарантирует конкретный случай — просто даёт доступ
-// к этому переключателю.
+// Вход через клиентский протокол Steam — getUserOwnedApps() дёргает ту
+// же службу, что публичный API, разница в одном параметре,
+// skip_unvetted_apps (default=true в REST), которого там нет.
 
 const fs = require('fs/promises');
 const readline = require('readline');

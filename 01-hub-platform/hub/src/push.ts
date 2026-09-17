@@ -25,20 +25,25 @@ async function ensureDir() {
 }
 
 // Генерируются один раз, хранятся на диске — иначе все подписки браузеров
-// стали бы недействительны при каждом перезапуске хаба.
+// стали бы недействительны при каждом перезапуске хаба. withFileLock —
+// без него два запроса сразу после установки (до появления файла) могли
+// бы сгенерировать РАЗНЫЕ пары ключей и записать разное на диск.
 export async function getVapidKeys(): Promise<VapidKeys> {
   if (vapidCache) return vapidCache;
-  try {
-    vapidCache = JSON.parse(await readFile(VAPID_FILE, "utf-8")) as VapidKeys;
-    return vapidCache;
-  } catch {
-    // файла ещё нет — генерируем ниже
-  }
-  const generated = webpush.generateVAPIDKeys();
-  vapidCache = generated;
-  await ensureDir();
-  await writeFile(VAPID_FILE, JSON.stringify(generated, null, 2));
-  return generated;
+  return withFileLock(VAPID_FILE, async () => {
+    if (vapidCache) return vapidCache;
+    try {
+      vapidCache = JSON.parse(await readFile(VAPID_FILE, "utf-8")) as VapidKeys;
+      return vapidCache;
+    } catch {
+      // файла ещё нет — генерируем ниже
+    }
+    const generated = webpush.generateVAPIDKeys();
+    vapidCache = generated;
+    await ensureDir();
+    await writeFile(VAPID_FILE, JSON.stringify(generated, null, 2));
+    return generated;
+  });
 }
 
 async function readSubscriptions(): Promise<PushSubscriptionRecord[]> {

@@ -140,6 +140,37 @@ export async function appendMessage(topicId: string, message: Message): Promise<
   });
 }
 
+// Убирает один конкретный трек (!audio(url)) из уже сохранённого
+// сообщения — FlowMusic обычно даёт сразу несколько вариантов в одном
+// ответе, пользователь может захотеть выкинуть один, не всё сообщение
+// целиком. Возвращает обновлённое сообщение или null, если не нашли.
+export async function removeAttachmentFromMessage(topicId: string, messageId: string, url: string): Promise<Message | null> {
+  return withFileLock(messagesFile(topicId), async () => {
+    let raw: string;
+    try {
+      raw = await readFile(messagesFile(topicId), "utf-8");
+    } catch {
+      return null;
+    }
+    const lines = raw.trim().split("\n").filter(Boolean);
+    let updated: Message | null = null;
+    const marker = `!audio(${url})`;
+    const newLines = lines.map((line) => {
+      const msg = JSON.parse(line) as Message;
+      if (msg.id !== messageId) return line;
+      msg.content = msg.content
+        .split("\n")
+        .filter((contentLine) => contentLine.trim() !== marker)
+        .join("\n");
+      updated = msg;
+      return JSON.stringify(msg);
+    });
+    if (!updated) return null;
+    await writeFile(messagesFile(topicId), newLines.length ? newLines.join("\n") + "\n" : "");
+    return updated;
+  });
+}
+
 // Сохраняется один раз при первом сообщении FlowMusic в теме, дальше
 // переиспользуется — см. Topic.flowmusicProjectId.
 export async function setTopicFlowMusicProjectId(topicId: string, projectId: string): Promise<void> {
