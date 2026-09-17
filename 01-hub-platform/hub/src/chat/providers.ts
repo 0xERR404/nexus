@@ -376,7 +376,26 @@ const BROWSER_LIKE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   Origin: "https://www.flowmusic.app",
   Referer: "https://www.flowmusic.app/",
+  Accept: "*/*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-site",
 };
+
+// Одна повторная попытка с паузой при сбое обновления токена — часть
+// сбоев может быть переходной (сетевой обрыв, кратковременный WAF-челлендж),
+// не постоянной блокировкой. Не решает саму блокировку, если она стабильная
+// (см. обсуждение TLS-отпечатка), но не помешает и дёшево.
+async function refreshFlowMusicTokenWithRetry(refreshToken: string): Promise<FlowMusicSession | null> {
+  const first = await refreshFlowMusicToken(refreshToken);
+  if (first) return first;
+  await sleep(RETRY_DELAY_MS);
+  return refreshFlowMusicToken(refreshToken);
+}
 
 async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSession | null> {
   if (!refreshToken) return null;
@@ -437,7 +456,7 @@ async function ensureFlowMusicAccessToken(): Promise<string> {
     }
     if (!isFlowMusicTokenExpired(session.expiresAt)) return session.accessToken;
 
-    const refreshed = await refreshFlowMusicToken(session.refreshToken);
+    const refreshed = await refreshFlowMusicTokenWithRetry(session.refreshToken);
     if (!refreshed) {
       throw new Error("Сессия FlowMusic истекла и не удалось обновить — зайди на flowmusic.app заново и вставь новый токен в настройках хаба.");
     }
