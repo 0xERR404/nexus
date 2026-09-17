@@ -367,6 +367,17 @@ function isFlowMusicTokenExpired(expiresAt: number): boolean {
   return Date.now() / 1000 >= expiresAt - 60;
 }
 
+// Заголовки браузера — HTTP 403 с HTML-телом (а не JSON-ошибкой Supabase)
+// похоже на блокировку WAF/бот-защитой ДО того, как запрос вообще дошёл
+// до логики Supabase: голый серверный fetch без User-Agent/Origin/Referer
+// не похож на настоящий браузер flowmusic.app. Не гарантия обхода любой
+// защиты, но самое дешёвое и обоснованное, что можно попробовать первым.
+const BROWSER_LIKE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Origin: "https://www.flowmusic.app",
+  Referer: "https://www.flowmusic.app/",
+};
+
 async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSession | null> {
   if (!refreshToken) return null;
   try {
@@ -376,7 +387,7 @@ async function refreshFlowMusicToken(refreshToken: string): Promise<FlowMusicSes
     const apikey = FLOWMUSIC_SUPABASE_AUTH_URL.split("//")[1]?.split(".")[0] ?? "";
     const res = await fetchWithTimeout(`${FLOWMUSIC_SUPABASE_AUTH_URL}/auth/v1/token?grant_type=refresh_token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey },
+      headers: { "Content-Type": "application/json", apikey, ...BROWSER_LIKE_HEADERS },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
     if (!res.ok) {
@@ -447,7 +458,11 @@ async function ensureFlowMusicAccessToken(): Promise<string> {
 
 async function flowMusicFetch(baseUrl: string, path: string, init: RequestInit = {}, timeoutMs = FLOWMUSIC_TIMEOUT_MS): Promise<Response> {
   const token = await ensureFlowMusicAccessToken();
-  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = {
+    ...BROWSER_LIKE_HEADERS,
+    ...(init.headers as Record<string, string> | undefined),
+    Authorization: `Bearer ${token}`,
+  };
   if (!headers["Content-Type"] && (init.method === "POST" || init.method === "PUT")) headers["Content-Type"] = "application/json";
   return fetchWithTimeout(`${baseUrl}${path}`, { ...init, headers }, timeoutMs);
 }
