@@ -90,6 +90,8 @@ const state = {
   lastError: null,
   consecutiveFailures: 0,
   alertSent: false,
+  seeding: false, // затравка выполняется в фоне прямо сейчас
+  seedError: null, // ошибка последней попытки затравки (отдельно от lastError, тот про плановый sync)
 };
 
 let browser = null;
@@ -306,9 +308,11 @@ const EXTRA_SCRIPT = `
       logged_out: 'разлогинен на flowmusic.app',
     };
     box.innerHTML =
+      (s.seeding ? '<b>затравка выполняется…</b> (может занять до минуты — холодный запуск Chromium)<br>' : '') +
       '<b>' + (labels[s.status] || s.status) + '</b><br>' +
       'последний успешный sync: ' + (s.lastSyncAt || '—') + '<br>' +
-      (s.lastError ? 'последняя ошибка: ' + s.lastError : '');
+      (s.lastError ? 'последняя ошибка sync: ' + s.lastError + '<br>' : '') +
+      (s.seedError ? 'последняя ошибка затравки: ' + s.seedError : '');
   }
   loadState();
   setInterval(loadState, 15000);
@@ -317,7 +321,7 @@ const EXTRA_SCRIPT = `
     const value = document.getElementById('seedInput').value.trim();
     const result = document.getElementById('seedResult');
     if (!value) return;
-    result.textContent = 'применяю...';
+    result.textContent = 'запускаю...';
     try {
       const res = await fetch('api/seed', {
         method: 'POST',
@@ -325,8 +329,12 @@ const EXTRA_SCRIPT = `
         body: JSON.stringify({ raw: value }),
       });
       const data = await res.json();
-      result.textContent = res.ok ? 'готово' : ('ошибка: ' + (data.error || res.status) + (data.details ? ' — ' + data.details : ''));
-      document.getElementById('seedInput').value = '';
+      if (res.status === 202) {
+        result.textContent = 'запущено — статус сессии выше обновится сам, когда браузер закончит (обычно до минуты)';
+        document.getElementById('seedInput').value = '';
+      } else {
+        result.textContent = 'ошибка: ' + (data.error || res.status);
+      }
       loadState();
     } catch (err) {
       result.textContent = 'сетевая ошибка: ' + err;
@@ -366,23 +374,48 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/seed') {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
-    req.on('end', async () => {
+    req.on('end', () => {
+      let raw;
       try {
         const parsed = JSON.parse(body);
-        const raw = String(parsed.raw || '').trim();
-        if (!raw) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'raw обязателен' }));
-          return;
-        }
-        await seedSession(raw);
-        await syncOnce(); // сразу подтвердить, что хаб принял, не ждать 2 минуты
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        raw = String(parsed.raw || '').trim();
       } catch (err) {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'не удалось применить куку', details: String(err) }));
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'некорректный JSON' }));
+        return;
       }
+      if (!raw) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'raw обязателен' }));
+        return;
+      }
+      if (state.seeding) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'затравка уже выполняется, дождись завершения' }));
+        return;
+      }
+
+      // ВАЖНО: не await — прокси хаба (/modules/:name/*) обрывает запрос
+      // по фиксированному таймауту 10с (см. hub/src/index.ts), а запуск
+      // холодного Chromium + переход на страницу легко занимает больше.
+      // Отвечаем сразу, реальную работу гоняем в фоне, прогресс/ошибку
+      // смотрим через уже существующий поллинг /state.
+      state.seeding = true;
+      state.seedError = null;
+      (async () => {
+        try {
+          await seedSession(raw);
+          await syncOnce();
+        } catch (err) {
+          state.seedError = String(err instanceof Error ? err.message : err);
+          console.error('[flowmusic-keeper] затравка не удалась:', state.seedError);
+        } finally {
+          state.seeding = false;
+        }
+      })();
+
+      res.writeHead(202, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, status: 'started' }));
     });
     return;
   }

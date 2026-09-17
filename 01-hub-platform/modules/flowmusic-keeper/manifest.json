@@ -1,7 +1,7 @@
 {
   "name": "flowmusic-keeper",
   "displayName": "FlowMusic Keeper",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "Держит браузерную сессию FlowMusic живой (реальный Chromium, не только подмена TLS-отпечатка) и сам передаёт хабу свежие access/refresh токены — без ручной вставки куки каждый час",
   "port": 4007
 }
