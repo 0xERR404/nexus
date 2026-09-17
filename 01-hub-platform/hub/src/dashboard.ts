@@ -760,17 +760,6 @@ ${BASE_STYLES}
   /* margin-left: 2px — визуальный центр треугольника play чуть смещён
      влево от геометрического, без сдвига он выглядит "не по центру". */
   .chat-audio-play .icon-play { margin-left: 2px; }
-  /* prev/next — по запросу "управлять треками", листать вручную, не
-     дожидаясь конца текущего трека для автоперехода. */
-  .chat-audio-nav { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-  .chat-audio-prev, .chat-audio-next {
-    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: flex;
-    align-items: center; justify-content: center; background: transparent;
-    border: 1px solid var(--line); color: var(--muted); cursor: pointer; padding: 0;
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
-  }
-  .chat-audio-prev svg, .chat-audio-next svg { width: 12px; height: 12px; }
-  .chat-audio-prev:hover, .chat-audio-next:hover { color: var(--accent); border-color: rgba(179, 136, 255, 0.4); background: rgba(179, 136, 255, 0.08); }
   .chat-audio-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   /* height: 28px — реальная область клика/тапа под палец, не только
      визуальная толщина полосы (та осталась тонкой — .chat-audio-track-bar
@@ -1066,9 +1055,9 @@ ${BASE_STYLES}
   // <audio> не всплывают по спецификации HTML5, слушатели вешаем на
   // каждый отдельно сразу после появления в DOM.
   function wireAudioPlayers(container) {
-    // Общая для авто-перехода (по 'ended') и ручных кнопок prev/next —
-    // ищем по всему чату (DOM-порядок = порядок сообщений на экране), не
-    // только внутри одного сообщения.
+    // Переход по порядку — не только по 'ended' (автопереход), но и по
+    // системным кнопкам prev/next из Media Session (экран блокировки,
+    // наушники) — тем самым, а не своими кнопками в самом чате.
     function playTrackAt(offset, fromAudio) {
       const allPlayers = terminal.querySelectorAll('[data-audio-player] audio');
       const idx = Array.prototype.indexOf.call(allPlayers, fromAudio);
@@ -1079,8 +1068,6 @@ ${BASE_STYLES}
     container.querySelectorAll('[data-audio-player]').forEach(function (player) {
       const audio = player.querySelector('audio');
       const playBtn = player.querySelector('.chat-audio-play');
-      const prevBtn = player.querySelector('.chat-audio-prev');
-      const nextBtn = player.querySelector('.chat-audio-next');
       const deleteBtn = player.querySelector('.chat-audio-delete');
       const iconPlay = player.querySelector('.icon-play');
       const iconPause = player.querySelector('.icon-pause');
@@ -1098,23 +1085,32 @@ ${BASE_STYLES}
       playBtn.addEventListener('click', function () {
         if (audio.paused) audio.play().catch(function () {}); else audio.pause();
       });
-      // Пауза у остальных треков — иначе play() на соседнем при уже
-      // играющем текущем звучали бы одновременно, наложением.
-      prevBtn.addEventListener('click', function () {
-        audio.pause();
-        playTrackAt(-1, audio);
-      });
-      nextBtn.addEventListener('click', function () {
-        audio.pause();
-        playTrackAt(1, audio);
-      });
       audio.addEventListener('play', function () {
         iconPlay.style.display = 'none';
         iconPause.style.display = '';
+        // Media Session — переключение треков с экрана блокировки/наушников,
+        // не своими кнопками в чате. Один общий navigator.mediaSession на
+        // страницу — переустанавливаем при старте КАЖДОГО трека, чтобы
+        // системный контрол всегда управлял именно играющим сейчас audio.
+        if ('mediaSession' in navigator) {
+          const allPlayers = Array.prototype.slice.call(terminal.querySelectorAll('[data-audio-player] audio'));
+          const pos = allPlayers.indexOf(audio) + 1;
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'Трек ' + pos + ' из ' + allPlayers.length,
+            artist: 'FlowMusic',
+            album: 'NEXUS404',
+          });
+          navigator.mediaSession.setActionHandler('previoustrack', function () { playTrackAt(-1, audio); });
+          navigator.mediaSession.setActionHandler('nexttrack', function () { playTrackAt(1, audio); });
+          navigator.mediaSession.setActionHandler('play', function () { audio.play().catch(function () {}); });
+          navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); });
+          navigator.mediaSession.playbackState = 'playing';
+        }
       });
       audio.addEventListener('pause', function () {
         iconPlay.style.display = '';
         iconPause.style.display = 'none';
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
       });
       audio.addEventListener('ended', function () {
         iconPlay.style.display = '';
@@ -1198,18 +1194,10 @@ ${BASE_STYLES}
     // та же безопасная схема, что и у ![alt](url) для картинок.
     result = result.replace(/!audio\\(([^)]+)\\)/g, function (match, url) {
       return '<div class="chat-audio-player" data-audio-player data-message-id="' + (messageId || '') + '" data-topic-id="' + currentTopicId + '" data-url="' + url + '">' +
-        '<div class="chat-audio-nav">' +
-          '<button class="chat-audio-prev" type="button" aria-label="Предыдущий трек">' +
-            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5-6l8.5 6V6z"></path></svg>' +
-          '</button>' +
-          '<button class="chat-audio-play" type="button" aria-label="Играть">' +
-            '<svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>' +
-            '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
-          '</button>' +
-          '<button class="chat-audio-next" type="button" aria-label="Следующий трек">' +
-            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"></path></svg>' +
-          '</button>' +
-        '</div>' +
+        '<button class="chat-audio-play" type="button" aria-label="Играть">' +
+          '<svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>' +
+          '<svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"></path></svg>' +
+        '</button>' +
         '<div class="chat-audio-body">' +
           '<div class="chat-audio-track"><div class="chat-audio-track-bar"><div class="chat-audio-progress"></div></div></div>' +
           '<div class="chat-audio-meta">' +

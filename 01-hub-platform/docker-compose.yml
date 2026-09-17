@@ -44,10 +44,10 @@ services:
       # docker.sock здесь больше НЕ монтируется — раньше был прямой
       # доступ к Docker API, что по факту равносильно root на хосте.
       # Теперь управление модулями (build/run/inspect/stop) тоже идёт
-      # через host-bridge (см. bridge.py) — тот же принцип двойной
-      # защиты, что и для restart_server/run_cleanup.
+      # через host-bridge (см. host-bridge/src/bridge.ts) — тот же принцип
+      # двойной защиты, что и для restart_server/run_cleanup.
       #
-      # Монтируем ДИРЕКТОРИЮ, а не сам файл сокета. bridge.py на хосте
+      # Монтируем ДИРЕКТОРИЮ, а не сам файл сокета. bridge.ts на хосте
       # пересоздаёт файл сокета при каждом своём (ре)старте (unlink +
       # bind), из-за чего он получает новый inode — при bind-mount
       # одного файла контейнер держал бы старый, уже мёртвый inode до
@@ -65,12 +65,12 @@ services:
       - DOCKER_NETWORK=nexus404
       # Лимиты расхода токенов в чате — у обоих есть встроенные значения
       # по умолчанию (6000 / 4096), эти строки не обязательны, раскомментируй
-      # и поставь своё число, если дефолт не подходит. См.
-      # hub/src/chat/context.ts и hub/src/chat/deepseek.ts/gemini.ts.
+      # и поставь своё число, если дефолт не подходит. Все 4 провайдера
+      # (DeepSeek/Gemini/Claude/FlowMusic) — в одном hub/src/chat/providers.ts.
       # - CHAT_MAX_CONTEXT_TOKENS=6000   # бюджет на историю, уходящую в запрос
       # - CHAT_MAX_REPLY_TOKENS=4096     # потолок длины ответа модели (общий для DeepSeek/Gemini/Claude)
-      # - CHAT_CLAUDE_MODEL=claude-sonnet-5   # строка модели Claude, см. hub/src/chat/claude.ts
-      # - CHAT_GEMINI_MODEL=gemini-2.5-flash  # строка модели Gemini, см. hub/src/chat/gemini.ts —
+      # - CHAT_CLAUDE_MODEL=claude-sonnet-5   # строка модели Claude, см. hub/src/chat/providers.ts
+      # - CHAT_GEMINI_MODEL=gemini-2.5-flash  # строка модели Gemini, см. hub/src/chat/providers.ts —
                                                # у Google модели с суффиксом "-exp" снимаются без
                                                # предупреждения, полезно уметь поменять без пересборки
     # AUTH_USER/AUTH_HASH/SESSION_SECRET — через env_file, НЕ через
