@@ -111,6 +111,12 @@ const BASE_STYLES = `
   .nx-confirm-overlay.show .nx-confirm-box { transform: translateY(0); }
   .nx-confirm-title { font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
   .nx-confirm-message { font-family: var(--font-sans); font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 20px; white-space: pre-wrap; }
+  .nx-confirm-input {
+    display: block; width: 100%; box-sizing: border-box; margin-bottom: 20px; padding: 8px 10px;
+    background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+    font-family: var(--font-sans); font-size: 13px; outline: none; transition: border-color 0.15s;
+  }
+  .nx-confirm-input:focus { border-color: var(--accent); }
   .nx-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
   .nx-confirm-actions button {
     margin: 0; background: transparent; border: 1px solid var(--line); color: var(--accent); border-radius: 4px;
@@ -982,6 +988,58 @@ ${BASE_STYLES}
     });
   };
 
+  // Замена системного prompt() — тот же принцип, что и nexusConfirm выше,
+  // но с полем ввода текста. window.nexusPrompt(message, opts) ->
+  // Promise<string|null> (null = отмена/Escape/пусто, как у prompt()).
+  window.nexusPrompt = function (message, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'nx-confirm-overlay';
+      overlay.innerHTML =
+        '<div class="nx-confirm-box">' +
+          '<div class="nx-confirm-title"></div>' +
+          '<div class="nx-confirm-message"></div>' +
+          '<input class="nx-confirm-input" type="text" />' +
+          '<div class="nx-confirm-actions">' +
+            '<button class="nx-confirm-cancel" type="button"></button>' +
+            '<button class="nx-confirm-ok" type="button"></button>' +
+          '</div>' +
+        '</div>';
+      overlay.querySelector('.nx-confirm-title').textContent = opts.title || 'Введите значение';
+      var messageEl = overlay.querySelector('.nx-confirm-message');
+      if (message) { messageEl.textContent = message; } else { messageEl.style.display = 'none'; }
+      var input = overlay.querySelector('.nx-confirm-input');
+      input.placeholder = opts.placeholder || '';
+      input.value = opts.defaultValue || '';
+      overlay.querySelector('.nx-confirm-cancel').textContent = opts.cancelLabel || 'Отмена';
+      var okBtn = overlay.querySelector('.nx-confirm-ok');
+      okBtn.textContent = opts.okLabel || 'OK';
+      document.body.appendChild(overlay);
+      requestAnimationFrame(function () { overlay.classList.add('show'); });
+
+      function close(result) {
+        document.removeEventListener('keydown', onKeydown);
+        overlay.classList.remove('show');
+        setTimeout(function () { overlay.remove(); }, 150);
+        resolve(result);
+      }
+      function submit() {
+        var value = input.value.trim();
+        close(value || null);
+      }
+      function onKeydown(e) {
+        if (e.key === 'Escape') close(null);
+        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+      }
+      document.addEventListener('keydown', onKeydown);
+      okBtn.addEventListener('click', submit);
+      overlay.querySelector('.nx-confirm-cancel').addEventListener('click', function () { close(null); });
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(null); });
+      input.focus();
+    });
+  };
+
   const terminal = document.getElementById('terminal');
   const topicSelect = document.getElementById('topicSelect');
   const providerSelect = document.getElementById('providerSelect');
@@ -1415,7 +1473,7 @@ ${BASE_STYLES}
   });
 
   document.getElementById('newTopicBtn').addEventListener('click', async () => {
-    const title = prompt('Название темы:');
+    const title = await nexusPrompt('Название темы:', { title: 'Новая тема', placeholder: 'Например, Идеи для проекта' });
     if (!title) return;
     const created = await (await fetch('/api/chat/topics', {
       method: 'POST',
