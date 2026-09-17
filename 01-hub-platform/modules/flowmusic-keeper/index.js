@@ -94,6 +94,7 @@ const state = {
 
 let browser = null;
 let page = null;
+let launchingPromise = null; // мьютекс: syncLoop по таймеру и /api/seed могут дёрнуть ensureBrowser() одновременно
 
 async function ensureDataDir() {
   await fs.mkdir(PROFILE_DIR, { recursive: true });
@@ -116,10 +117,27 @@ async function resolveChromiumPath() {
   throw new Error(`Chromium не найден ни по одному из путей: ${CHROMIUM_PATH_CANDIDATES.join(', ')} — проверь 'which chromium' внутри контейнера и задай CHROMIUM_PATH вручную`);
 }
 
+// SingletonLock/SingletonSocket/SingletonCookie — механизм Chromium
+// "один процесс на профиль". Профиль у нас персистентный (переживает
+// docker rm -f), а процесс — нет: если контейнер убили не через SIGTERM
+// (OOM, docker kill, рестарт сервера), лок остаётся висеть, и новый
+// Chromium видит "профиль занят другим компьютером" (на деле — тем же
+// контейнером в прошлой жизни, id машины сохранился в самом локе).
+// Раз мы вообще дошли до попытки запуска — значит, ЖИВОГО процесса с
+// этим профилем в этом контейнере нет (см. мьютекс launchingPromise
+// ниже), так что снос лока перед каждым запуском всегда безопасен.
+async function clearStaleSingletonLocks() {
+  const names = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+  await Promise.all(
+    names.map((name) => fs.rm(path.join(PROFILE_DIR, name), { force: true }).catch(() => {}))
+  );
+}
+
 // ---------- Браузер ----------
 
 async function launchBrowser() {
   await ensureDataDir();
+  await clearStaleSingletonLocks();
   const executablePath = await resolveChromiumPath();
   browser = await puppeteer.launch({
     executablePath,
@@ -144,7 +162,14 @@ async function launchBrowser() {
 
 async function ensureBrowser() {
   if (browser && page && !page.isClosed()) return;
-  await launchBrowser();
+  // Уже кто-то запускает — ждём тот же запуск, не плодим параллельный
+  // process поверх того же userDataDir (это и есть прямой путь ко
+  // второму SingletonLock-конфликту, уже внутри одного контейнера).
+  if (launchingPromise) return launchingPromise;
+  launchingPromise = launchBrowser().finally(() => {
+    launchingPromise = null;
+  });
+  return launchingPromise;
 }
 
 // ---------- Затравка (первый логин / замена протухшего профиля) ----------

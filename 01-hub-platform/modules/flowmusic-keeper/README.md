@@ -45,7 +45,14 @@
   значение куки на flowmusic.app в DevTools остаётся тем же) — вероятно,
   нужно читать `localStorage` вместо cookie (`page.evaluate(() =>
   Object.entries(localStorage))`), это не реализовано в первой версии.
-- **Путь к бинарнику Chromium в Alpine не зафиксирован жёстко** —
+- **`SingletonLock` от нечисто убитого предыдущего процесса** —
+  профиль в `/app/data/chrome-profile` персистентный, процесс — нет.
+  Перед каждым запуском модуль сам сносит `SingletonLock`/
+  `SingletonSocket`/`SingletonCookie` (`clearStaleSingletonLocks` в
+  `index.js`) и держит мьютекс на сам запуск, чтобы `syncLoop` по
+  таймеру и ручная «Затравка» не пытались поднять два Chromium на один
+  профиль одновременно — та же ошибка `Failed to launch the browser
+  process... profile appears to be in use` могла быть и от этого.
   модуль сам проверяет несколько кандидатов (`resolveChromiumPath` в
   `index.js`) и явно называет все перепробованные пути в ошибке, если
   не нашёл ни один. Если увидишь такую ошибку — зайди в контейнер
