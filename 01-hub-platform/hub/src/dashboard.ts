@@ -1088,6 +1088,16 @@ ${BASE_STYLES}
       audio.addEventListener('play', function () {
         iconPlay.style.display = 'none';
         iconPause.style.display = '';
+        // Только один трек играет одновременно — по запросу пользователя
+        // остальные не просто ставятся на паузу, а сбрасываются на начало
+        // (currentTime = 0), чтобы при возврате к ним они начинались
+        // заново, а не с места, где их прервали.
+        terminal.querySelectorAll('[data-audio-player] audio').forEach(function (other) {
+          if (other !== audio && !other.paused) {
+            other.pause();
+            other.currentTime = 0;
+          }
+        });
         // Media Session — переключение треков с экрана блокировки/наушников,
         // не своими кнопками в чате. Один общий navigator.mediaSession на
         // страницу — переустанавливаем при старте КАЖДОГО трека, чтобы
@@ -1100,8 +1110,8 @@ ${BASE_STYLES}
             artist: 'FlowMusic',
             album: 'NEXUS404',
           });
-          navigator.mediaSession.setActionHandler('previoustrack', function () { playTrackAt(-1, audio); });
-          navigator.mediaSession.setActionHandler('nexttrack', function () { playTrackAt(1, audio); });
+          navigator.mediaSession.setActionHandler('previoustrack', function () { audio.pause(); playTrackAt(-1, audio); });
+          navigator.mediaSession.setActionHandler('nexttrack', function () { audio.pause(); playTrackAt(1, audio); });
           navigator.mediaSession.setActionHandler('play', function () { audio.play().catch(function () {}); });
           navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); });
           navigator.mediaSession.playbackState = 'playing';
