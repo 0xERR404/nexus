@@ -1,20 +1,34 @@
 // NEXUS404 — системный модуль
-// Ключ DeepSeek + ключ Gemini + привилегированные действия через хаб.
-// Общая шапка/стили — из chrome.js (см. modules/_shared/chrome.js), не
-// дублируются здесь.
+// Ключ DeepSeek + ключ Gemini + привилегированные действия через хаб +
+// автообновление сессии FlowMusic реальным браузером (см. раздел
+// "FlowMusic keeper" ниже — не отдельный модуль, чтобы не плодить ещё
+// один Docker-образ с Chromium только ради одной фичи).
 
 const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { renderPage } = require('./chrome.js');
+const puppeteer = require('puppeteer-core');
 
 const PORT = process.env.MODULE_PORT || 4001;
 const HUB_HOST = process.env.HUB_HOST || 'hub';
 const HUB_PORT = process.env.HUB_PORT || 3000;
 const HUB_INTERNAL_TOKEN = process.env.HUB_INTERNAL_TOKEN || '';
 
-function requestHub(path, method = 'GET') {
+function requestHub(urlPath, method = 'GET', jsonBody) {
     return new Promise((resolve, reject) => {
+        const payload = jsonBody ? JSON.stringify(jsonBody) : undefined;
         const req = http.request(
-            { host: HUB_HOST, port: HUB_PORT, path, method, headers: { 'x-internal-token': HUB_INTERNAL_TOKEN } },
+            {
+                host: HUB_HOST,
+                port: HUB_PORT,
+                path: urlPath,
+                method,
+                headers: {
+                    'x-internal-token': HUB_INTERNAL_TOKEN,
+                    ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+                },
+            },
             (res) => {
                 let body = '';
                 res.on('data', (chunk) => (body += chunk));
@@ -25,9 +39,285 @@ function requestHub(path, method = 'GET') {
             }
         );
         req.on('error', reject);
+        if (payload) req.write(payload);
         req.end();
     });
 }
+
+// ---------- FlowMusic keeper ----------
+// Держит реальный Chromium (не подмену TLS-отпечатка, как impit в
+// chat/providers.ts, а настоящую вкладку) залогиненным на flowmusic.app.
+// Пока вкладка открыта, собственный JS-клиент Supabase на странице сам
+// продлевает access_token заранее — тот же механизм, что у обычного
+// пользователя, который просто держит сайт открытым. Раз в 2 минуты
+// читаем актуальную сессию и передаём её хабу тем же способом, что и
+// ручная вставка чуть ниже на этой же странице (saveFlowmusicKeyBtn) —
+// через POST /internal/flowmusic-session, providers.ts разбирает сам,
+// декодинг там не дублируется (тут декодим ЛОКАЛЬНО отдельно, но только
+// чтобы сравнить свежесть cookie vs localStorage — см. decodeExpiresAt).
+//
+// Supabase-клиент flowmusic.app может держать актуальную сессию в
+// cookie, в localStorage, или обновлять их не синхронно между собой —
+// не проверено живым запросом, какой вариант на самом деле. Поэтому
+// читаем ОБА источника каждый цикл и берём тот, у кого expires_at
+// реально больше (decodeExpiresAt/readLocalStorageAuthToken ниже) —
+// слать хабу заведомо более старое значение, даже если формально
+// "успешно записалось", бессмысленно и маскирует реальную проблему:
+// keeper бодро репортит "жива", а хаб получает уже израсходованный
+// refresh_token и падает с invalid_grant при первом же реальном чате.
+
+const KEEPER_DATA_DIR = process.env.DATA_DIR || '/app/data';
+const KEEPER_PROFILE_DIR = path.join(KEEPER_DATA_DIR, 'flowmusic-chrome-profile'); // персистентный, переживает docker rm -f
+const KEEPER_CHROMIUM_CANDIDATES = process.env.CHROMIUM_PATH
+    ? [process.env.CHROMIUM_PATH]
+    : ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/lib/chromium/chromium'];
+const FLOWMUSIC_URL = 'https://www.flowmusic.app/';
+// Имя куки для затравки не проверено живым запросом — дефолт по
+// аналогии с providers.ts (apikey = поддомен sb.producer.ai = "sb").
+// Если не подойдёт — можно в поле затравки указать явно "имя=значение"
+// на отдельной строке, seedSession() тогда возьмёт имя из ввода, не
+// угадывает.
+const KEEPER_DEFAULT_COOKIE_NAME = process.env.FLOWMUSIC_COOKIE_NAME || 'sb-sb-auth-token';
+const KEEPER_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+const KEEPER_STALE_AFTER_MS = 20 * 60 * 1000;
+const KEEPER_ALERT_AFTER_FAILURES = 3;
+
+const keeperState = {
+    status: 'starting', // starting | needs_seed | ok | stale | error | logged_out
+    lastSyncAt: null,
+    lastSource: null, // 'cookie' | 'localStorage' — откуда реально взяли последнее переданное значение
+    lastError: null,
+    consecutiveFailures: 0,
+    alertSent: false,
+    seeding: false,
+    seedError: null,
+};
+
+let keeperBrowser = null;
+let keeperPage = null;
+let keeperLaunchingPromise = null; // мьютекс: таймер и ручная затравка могут дёрнуть ensureKeeperBrowser() одновременно
+
+async function resolveChromiumPath() {
+    for (const candidate of KEEPER_CHROMIUM_CANDIDATES) {
+        try {
+            await fs.access(candidate);
+            return candidate;
+        } catch {
+            // пробуем следующий
+        }
+    }
+    throw new Error(`Chromium не найден ни по одному из путей: ${KEEPER_CHROMIUM_CANDIDATES.join(', ')} — проверь 'which chromium' внутри контейнера и задай CHROMIUM_PATH вручную`);
+}
+
+// SingletonLock/SingletonSocket/SingletonCookie — механизм Chromium
+// "один процесс на профиль". Профиль персистентный, процесс — нет: при
+// нечистом убийстве контейнера (OOM, docker kill) лок остаётся висеть,
+// новый Chromium видит "профиль занят другим компьютером". Раз мы вообще
+// дошли до попытки запуска — живого процесса с этим профилем в этом
+// контейнере нет (см. мьютекс ниже), снос лока всегда безопасен.
+async function clearStaleSingletonLocks() {
+    const names = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+    await Promise.all(names.map((name) => fs.rm(path.join(KEEPER_PROFILE_DIR, name), { force: true }).catch(() => {})));
+}
+
+async function launchKeeperBrowser() {
+    await fs.mkdir(KEEPER_PROFILE_DIR, { recursive: true });
+    await clearStaleSingletonLocks();
+    const executablePath = await resolveChromiumPath();
+    keeperBrowser = await puppeteer.launch({
+        executablePath,
+        headless: true,
+        userDataDir: KEEPER_PROFILE_DIR,
+        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+    keeperPage = await keeperBrowser.newPage();
+    keeperBrowser.on('disconnected', () => {
+        console.error('[technical/flowmusic-keeper] браузер отключился неожиданно, перезапуск при следующем цикле sync');
+        keeperBrowser = null;
+        keeperPage = null;
+    });
+    await keeperPage.goto(FLOWMUSIC_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch((err) => {
+        console.error('[technical/flowmusic-keeper] первичный переход на flowmusic.app не удался:', String(err));
+    });
+}
+
+async function ensureKeeperBrowser() {
+    if (keeperBrowser && keeperPage && !keeperPage.isClosed()) return;
+    if (keeperLaunchingPromise) return keeperLaunchingPromise;
+    keeperLaunchingPromise = launchKeeperBrowser().finally(() => {
+        keeperLaunchingPromise = null;
+    });
+    return keeperLaunchingPromise;
+}
+
+// Затравка принимает то же самое, что уже принимает ручное поле ниже на
+// этой странице (одна строка или несколько подряд — части .0/.1), ЛИБО,
+// если угаданное имя куки не подошло, строки вида "имя=значение" — тогда
+// имя берётся из ввода, а не из KEEPER_DEFAULT_COOKIE_NAME.
+//
+// ВАЖНО: нельзя определять "это имя=значение" простым line.includes('=') —
+// base64 почти всегда заканчивается паддингом "=" или "==", так что
+// обычное (неявное) значение куки почти гарантированно тоже содержит "="
+// и наивная проверка ошибочно резала бы его по первому "=", портя и имя,
+// и значение. Вместо этого проверяем, что часть ДО "=" реально похожа на
+// имя куки (только буквы/цифры/точки/дефисы/подчёркивания, разумная
+// длина) — base64/JSON перед своим "=" на это не похожи почти никогда.
+function tryParseExplicitCookieLine(line) {
+    const idx = line.indexOf('=');
+    if (idx <= 0) return null;
+    const name = line.slice(0, idx).trim();
+    if (!/^[A-Za-z0-9._-]{1,200}$/.test(name)) return null;
+    return { name, value: line.slice(idx + 1).trim() };
+}
+
+async function seedKeeperSession(rawSeed) {
+    await ensureKeeperBrowser();
+    const lines = rawSeed.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (lines.length === 0) throw new Error('пустое значение куки');
+
+    const explicitParsed = lines.map(tryParseExplicitCookieLine);
+    const cookies = explicitParsed.every(Boolean)
+        ? explicitParsed.map(({ name, value }) => ({ name, value, domain: '.flowmusic.app', path: '/', httpOnly: false, secure: true }))
+        : lines.length === 1
+        ? [{ name: KEEPER_DEFAULT_COOKIE_NAME, value: lines[0], domain: '.flowmusic.app', path: '/', httpOnly: false, secure: true }]
+        : lines.map((value, i) => ({ name: `${KEEPER_DEFAULT_COOKIE_NAME}.${i}`, value, domain: '.flowmusic.app', path: '/', httpOnly: false, secure: true }));
+
+    await keeperPage.setCookie(...cookies);
+    await keeperPage.goto(FLOWMUSIC_URL, { waitUntil: 'networkidle2', timeout: 30_000 });
+}
+
+function groupAuthCookies(cookies) {
+    const sb = cookies.filter((c) => c.name.includes('auth-token'));
+    if (sb.length === 0) return null;
+    sb.sort((a, b) => a.name.localeCompare(b.name));
+    return sb;
+}
+
+// Отдельный класс ошибки — чтобы keeperSyncLoop мог поставить точный
+// статус 'logged_out' вместо общего 'error', не теряя, ЧТО именно
+// случилось (интерфейс уже показывает этот статус отдельной подписью).
+class KeeperLoggedOutError extends Error {}
+
+// Раскодировать expires_at из сырого значения (та же логика, что
+// parseFlowMusicSession в hub/providers.ts: либо готовый JSON, либо
+// одна/несколько base64-строк с опциональным префиксом "base64-").
+// Нужно ЛОКАЛЬНО (не только в хабе), чтобы сравнить свежесть cookie
+// против localStorage перед отправкой — иначе передавать более старое
+// значение, даже когда есть более свежее, никакого смысла нет.
+function decodeExpiresAt(raw) {
+    if (!raw) return 0;
+    const tryJson = (text) => {
+        try {
+            const data = JSON.parse(text);
+            return typeof data.expires_at === 'number' ? data.expires_at : 0;
+        } catch {
+            return null;
+        }
+    };
+    const direct = tryJson(raw.trim());
+    if (direct !== null) return direct;
+    try {
+        const parts = raw.split('\n').map((s) => s.trim()).filter(Boolean).map((s) => s.replace(/^base64-/, ''));
+        const decoded = Buffer.from(parts.join(''), 'base64').toString('utf-8');
+        return tryJson(decoded) ?? 0;
+    } catch {
+        return 0;
+    }
+}
+
+// Supabase-клиент flowmusic.app может обновлять сессию через
+// localStorage, а не через cookie (или наоборот) — не проверено живым
+// запросом, какой именно. Читаем оба источника и берём тот, у кого
+// expires_at реально больше — передавать хабу заведомо устаревшее
+// значение (даже если формально "успешно записалось") бессмысленно и
+// именно так выглядела бы ситуация "keeper пишет 'жива', а чат всё
+// равно получает invalid_grant" — протухший refresh_token из немного
+// отставшего источника.
+async function readLocalStorageAuthToken() {
+    try {
+        const entries = await keeperPage.evaluate(() => {
+            const out = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                out[k] = localStorage.getItem(k);
+            }
+            return out;
+        });
+        const key = Object.keys(entries).find((k) => k.includes('auth-token'));
+        return key ? entries[key] : null;
+    } catch {
+        return null;
+    }
+}
+
+async function keeperSyncOnce() {
+    await ensureKeeperBrowser();
+    const cookies = await keeperPage.cookies(FLOWMUSIC_URL);
+    const group = groupAuthCookies(cookies);
+    const cookieRaw = group ? group.map((c) => c.value).join('\n') : null;
+    const storageRaw = await readLocalStorageAuthToken();
+
+    if (!cookieRaw && !storageRaw) {
+        // Ни разу ещё не заводили сессию — это ожидаемое состояние, не
+        // ошибка, алертить не о чем.
+        if (keeperState.lastSyncAt === null) {
+            keeperState.status = 'needs_seed';
+            return;
+        }
+        // А вот если раньше всё работало (lastSyncAt уже был), а оба
+        // источника вдруг опустели — это реальный сбой (разлогинило на
+        // flowmusic.app явно или профиль стёрло), должен считаться в
+        // consecutiveFailures и в итоге дойти до пуш-алерта.
+        throw new KeeperLoggedOutError('и кука, и localStorage сессии пусты — похоже, разлогинило на flowmusic.app');
+    }
+
+    const cookieExpiresAt = decodeExpiresAt(cookieRaw);
+    const storageExpiresAt = decodeExpiresAt(storageRaw);
+    const useStorage = storageExpiresAt > cookieExpiresAt;
+    const rawValue = useStorage ? storageRaw : (cookieRaw ?? storageRaw);
+    keeperState.lastSource = useStorage ? 'localStorage' : 'cookie';
+
+    const result = await requestHub('/internal/flowmusic-session', 'POST', { sessionRaw: rawValue });
+    if (result.status !== 200) {
+        throw new Error(`хаб отверг сессию (${result.status}): ${JSON.stringify(result.body)}`);
+    }
+
+    keeperState.status = 'ok';
+    keeperState.lastSyncAt = new Date().toISOString();
+    keeperState.lastError = null;
+    keeperState.consecutiveFailures = 0;
+    keeperState.alertSent = false;
+}
+
+async function keeperSyncLoop() {
+    try {
+        await keeperSyncOnce();
+    } catch (err) {
+        keeperState.consecutiveFailures += 1;
+        keeperState.lastError = String(err instanceof Error ? err.message : err);
+        keeperState.status = err instanceof KeeperLoggedOutError ? 'logged_out' : 'error';
+        console.error('[technical/flowmusic-keeper] sync не удался:', keeperState.lastError);
+
+        if (keeperState.consecutiveFailures >= KEEPER_ALERT_AFTER_FAILURES && !keeperState.alertSent) {
+            keeperState.alertSent = true;
+            await requestHub('/internal/send-push', 'POST', {
+                title: 'FlowMusic keeper',
+                body: `Не удаётся обновить сессию FlowMusic ${keeperState.consecutiveFailures} циклов подряд: ${keeperState.lastError}. Зайди в AI API → FlowMusic и проверь/обнови затравку.`,
+                tag: 'flowmusic-keeper',
+            }).catch(() => {});
+        }
+
+        if (!keeperBrowser || !keeperPage || keeperPage.isClosed()) {
+            keeperBrowser = null;
+            keeperPage = null;
+        }
+    }
+
+    if (keeperState.lastSyncAt && Date.now() - new Date(keeperState.lastSyncAt).getTime() > KEEPER_STALE_AFTER_MS && keeperState.status === 'ok') {
+        keeperState.status = 'stale';
+    }
+}
+
 
 // Модалка входа через Steam (пароль или QR) — тот же визуальный
 // принцип, что overlay-модалки в CheevoScope (не переиспользуется
@@ -149,6 +439,33 @@ const BODY_CONTENT = `
         на самом flowmusic.app. Выбирается прямо над чатом, отдельно на каждое
         сообщение — отвечает аудио, не текстом. Второе поле — не ключ, а
         базовый адрес запроса, пусто = адрес по умолчанию.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title">flowmusic — автообновление сессии (браузер)</div>
+    <div class="box">
+      <div class="row">
+        <span class="dot unset" id="keeperDot"></span>
+        <span id="keeperStatusText" style="flex:1;color:var(--muted);font-size:13px;">загрузка…</span>
+      </div>
+      <div class="row" style="align-items:flex-start;margin-top:8px;">
+        <textarea id="keeperSeedInput" rows="3" style="flex:1; min-width:0;"
+          placeholder="Затравка (нужно один раз) — то же значение куки, что и в поле выше. Если после сохранения статус не переходит в 'жива' — впиши явно 'имя=значение' на строке"
+          autocomplete="off"></textarea>
+        <button class="icon-btn" id="keeperSeedBtn" title="запустить браузер с этой сессией" style="margin-top:9px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        </button>
+      </div>
+      <div class="empty-note" style="margin-top:6px;">
+        Держит настоящий Chromium залогиненным на flowmusic.app — пока вкладка
+        открыта, сайт сам продлевает access_token, модуль раз в 2 минуты сам
+        обновляет тот же ключ, что и поле «flowmusic — токен сессии» выше
+        (точка у того поля станет зелёной, само поле не заполняется — оно
+        write-only и не показывает сохранённое значение повторно). Ручной ввод
+        там остаётся рабочим как есть — фолбэк на случай, если браузерный
+        путь не завёлся.
       </div>
     </div>
   </section>
@@ -284,6 +601,52 @@ const EXTRA_SCRIPT = `
     } catch {}
   }
   loadKeyStatus();
+
+  // FlowMusic keeper — статус браузерной сессии + затравка.
+  async function loadKeeperState() {
+    try {
+      const res = await fetch('keeper-state');
+      const s = await res.json();
+      const labels = {
+        starting: 'запускается…',
+        needs_seed: 'нужна затравка — вставь куку ниже',
+        ok: 'жива, автообновление работает',
+        stale: 'давно не было успешного sync — проверь браузер',
+        error: 'ошибка sync',
+        logged_out: 'разлогинен на flowmusic.app',
+      };
+      const dot = document.getElementById('keeperDot');
+      dot.className = 'dot ' + (s.status === 'ok' ? 'set' : 'unset');
+      const text = document.getElementById('keeperStatusText');
+      text.textContent =
+        (s.seeding ? 'затравка выполняется… ' : '') +
+        (labels[s.status] || s.status) +
+        (s.lastSyncAt ? ' · последний sync: ' + s.lastSyncAt : '') +
+        (s.lastSource ? ' · источник: ' + s.lastSource : '') +
+        (s.lastError ? ' · ошибка sync: ' + s.lastError : '') +
+        (s.seedError ? ' · ошибка затравки: ' + s.seedError : '');
+    } catch {}
+  }
+  loadKeeperState();
+  setInterval(loadKeeperState, 15000);
+
+  document.getElementById('keeperSeedBtn').addEventListener('click', async () => {
+    const input = document.getElementById('keeperSeedInput');
+    const value = input.value.trim();
+    if (!value) return;
+    document.getElementById('keeperStatusText').textContent = 'запускаю браузер...';
+    try {
+      const res = await fetch('keeper-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: value }),
+      });
+      if (res.status === 202) {
+        input.value = '';
+      }
+      loadKeeperState();
+    } catch {}
+  });
 
   // Вход через Steam дёргает уже готовый бэкенд в cheevoscope (там живут
   // steam-user/steam-session) — хаб реверс-проксирует одинаково с любой
@@ -637,9 +1000,10 @@ const server = http.createServer(async (req, res) => {
         // Механизм запроса состояния между модулями (план, раздел 1) —
         // любой модуль может спросить это через хаб (GET
         // /internal/module-state/technical). Формат — что решит сам
-        // модуль, хаб просто проксирует.
+        // модуль, хаб просто проксирует. flowmusicKeeper — чтобы другим
+        // модулям не нужно было знать про отдельный /keeper-state.
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ module: 'technical' }));
+        res.end(JSON.stringify({ module: 'technical', flowmusicKeeper: keeperState.status }));
         return;
     }
     if (req.method === 'POST' && req.url?.startsWith('/request-action/')) {
@@ -654,6 +1018,56 @@ const server = http.createServer(async (req, res) => {
         }
         return;
     }
+    if (req.method === 'GET' && req.url === '/keeper-state') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(keeperState));
+        return;
+    }
+    if (req.method === 'POST' && req.url === '/keeper-seed') {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => {
+            let raw;
+            try {
+                const parsed = JSON.parse(body);
+                raw = String(parsed.raw || '').trim();
+            } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'некорректный JSON' }));
+                return;
+            }
+            if (!raw) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'raw обязателен' }));
+                return;
+            }
+            if (keeperState.seeding) {
+                res.writeHead(409, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'затравка уже выполняется' }));
+                return;
+            }
+            // ВАЖНО: не await — прокси хаба (/modules/:name/*) обрывает
+            // запрос по фиксированному таймауту 10с (hub/src/index.ts),
+            // холодный запуск Chromium легко дольше. Отвечаем сразу,
+            // реальную работу гоняем в фоне, прогресс — через /keeper-state.
+            keeperState.seeding = true;
+            keeperState.seedError = null;
+            (async () => {
+                try {
+                    await seedKeeperSession(raw);
+                    await keeperSyncOnce();
+                } catch (err) {
+                    keeperState.seedError = String(err instanceof Error ? err.message : err);
+                    console.error('[technical/flowmusic-keeper] затравка не удалась:', keeperState.seedError);
+                } finally {
+                    keeperState.seeding = false;
+                }
+            })();
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, status: 'started' }));
+        });
+        return;
+    }
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
 });
@@ -662,6 +1076,11 @@ server.listen(PORT, () => {
     console.log(`[technical] модуль слушает порт ${PORT}, хаб на ${HUB_HOST}:${HUB_PORT}`);
 });
 
-process.on('SIGTERM', () => {
+// Первый sync — почти сразу (даёт время браузеру подняться), дальше по расписанию.
+setTimeout(keeperSyncLoop, 10_000);
+setInterval(keeperSyncLoop, KEEPER_SYNC_INTERVAL_MS);
+
+process.on('SIGTERM', async () => {
+    if (keeperBrowser) await keeperBrowser.close().catch(() => {});
     server.close(() => process.exit(0));
 });

@@ -1,5 +1,8 @@
 {
   "name": "nexus404-module-technical",
   "private": true,
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer-core": "^25.11.0"
+  }
 }

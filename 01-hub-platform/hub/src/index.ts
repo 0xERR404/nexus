@@ -726,8 +726,8 @@ app.get("/internal/provider-balance/flowmusic", async (request, reply) => {
   return await getFlowMusicBalance();
 });
 
-// POST /internal/flowmusic-session — модуль flowmusic-keeper (реальный
-// Chromium, держит вкладку flowmusic.app живой) присылает актуальную
+// POST /internal/flowmusic-session — модуль technical (AI API, реальный
+// Chromium внутри — держит вкладку flowmusic.app живой) присылает актуальную
 // куку сессии после каждого успешного цикла. Формат тот же, что при
 // ручной вставке в /api/settings/keys (одна или несколько строк —
 // .0/.1 части большой куки), providers.ts разбирает сам при следующем
