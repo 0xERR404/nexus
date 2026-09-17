@@ -12,6 +12,5 @@ RUN npm ci --omit=dev
 COPY chrome.js ./
 COPY index.js ./
 
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 EXPOSE 4007
 CMD ["node", "index.js"]

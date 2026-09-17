@@ -40,7 +40,9 @@ const HUB_INTERNAL_TOKEN = process.env.HUB_INTERNAL_TOKEN || '';
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data';
 const PROFILE_DIR = path.join(DATA_DIR, 'chrome-profile'); // persistent bind-mount — переживает docker rm -f
-const CHROMIUM_PATH = process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser';
+const CHROMIUM_PATH_CANDIDATES = process.env.CHROMIUM_PATH
+  ? [process.env.CHROMIUM_PATH]
+  : ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/lib/chromium/chromium'];
 const FLOWMUSIC_URL = 'https://www.flowmusic.app/';
 const COOKIE_NAME = process.env.FLOWMUSIC_COOKIE_NAME || 'sb-sb-auth-token';
 
@@ -97,12 +99,30 @@ async function ensureDataDir() {
   await fs.mkdir(PROFILE_DIR, { recursive: true });
 }
 
+// Имя бинарника Chromium в Alpine плавало между релизами
+// (chromium-browser vs chromium vs путь внутри /usr/lib) — не гадаем
+// одним хардкодом, а проверяем реально существующие кандидаты. Если ни
+// один не нашёлся, ошибка явно называет, что перебирали — не тонет в
+// generic ENOENT от puppeteer.
+async function resolveChromiumPath() {
+  for (const candidate of CHROMIUM_PATH_CANDIDATES) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // пробуем следующий
+    }
+  }
+  throw new Error(`Chromium не найден ни по одному из путей: ${CHROMIUM_PATH_CANDIDATES.join(', ')} — проверь 'which chromium' внутри контейнера и задай CHROMIUM_PATH вручную`);
+}
+
 // ---------- Браузер ----------
 
 async function launchBrowser() {
   await ensureDataDir();
+  const executablePath = await resolveChromiumPath();
   browser = await puppeteer.launch({
-    executablePath: CHROMIUM_PATH,
+    executablePath,
     headless: true,
     userDataDir: PROFILE_DIR,
     args: [
@@ -280,7 +300,7 @@ const EXTRA_SCRIPT = `
         body: JSON.stringify({ raw: value }),
       });
       const data = await res.json();
-      result.textContent = res.ok ? 'готово' : ('ошибка: ' + (data.error || res.status));
+      result.textContent = res.ok ? 'готово' : ('ошибка: ' + (data.error || res.status) + (data.details ? ' — ' + data.details : ''));
       document.getElementById('seedInput').value = '';
       loadState();
     } catch (err) {
