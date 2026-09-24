@@ -37,7 +37,7 @@
   const mode = () => $('trophyMode')?.value ?? 'soft';
   const selected = () => $('trophyProvider')?.value ?? '';
   function accountText(name, a) {
-    return `${name}: ${a.connected ? a.name : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
+    return `${name}: ${a.connected ? a.name + (a.mode === 'qr' ? ' · QR-сессия' : '') : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
   }
   function refreshButton() {
     if (!page || !snapshot) return;
@@ -315,6 +315,99 @@
     setInterval(refreshButton, 1000);
   }
   if (settings) {
+    let qrAttempt,
+      qrTimer,
+      qrBusy = false,
+      qrGeneration = 0;
+    const cancelQR = async () => {
+      qrGeneration++;
+      clearTimeout(qrTimer);
+      const attempt = qrAttempt;
+      qrAttempt = null;
+      $('steamQRImage').hidden = true;
+      $('steamQRImage').removeAttribute('src');
+      if (attempt)
+        try {
+          await api('/steam/cancel', {attempt});
+        } catch {}
+    };
+    async function beginQR() {
+      if (qrBusy) return;
+      await cancelQR();
+      const generation = qrGeneration;
+      qrBusy = true;
+      $('steamQRStart').disabled = true;
+      $('steamQRRetry').hidden = true;
+      $('steamQRStatus').textContent = 'Создаю QR…';
+      if (!$('steamQRDialog').open) $('steamQRDialog').showModal();
+      try {
+        const result = await api('/steam/begin', {});
+        if (generation !== qrGeneration) {
+          await api('/steam/cancel', {attempt: result.attempt});
+          return;
+        }
+        qrAttempt = result.attempt;
+        showQR(result);
+        qrTimer = setTimeout(pollQR, result.interval);
+      } catch (e) {
+        if (generation === qrGeneration) {
+          $('steamQRStatus').textContent = e.message;
+          $('steamQRRetry').hidden = false;
+        }
+      } finally {
+        qrBusy = false;
+        $('steamQRStart').disabled = false;
+      }
+    }
+    function showQR(result) {
+      $('steamQRImage').src =
+        `/modules/trophies/steam-qr?attempt=${encodeURIComponent(qrAttempt)}&v=${result.revision}`;
+      $('steamQRImage').hidden = false;
+      $('steamQRStatus').textContent = result.scanned
+        ? 'Подтверди вход в Steam Guard.'
+        : 'Отсканируй код в приложении Steam. Действует до ' +
+          new Date(result.expiresAt).toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit'
+          }) +
+          '.';
+    }
+    async function pollQR() {
+      if (!qrAttempt || !$('steamQRDialog').open) return;
+      const attempt = qrAttempt;
+      try {
+        const result = await api('/steam/poll', {attempt});
+        if (attempt !== qrAttempt) return;
+        if (result.connected) {
+          qrAttempt = null;
+          $('steamQRDialog').close();
+          status('Steam подключён. Загружаю библиотеку.');
+          await load();
+          return;
+        }
+        showQR(result);
+        qrTimer = setTimeout(pollQR, result.interval ?? 5000);
+      } catch (e) {
+        if (attempt !== qrAttempt) return;
+        $('steamQRStatus').textContent = e.message;
+        $('steamQRImage').hidden = true;
+        $('steamQRRetry').hidden = false;
+      }
+    }
+    $('steamQRStart').onclick = beginQR;
+    $('steamQRRetry').onclick = beginQR;
+    $('steamQRClose').onclick = () => $('steamQRDialog').close();
+    $('steamQRDialog').addEventListener('close', cancelQR);
+    window.addEventListener('pagehide', () => {
+      clearTimeout(qrTimer);
+      if (qrAttempt)
+        fetch('/modules/trophies/steam/cancel', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({attempt: qrAttempt}),
+          keepalive: true
+        }).catch(() => {});
+    });
     for (const form of document.querySelectorAll('[data-trophy-connect]'))
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

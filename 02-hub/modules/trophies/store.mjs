@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {Provider, fail} from './providers.mjs';
+import {SteamAuth, qrSVG} from './steam-auth.mjs';
 const kinds = ['steam', 'ra'];
 export function atomicJSON(file, data) {
   const temporary = file + '.' + randomUUID();
@@ -45,6 +46,7 @@ export class TrophiesStore {
     this.connecting = new Set();
     this.progress = {};
     this.closed = false;
+    this.steamAuth = new SteamAuth(options);
   }
   load() {
     if (this.db) return;
@@ -92,6 +94,7 @@ export class TrophiesStore {
           a
             ? {
                 connected: true,
+                mode: a.refreshToken ? 'qr' : 'api',
                 name: a.name,
                 lastSync: a.lastSync ?? 0,
                 attemptedAt: a.attemptedAt ?? 0,
@@ -108,6 +111,10 @@ export class TrophiesStore {
   provider(kind, account) {
     return new Provider(kind, account, {
       ...this.options,
+      token:
+        kind === 'steam' && account.refreshToken
+          ? (force) => this.steamToken(account, force)
+          : null,
       budget: () => {
         const key = 'budget:' + kind,
           day = new Date(this.now()).toISOString().slice(0, 10),
@@ -118,8 +125,66 @@ export class TrophiesStore {
       }
     });
   }
+  steamBusy() {
+    return this.steamAuth.busy || (this.steamAuth.pending?.expiresAt ?? 0) > this.now();
+  }
+  async qrBegin() {
+    this.load();
+    if (this.jobs.has('steam') || this.connecting.has('steam'))
+      throw fail('Дождись синхронизации Steam', 409);
+    return this.steamAuth.begin();
+  }
+  qrImage(attempt) {
+    return qrSVG(this.steamAuth.require(attempt).url);
+  }
+  async qrPoll(attempt) {
+    const result = await this.steamAuth.poll(attempt);
+    if (!result.tokens) return result;
+    this.steamAuth.require(attempt);
+    const tokens = result.tokens,
+      previous = this.account('steam'),
+      same = previous?.id === tokens.id;
+    const account = {
+      ...(same ? previous : {}),
+      ...tokens,
+      connectedAt: same ? previous.connectedAt : this.now(),
+      nextAttempt: 0,
+      backgroundAt: 0,
+      error: null
+    };
+    if (!same) delete account.key;
+    this.atomic(() => {
+      if (previous && !same) {
+        this.db.prepare("DELETE FROM games WHERE provider='steam' AND account=?").run(previous.id);
+        this.db.prepare("DELETE FROM events WHERE json_extract(data,'$.provider')='steam'").run();
+      }
+      this.set('steam', account);
+    });
+    this.steamAuth.cancel(attempt);
+    this.publish();
+    void this.sync('steam').catch(() => {});
+    return {connected: true, name: account.name};
+  }
+  async steamToken(account, force = false) {
+    if (!force && account.accessToken && account.expiresAt > this.now() + 120000)
+      return account.accessToken;
+    if (!this.tokenJob)
+      this.tokenJob = (async () => {
+        const next = await this.steamAuth.refresh(account.refreshToken, account.id),
+          current = this.account('steam');
+        if (current?.id !== account.id) throw fail('Аккаунт Steam изменён', 409);
+        Object.assign(account, next);
+        this.set('steam', {...current, ...next});
+        return next;
+      })().finally(() => {
+        this.tokenJob = null;
+      });
+    Object.assign(account, await this.tokenJob);
+    return account.accessToken;
+  }
   async connect(kind, input, key) {
     this.account(kind);
+    if (kind === 'steam' && this.steamBusy()) throw fail('Сначала заверши или отмени QR-вход', 409);
     if (this.jobs.has(kind) || this.connecting.has(kind))
       throw fail('Дождись текущей синхронизации', 409);
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(key.trim()))
@@ -135,6 +200,9 @@ export class TrophiesStore {
         previous?.id === identity.id
           ? {...previous, ...identity, key: key.trim(), error: null, nextAttempt: 0}
           : {...identity, key: key.trim(), connectedAt: this.now(), nextAttempt: 0};
+      delete account.refreshToken;
+      delete account.accessToken;
+      delete account.expiresAt;
       this.atomic(() => {
         if (previous && previous.id !== identity.id) {
           this.db
@@ -154,6 +222,7 @@ export class TrophiesStore {
     }
   }
   disconnect(kind) {
+    if (kind === 'steam' && this.steamBusy()) throw fail('Сначала отмени QR-вход', 409);
     const a = this.account(kind);
     if (this.jobs.has(kind) || this.connecting.has(kind))
       throw fail('Дождись текущей синхронизации', 409);
@@ -276,6 +345,8 @@ export class TrophiesStore {
     atomicJSON(path.join(this.dir, 'notifications.json'), events);
   }
   sync(kind) {
+    if (kind === 'steam' && this.steamBusy())
+      return Promise.reject(fail('Дождись завершения QR-входа', 409));
     const a = this.account(kind);
     if (!a) return Promise.reject(fail('Подключи аккаунт в настройках', 400));
     if (this.jobs.has(kind)) return this.jobs.get(kind);
@@ -333,7 +404,7 @@ export class TrophiesStore {
           this.db
             .prepare('INSERT OR REPLACE INTO games VALUES(?,?,?,?)')
             .run(kind, account.id, base.id, JSON.stringify(game));
-          if (e.status === 429 || e.status === 503)
+          if (e.status === 401 || e.status === 429 || e.status === 503)
             throw fail('Синхронизация неполная. Прогресс сохранён, повторим позже.', 503);
         }
         if (game) {
@@ -478,6 +549,7 @@ export class TrophiesStore {
   }
   async close() {
     this.closed = true;
+    this.steamAuth.close();
     clearInterval(this.timer);
     for (const c of this.clients.values()) c.close();
     await Promise.allSettled([...this.jobs.values()]);

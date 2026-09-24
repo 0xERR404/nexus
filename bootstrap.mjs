@@ -68,6 +68,7 @@ export const projectFiles = [
   '02-hub/modules/trophies/index.mjs',
   '02-hub/modules/trophies/store.mjs',
   '02-hub/modules/trophies/providers.mjs',
+  '02-hub/modules/trophies/steam-auth.mjs',
   '02-hub/modules/trophies/trophies.js',
   '02-hub/modules/trophies/trophies.css',
   '02-hub/modules/trophies/manifest.json',

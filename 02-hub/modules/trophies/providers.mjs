@@ -29,9 +29,9 @@ export class Provider {
   constructor(
     kind,
     account,
-    {fetcher = fetch, now = Date.now, sleep = delay, budget = () => {}} = {}
+    {fetcher = fetch, now = Date.now, sleep = delay, budget = () => {}, token = null} = {}
   ) {
-    Object.assign(this, {kind, account, fetcher, now, sleep, budget});
+    Object.assign(this, {kind, account, fetcher, now, sleep, budget, token});
     this.next = 0;
     this.stopped = false;
     this.controller = new AbortController();
@@ -47,8 +47,11 @@ export class Provider {
         : new URL('https://retroachievements.org/API/API_' + endpoint + '.php');
     url.search = new URLSearchParams({
       ...args,
-      [this.kind === 'steam' ? 'key' : 'y']: this.account.key
+      ...(this.token
+        ? {access_token: await this.token(false)}
+        : {[this.kind === 'steam' ? 'key' : 'y']: this.account.key})
     }).toString();
+    let refreshed = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (this.stopped) throw fail('Синхронизация остановлена', 503);
       await this.sleep(Math.max(0, this.next - this.now()));
@@ -60,10 +63,16 @@ export class Provider {
         response = await this.fetcher(url, {
           redirect: 'error',
           signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(20000)]),
-          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.12.0'}
+          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.13.0'}
         });
       } catch {
         throw fail('Сервис не отвечает. Сохранённые данные оставлены.');
+      }
+      if ((response.status === 401 || response.status === 403) && this.token && !refreshed) {
+        await response.body?.cancel();
+        refreshed = true;
+        url.searchParams.set('access_token', await this.token(true));
+        continue;
       }
       if (response.status === 429 || response.status >= 500) {
         const retry = response.headers.get('retry-after');
@@ -82,8 +91,11 @@ export class Provider {
         await response.body?.cancel();
         throw fail(
           response.status === 401 || response.status === 403
-            ? 'Проверь ключ API и доступность профиля.'
-            : 'API отклонил запрос. Данные оставлены.'
+            ? this.token
+              ? 'Сессия Steam не даёт доступа к этому запросу. Повтори вход по QR.'
+              : 'Проверь ключ API и доступность профиля.'
+            : 'API отклонил запрос. Данные оставлены.',
+          this.token && [401, 403].includes(response.status) ? 401 : 502
         );
       }
       try {
@@ -131,7 +143,9 @@ export class Provider {
       const d = await this.get('IPlayerService/GetOwnedGames/v1/', {
         steamid: this.account.id,
         include_appinfo: 1,
-        include_played_free_games: 1
+        include_played_free_games: 1,
+        include_free_sub: 1,
+        skip_unvetted_apps: 0
       });
       const r = d.response;
       if (

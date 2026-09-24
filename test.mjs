@@ -4955,3 +4955,218 @@ test('dashboard previews allow only bounded public fields for their own modules'
   assert.equal(other.covers, undefined);
   assert.equal(other.preview, undefined);
 });
+
+// tests/steam-qr
+{
+  const {SteamAuth, message, fields, tokenInfo, challenge, qrSVG} = await import(
+    './02-hub/modules/trophies/steam-auth.mjs'
+  );
+  const {TrophiesStore} = await import('./02-hub/modules/trophies/store.mjs');
+  const {Provider} = await import('./02-hub/modules/trophies/providers.mjs');
+  const id = '76561198000000000';
+  const jwt = (refresh, owner = id, seconds = 3600) =>
+    'eyJhbGciOiJSUzI1NiJ9.' +
+    Buffer.from(
+      JSON.stringify({
+        sub: owner,
+        exp: Math.floor(Date.now() / 1000) + seconds,
+        aud: refresh ? ['web', 'mobile', 'derive'] : ['web', 'mobile']
+      })
+    ).toString('base64url') +
+    '.dGVzdHNpZw';
+  const reply = (data) => new Response(message(data), {headers: {'x-eresult': '1'}});
+  const initial = () =>
+    reply([
+      [1, 0, '18446744073709550000'],
+      [2, 2, 'https://s.team/q/1/18446744073709550000'],
+      [3, 2, 'private-request-id']
+    ]);
+  test('Steam protobuf keeps uint64 exact and rejects truncated wire data', () => {
+    const data = fields(
+      message([
+        [1, 0, '18446744073709551615'],
+        [2, 1, id],
+        [3, 2, 'hello']
+      ])
+    );
+    assert.equal(data.get(1), '18446744073709551615');
+    assert.equal(data.get(2), id);
+    assert.equal(data.get(3).toString(), 'hello');
+    assert.throws(() => fields(Buffer.from([10, 255])));
+    assert.throws(() => fields(Buffer.from([0])));
+  });
+  test('Steam QR challenges are fixed-host links and render no arbitrary markup', () => {
+    assert.throws(() => challenge('https://evil.test/q/1/123'));
+    assert.throws(() => challenge('https://s.team/q/1/123?x=1'));
+    const svg = qrSVG(challenge('https://s.team/q/1/123'));
+    assert.match(svg, /viewBox="0 0 41 41"/);
+    assert.doesNotMatch(svg, /script|href|https:\/\/s.team/);
+    assert.throws(() => qrSVG('x'.repeat(79)));
+  });
+  test('Steam QR status never exposes routing secrets and enforces timeout/cancel', async () => {
+    let now = Date.now();
+    const a = new SteamAuth({now: () => now, fetcher: async () => initial()});
+    const p = await a.begin();
+    assert.doesNotMatch(JSON.stringify(p), /private-request|184467/);
+    await assert.rejects(a.begin(), (e) => e.status === 429);
+    assert.equal(a.require(p.attempt).request.toString(), 'private-request-id');
+    now += 120001;
+    assert.throws(
+      () => a.require(p.attempt),
+      (e) => e.status === 410
+    );
+    const next = await a.begin();
+    a.cancel(next.attempt);
+    assert.equal(a.status(), null);
+    a.close();
+  });
+  test('Steam QR polling handles challenge rotation and receives account tokens', async () => {
+    let now = Date.now(),
+      polls = 0;
+    const a = new SteamAuth({
+      now: () => now,
+      fetcher: async (u, opts) => {
+        const sent = fields(Buffer.from(opts.body.get('input_protobuf_encoded'), 'base64'));
+        if (u.includes('BeginAuth')) return initial();
+        assert.equal(sent.get(2).toString(), 'private-request-id');
+        if (++polls === 1)
+          return reply([
+            [1, 0, '1234'],
+            [2, 2, 'https://s.team/q/1/1234'],
+            [5, 0, 1]
+          ]);
+        assert.equal(sent.get(1), '1234');
+        return reply([
+          [3, 2, jwt(true)],
+          [4, 2, jwt(false)],
+          [6, 2, 'Player']
+        ]);
+      }
+    });
+    const p = await a.begin();
+    const first = await a.poll(p.attempt);
+    assert.equal(first.scanned, true);
+    assert.equal(first.revision, 1);
+    await a.poll(p.attempt);
+    assert.equal(polls, 1);
+    now += 6000;
+    const done = await a.poll(p.attempt);
+    assert.equal(done.tokens.id, id);
+    assert.equal(done.tokens.name, 'Player');
+    a.close();
+  });
+  test('Steam token renewal validates account and keeps an unchanged refresh token', async () => {
+    const refresh = jwt(true);
+    const a = new SteamAuth({
+      fetcher: async (u, opts) => {
+        const sent = fields(Buffer.from(opts.body.get('input_protobuf_encoded'), 'base64'));
+        assert.equal(sent.get(2), id);
+        return reply([[1, 2, jwt(false)]]);
+      }
+    });
+    assert.equal((await a.refresh(refresh, id)).refreshToken, refresh);
+    a.fetcher = async () => reply([[1, 2, jwt(false, '76561198000000001')]]);
+    await assert.rejects(a.refresh(refresh, id), /Некорректная/);
+    assert.throws(() => tokenInfo(jwt(true)), /неподдерживаемую/);
+    a.close();
+  });
+  test('Steam auth errors do not echo provider secrets', async () => {
+    const a = new SteamAuth({
+      fetcher: async () => new Response('SECRET-BODY', {status: 401, headers: {'x-eresult': '15'}})
+    });
+    await assert.rejects(a.begin(), (e) => e.status === 401 && !e.message.includes('SECRET'));
+    a.close();
+  });
+  test('QR connection stores private tokens atomically and uses them for owned games', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-steam-qr-'));
+    let libraries = 0;
+    const store = new TrophiesStore(dir, {
+      sleep: async () => {},
+      fetcher: async (u) => {
+        const url = String(u);
+        if (url.includes('BeginAuth')) return initial();
+        if (url.includes('PollAuth'))
+          return reply([
+            [3, 2, jwt(true)],
+            [4, 2, jwt(false)],
+            [6, 2, 'Player']
+          ]);
+        if (url.includes('GetOwnedGames')) {
+          const q = new URL(url).searchParams;
+          assert.equal(q.get('access_token'), jwt(false));
+          assert.equal(q.get('skip_unvetted_apps'), '0');
+          assert.equal(q.get('include_free_sub'), '1');
+          libraries++;
+          return Response.json({response: {game_count: 0}});
+        }
+        throw Error('Unexpected request');
+      }
+    });
+    t.after(async () => {
+      await store.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const p = await store.qrBegin();
+    const result = await store.qrPoll(p.attempt);
+    assert.equal(result.connected, true);
+    await Promise.all([...store.jobs.values()]);
+    assert.equal(libraries, 1);
+    assert.equal(store.account('steam').refreshToken, jwt(true));
+    assert.doesNotMatch(JSON.stringify(store.snapshot()), /accessToken|refreshToken|eyJhbGci/);
+    assert.equal(store.config().steam.mode, 'qr');
+    assert.equal(fs.statSync(dir + '/trophies.db').mode & 0o777, 0o600);
+    store.disconnect('steam');
+    assert.equal(store.account('steam'), null);
+  });
+  test('Steam API refreshes once on authorization failure and retries with the new token', async () => {
+    const seen = [],
+      refresh = [];
+    const p = new Provider(
+      'steam',
+      {id},
+      {
+        sleep: async () => {},
+        token: async (force) => {
+          refresh.push(force);
+          return force ? 'new-token' : 'old-token';
+        },
+        fetcher: async (u) => {
+          seen.push(u.searchParams.get('access_token'));
+          return seen.length === 1
+            ? new Response('', {status: 401})
+            : Response.json({response: {game_count: 0}});
+        }
+      }
+    );
+    await p.library();
+    assert.deepEqual(seen, ['old-token', 'new-token']);
+    assert.deepEqual(refresh, [false, true]);
+    seen.length = refresh.length = 0;
+    p.fetcher = async (u) => {
+      seen.push(u.searchParams.get('access_token'));
+      return new Response('', {status: 401});
+    };
+    await assert.rejects(p.library(), (e) => e.status === 401);
+    assert.equal(seen.length, 2);
+    assert.deepEqual(refresh, [false, true]);
+  });
+  test('Steam late confirmation cannot connect an already cancelled QR attempt', async () => {
+    let resolve;
+    const a = new SteamAuth({
+      fetcher: async (u) =>
+        u.includes('BeginAuth') ? initial() : new Promise((r) => (resolve = r))
+    });
+    const p = await a.begin(),
+      poll = a.poll(p.attempt);
+    await Promise.resolve();
+    a.cancel(p.attempt);
+    resolve(
+      reply([
+        [3, 2, jwt(true)],
+        [4, 2, jwt(false)]
+      ])
+    );
+    await assert.rejects(poll, (e) => e.status === 410);
+    a.close();
+  });
+}

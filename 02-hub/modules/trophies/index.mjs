@@ -27,11 +27,11 @@ export const settings = {
   ]
     .map(
       ([id, title, placeholder, url, help]) =>
-        `<section class="trophy-panel"><h2>${title}</h2><p id="${id}Account"></p><form data-trophy-connect="${id}"><label>${placeholder}<input name="account" required maxlength="200" autocomplete="off"></label><label>Ключ API<input name="key" required type="password" maxlength="256" autocomplete="new-password"></label><button type="submit">Подключить</button><button data-trophy-disconnect="${id}" type="button" hidden>Отключить</button></form><p class="trophy-muted">${help} <a href="${url}" target="_blank" rel="noopener noreferrer">Получить ключ ↗</a></p></section>`
+        `<section class="trophy-panel"><h2>${title}</h2><p id="${id}Account"></p>${id === 'steam' ? '<button id="steamQRStart" type="button">Войти через QR</button><p class="trophy-muted">Подтверди вход в Steam Guard. Сессия сохраняется на этом VPS.</p><details><summary>Подключение через API — запасной способ</summary>' : ''}<form data-trophy-connect="${id}"><label>${placeholder}<input name="account" required maxlength="200" autocomplete="off"></label><label>Ключ API<input name="key" required type="password" maxlength="256" autocomplete="new-password"></label><button type="submit">Подключить</button></form><p class="trophy-muted">${help} <a href="${url}" target="_blank" rel="noopener noreferrer">Получить ключ ↗</a></p>${id === 'steam' ? '</details>' : ''}<button data-trophy-disconnect="${id}" type="button" hidden>Отключить</button></section>`
     )
     .join(
       ''
-    )}</div><p class="trophy-muted">Ключи хранятся только на сервере. Обновление каждый час, ручное — раз в 5 минут. Большая библиотека загружается постепенно. Первая загрузка каждой игры проходит без уведомлений. Новые достижения после неё поступают в «Сигнал» — включи категорию «Достижения» и Push в его настройках.</p><dialog id="trophyDisconnectDialog"><div class="trophy-meta"><h2>Отключить аккаунт?</h2><button id="trophyDisconnectClose" class="dialog-close" aria-label="Закрыть">×</button></div><p>Список этого сервиса будет удалён из хаба. Сам аккаунт останется.</p><div class="trophy-toolbar"><button id="trophyConfirmDisconnect">Отключить</button><button id="trophyCancelDisconnect">Отмена</button></div></dialog></section>`
+    )}</div><p class="trophy-muted">Ключи и сессия Steam хранятся только на сервере. Обновление каждый час, ручное — раз в 5 минут. Большая библиотека загружается постепенно. Первая загрузка каждой игры проходит без уведомлений. Новые достижения после неё поступают в «Сигнал» — включи категорию «Достижения» и Push в его настройках.</p><dialog id="steamQRDialog" aria-labelledby="steamQRTitle"><div class="trophy-meta"><h2 id="steamQRTitle">Вход в Steam</h2><button id="steamQRClose" class="dialog-close" aria-label="Закрыть">×</button></div><p id="steamQRStatus" role="status">Создание QR…</p><img id="steamQRImage" alt="QR для входа через Steam Guard" width="246" height="246" hidden><p class="trophy-muted">Steam → Steam Guard → сканировать QR. В подтверждении проверь устройство NEXUS404 и адрес своего VPS. Не подтверждай чужой вход.</p><button id="steamQRRetry" type="button" hidden>Новый QR</button></dialog><dialog id="trophyDisconnectDialog"><div class="trophy-meta"><h2>Отключить аккаунт?</h2><button id="trophyDisconnectClose" class="dialog-close" aria-label="Закрыть">×</button></div><p>Список этого сервиса будет удалён из хаба. Сам аккаунт останется.</p><div class="trophy-toolbar"><button id="trophyConfirmDisconnect">Отключить</button><button id="trophyCancelDisconnect">Отмена</button></div></dialog></section>`
 };
 const assets = new Map(
   ['trophies.css', 'trophies.js'].map((x) => [
@@ -80,6 +80,10 @@ export function createModule(
             });
           if (route === '/api') return Response.json(store.snapshot());
           if (route === '/config') return Response.json(store.config());
+          if (route === '/steam-qr')
+            return new Response(store.qrImage(searchParams?.get('attempt')), {
+              headers: {'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store'}
+            });
           if (route === '/activity')
             return Response.json(
               store.activity(searchParams?.get('mode'), searchParams?.get('provider'))
@@ -96,7 +100,15 @@ export function createModule(
         }
         if (
           request.method === 'POST' &&
-          ['/connect', '/disconnect', '/sync', '/beaten'].includes(route)
+          [
+            '/connect',
+            '/disconnect',
+            '/sync',
+            '/beaten',
+            '/steam/begin',
+            '/steam/poll',
+            '/steam/cancel'
+          ].includes(route)
         ) {
           if (!request.headers['content-type']?.startsWith('application/json'))
             return Response.json({error: 'Ожидается JSON'}, {status: 415});
@@ -108,6 +120,12 @@ export function createModule(
           }
           if (!d || typeof d !== 'object' || Array.isArray(d))
             return Response.json({error: 'Некорректный запрос'}, {status: 400});
+          if (route === '/steam/begin') return Response.json(await store.qrBegin());
+          if (route === '/steam/poll') return Response.json(await store.qrPoll(d.attempt));
+          if (route === '/steam/cancel') {
+            store.steamAuth.cancel(d.attempt);
+            return Response.json({ok: true});
+          }
           if (route === '/connect')
             return Response.json(await store.connect(d.provider, d.account, d.key));
           if (route === '/disconnect') return Response.json(store.disconnect(d.provider));
