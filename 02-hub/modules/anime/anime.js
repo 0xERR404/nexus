@@ -24,7 +24,7 @@
     const res = await fetch('/modules/anime' + route, {
       method: data ? 'POST' : 'GET',
       cache: 'no-store',
-      signal: AbortSignal.timeout(data ? 45000 : 10000),
+      signal: AbortSignal.timeout(data ? 45000 : route.startsWith('/detail/') ? 30000 : 10000),
       ...(data ? {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)} : {})
     });
     if (
@@ -47,17 +47,82 @@
     if (className) el.className = className;
     return el;
   };
+  let detailSequence = 0,
+    detailItem;
+  async function openDetail(item) {
+    detailItem = item;
+    const seq = ++detailSequence,
+      dialog = $('animeDetailDialog');
+    $('animeDetailTitle').textContent = item.title;
+    $('animeDetailBody').replaceChildren();
+    $('animeDetailStatus').textContent = 'Загрузка…';
+    $('animeDetailRetry').hidden = true;
+    if (!dialog.open) dialog.showModal();
+    try {
+      const d = await api('/detail/' + item.id);
+      if (seq !== detailSequence || !dialog.open) return;
+      const kinds = {
+        tv: 'Сериал',
+        movie: 'Фильм',
+        ova: 'OVA',
+        ona: 'ONA',
+        special: 'Спецвыпуск',
+        music: 'Клип'
+      };
+      const states = {released: 'Вышло', ongoing: 'Выходит', anons: 'Анонс'};
+      const facts = [
+        kinds[d.kind] || d.kind,
+        states[d.status] || d.status,
+        d.airedOn ? d.airedOn.slice(0, 4) : '',
+        d.episodes ? d.episodes + ' серий' : '',
+        d.duration ? d.duration + ' мин' : '',
+        d.score ? '★ ' + d.score : ''
+      ].filter(Boolean);
+      $('animeDetailStatus').textContent = d.stale ? 'Не обновлено · сохранённые данные' : '';
+      const body = $('animeDetailBody');
+      body.append(node('p', facts.join(' · '), 'anime-detail-facts'));
+      if (d.genres.length) body.append(node('p', d.genres.join(' · '), 'anime-detail-facts'));
+      if (d.studios.length) body.append(node('p', d.studios.join(', '), 'anime-detail-facts'));
+      body.append(node('p', d.description || 'Описание пока отсутствует.', 'anime-description'));
+      const link = node('a', 'Shikimori ↗');
+      link.href = 'https://shikimori.io/animes/' + item.id;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      body.append(link);
+    } catch (e) {
+      if (seq === detailSequence && dialog.open) {
+        $('animeDetailStatus').textContent = e.message;
+        $('animeDetailRetry').hidden = false;
+      }
+    }
+  }
+  if ($('animeDetailDialog')) {
+    $('animeDetailClose').onclick = () => $('animeDetailDialog').close();
+    $('animeDetailDialog').addEventListener('close', () => detailSequence++);
+    $('animeDetailRetry').onclick = () => openDetail(detailItem);
+  }
   function renderList() {
     if (!snapshot) return;
     const query = $('animeSearch').value.trim().toLocaleLowerCase('ru'),
-      filter = $('animeFilter').value;
+      filter = $('animeFilter').value,
+      sort = $('animeSort').value;
     const items = snapshot.items
       .filter(
         (x) =>
           (!filter || x.status === filter) &&
           (!query || (x.title + ' ' + x.name).toLocaleLowerCase('ru').includes(query))
       )
-      .sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+      .sort((a, b) => {
+        const value = (x) =>
+          sort === 'score'
+            ? x.score || -1
+            : sort === 'watched'
+              ? x.watched
+              : x.episodes > 0
+                ? x.watched / x.episodes
+                : -1;
+        return (sort === 'name' ? 0 : value(b) - value(a)) || a.title.localeCompare(b.title, 'ru');
+      });
     $('animeCount').textContent = items.length + ' из ' + snapshot.items.length;
     const signature = JSON.stringify([items, snapshot.connected]);
     if (signature === renderedList) return;
@@ -65,6 +130,16 @@
     const fragment = document.createDocumentFragment();
     for (const item of items) {
       const card = node('article', undefined, 'anime-card');
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', item.title);
+      card.onclick = () => openDetail(item);
+      card.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openDetail(item);
+        }
+      };
       const cover = node('div', undefined, 'anime-cover');
       cover.setAttribute('aria-hidden', 'true');
       cover.append(node('span', '◇'));
@@ -75,16 +150,20 @@
         img.loading = 'lazy';
         img.width = 60;
         img.height = 84;
-        img.addEventListener('error', () => img.remove(), {once: true});
+        img.decoding = 'async';
+        let retry = 0;
+        img.addEventListener('error', () => {
+          if (!retry++)
+            setTimeout(() => {
+              img.src = item.cover + '?retry=1';
+            }, 1500);
+          else img.remove();
+        });
         cover.append(img);
       }
       const details = node('div', undefined, 'anime-details'),
         heading = node('h2');
-      const link = node('a', item.title);
-      link.href = 'https://shikimori.io/animes/' + item.id;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      heading.append(link);
+      heading.textContent = item.title;
       details.append(heading);
       const meta = node('div', undefined, 'anime-card-meta'),
         state = node('span', statuses[item.status], 'anime-state');
@@ -211,6 +290,7 @@
     $('animeSearch').addEventListener('input', () => {
       renderList();
     });
+    $('animeSort').addEventListener('change', renderList);
     $('animeFilter').addEventListener('change', () => {
       renderList();
     });

@@ -126,7 +126,8 @@ export class AnimeStore {
     this.timer = null;
     this.images = new Map();
     this.imageJobs = new Map();
-    this.imageQueue = Promise.resolve();
+    this.details = new Map();
+    this.detailJobs = new Map();
   }
   load() {
     if (this.loaded) return;
@@ -228,8 +229,9 @@ export class AnimeStore {
     for (let attempt = 0; ; attempt++) {
       if (this.nextRequest - this.now() > 60000)
         throw fail('Лимит Shikimori. Повторим синхронизацию позже.', 429);
-      await this.wait(Math.max(0, this.nextRequest - this.now()));
-      this.nextRequest = this.now() + 1100;
+      const slot = Math.max(this.now(), this.nextRequest);
+      this.nextRequest = slot + 1100;
+      await this.wait(Math.max(0, slot - this.now()));
       let response;
       try {
         response = await this.fetcher(ORIGIN + route, {
@@ -343,6 +345,7 @@ export class AnimeStore {
     });
   }
   disconnect() {
+    this.details.clear();
     this.load();
     this.busy();
     this.commit(empty());
@@ -492,36 +495,98 @@ export class AnimeStore {
     clearInterval(this.timer);
     this.timer = null;
   }
-  cover(id) {
+  async detail(id) {
+    this.load();
+    const item = this.data.items.find((x) => x.id === id),
+      connection = this.data.connection;
+    if (!item || !connection) throw fail('Аниме не найдено.', 404);
+    const cached = this.details.get(id);
+    if (cached && this.now() - cached.updatedAt < 6 * HOUR) return {...cached, stale: false};
+    if (this.detailJobs.has(id)) return this.detailJobs.get(id);
+    if (this.detailJobs.size >= 8) throw fail('Дождись загрузки информации.', 429);
+    const job = (async () => {
+      try {
+        const d = await this.remote('/api/animes/' + id, {connection, token: false});
+        if (Number(d.id) !== id || typeof d.name !== 'string')
+          throw fail('Неожиданный ответ Shikimori.');
+        const text = (v) =>
+          typeof v === 'string'
+            ? v
+                .replace(/<[^>]*>/g, '')
+                .replace(/\[\/?[a-z][^\]]*\]/gi, '')
+                .slice(0, 12000)
+            : '';
+        const result = {
+          id,
+          title: text(d.russian || d.name),
+          name: text(d.name),
+          description: text(d.description),
+          kind: text(d.kind),
+          status: text(d.status),
+          score: Number(d.score) || null,
+          episodes: Number(d.episodes) || null,
+          duration: Number(d.duration) || null,
+          airedOn: text(d.aired_on),
+          rating: text(d.rating),
+          genres: (Array.isArray(d.genres) ? d.genres : [])
+            .slice(0, 20)
+            .map((x) => text(x.russian || x.name)),
+          studios: (Array.isArray(d.studios) ? d.studios : [])
+            .slice(0, 10)
+            .map((x) => text(x.name)),
+          updatedAt: this.now()
+        };
+        if (this.data.connection !== connection) throw fail('Подключение изменилось.', 409);
+        if (this.details.size >= 128) this.details.delete(this.details.keys().next().value);
+        this.details.set(id, result);
+        return {...result, stale: false};
+      } catch (e) {
+        if (cached && this.data.connection === connection) return {...cached, stale: true};
+        throw e;
+      }
+    })().finally(() => this.detailJobs.delete(id));
+    this.detailJobs.set(id, job);
+    return job;
+  }
+  async cover(id) {
     this.load();
     const url = posterURL(this.data.items.find((x) => x.id === id)?.poster);
     if (!url) return Promise.resolve(null);
     if (this.images.has(url)) return Promise.resolve(this.images.get(url));
     if (this.imageJobs.has(url)) return this.imageJobs.get(url);
-    if (this.imageJobs.size >= 64) return Promise.resolve(null);
-    const job = this.imageQueue
-      .then(async () => {
-        try {
-          const res = await this.fetcher(url, {
-            redirect: 'error',
+    if (this.imageJobs.size >= 6) {
+      await Promise.race(this.imageJobs.values());
+      return this.cover(id);
+    }
+    const job = (async () => {
+      try {
+        let res,
+          target = url;
+        for (let hop = 0; hop < 4; hop++) {
+          res = await this.fetcher(target, {
+            redirect: 'manual',
             signal: AbortSignal.timeout(6000),
             headers: {'User-Agent': 'NEXUS404', Accept: 'image/webp,image/png,image/jpeg'}
           });
-          const type = res.headers.get('content-type')?.split(';')[0];
-          if (!res.ok || !['image/webp', 'image/png', 'image/jpeg', 'image/avif'].includes(type)) {
-            await res.body?.cancel();
-            return null;
-          }
-          const image = {type, data: await bytes(res, 524288)};
-          if (this.images.size >= 48) this.images.delete(this.images.keys().next().value);
-          this.images.set(url, image);
-          return image;
-        } catch {
+          if (![301, 302, 303, 307, 308].includes(res.status)) break;
+          const location = res.headers.get('location');
+          await res.body?.cancel();
+          target = location ? posterURL(new URL(location, target).href) : '';
+          if (!target) return null;
+        }
+        const type = res.headers.get('content-type')?.split(';')[0];
+        if (!res.ok || !['image/webp', 'image/png', 'image/jpeg', 'image/avif'].includes(type)) {
+          await res.body?.cancel();
           return null;
         }
-      })
-      .finally(() => this.imageJobs.delete(url));
-    this.imageQueue = job.catch(() => {});
+        const image = {type, data: await bytes(res, 524288)};
+        if (this.images.size >= 96) this.images.delete(this.images.keys().next().value);
+        this.images.set(url, image);
+        return image;
+      } catch {
+        return null;
+      }
+    })().finally(() => this.imageJobs.delete(url));
     this.imageJobs.set(url, job);
     return job;
   }

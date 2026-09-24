@@ -15,7 +15,7 @@ const content = `<link rel="stylesheet" href="/modules/pulse/pulse.css"><script 
 <div class="pulse-toolbar"><p id="pulseStatus" role="status" aria-live="polite">Подключение к сборщику…</p><button type="button" id="pulseRefresh">Обновить</button></div>
 <div id="pulseData" aria-busy="true"><div class="pulse-stats">${card('CPU', 'pulseCpu', 'первый замер…')}${card('ПАМЯТЬ', 'pulseMemory', 'занято / всего')}${card('SWAP', 'pulseSwap', 'занято / всего')}${card('UPTIME', 'pulseUptime', 'с последней загрузки')}</div>
 <div class="pulse-charts">${chart('Загрузка CPU', 'pulseCpuChart', '')}${chart('Использование RAM', 'pulseMemoryChart', 'pulse-chart-memory')}</div>
-<p class="pulse-history-note">История накапливается, пока открыта страница.</p>
+
 <div class="pulse-resources"><section class="pulse-panel"><div class="pulse-panel-title"><h2>Диски</h2><span>локальные файловые системы</span></div><div id="pulseDisks"><p class="pulse-placeholder">Ожидаем показатели…</p></div></section>
 <section class="pulse-panel"><div class="pulse-panel-title"><h2>Сеть</h2><span>скорость / с</span></div><div id="pulseNetwork"><p class="pulse-placeholder">Ожидаем показатели…</p></div><p class="pulse-small">↓ приём · ↑ отправка. Счётчики — с запуска интерфейса.</p></section>
 </div><section class="pulse-panel"><div class="pulse-panel-title"><h2>О сервере</h2><span id="pulseHost">—</span></div><dl class="pulse-details"><div><dt>Система</dt><dd id="pulseOs">—</dd></div><div><dt>Ядро</dt><dd id="pulseKernel">—</dd></div><div><dt>Процессор</dt><dd id="pulseModel">—</dd></div><div><dt>Load · 1 / 5 / 15 мин</dt><dd id="pulseLoad">—</dd></div><div><dt>Ожидание I/O / steal</dt><dd id="pulseWait">—</dd></div></dl></section></div>

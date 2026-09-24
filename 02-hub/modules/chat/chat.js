@@ -727,6 +727,12 @@
       controls();
     }
   });
+  const compactComposer = matchMedia('(max-width:600px)');
+  const composerRows = () => {
+    $('chatInput').rows = compactComposer.matches ? 3 : 5;
+  };
+  compactComposer.addEventListener('change', composerRows);
+  composerRows();
   $('chatFile').addEventListener('change', async () => {
     const file = $('chatFile').files[0];
     $('chatFile').value = '';

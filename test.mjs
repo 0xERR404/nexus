@@ -398,6 +398,66 @@ import path from 'node:path';
         : null;
     assert.equal(await f.store.cover(1), null);
   });
+  test('anime details are cached, sanitized, deduplicated and retain stale data on error', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    let calls = 0;
+    f.intercept = (url, init) => {
+      if (url.endsWith('/api/animes/1')) {
+        calls++;
+        assert.equal(init.headers.Authorization, undefined);
+        return Response.json({
+          id: 1,
+          name: 'Anime',
+          russian: 'Аниме',
+          description: '<b>Описание</b> [url=x]текст[/url]',
+          genres: [{russian: 'Драма'}],
+          studios: [{name: 'Studio'}],
+          score: '8.5',
+          episodes: 12
+        });
+      }
+    };
+    const [a, b] = await Promise.all([f.store.detail(1), f.store.detail(1)]);
+    assert.equal(calls, 1);
+    assert.equal(a.description, 'Описание текст');
+    assert.equal(b.score, 8.5);
+    await assert.rejects(f.store.detail(999), (e) => e.status === 404);
+    f.advance(7 * 3600000);
+    f.intercept = (url) => (url.endsWith('/api/animes/1') ? new Response('', {status: 503}) : null);
+    const stale = await f.store.detail(1);
+    assert.equal(stale.stale, true);
+    assert.equal(stale.title, 'Аниме');
+  });
+  test('anime covers load six at once and reject redirects to other hosts', async (t) => {
+    const f = fixture(t);
+    f.pages = [Array.from({length: 12}, (_, i) => rate(i + 1)), []];
+    await f.connect();
+    await f.store.sync();
+    let active = 0,
+      peak = 0;
+    f.intercept = async (url) => {
+      if (url.includes('/uploads/')) {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return new Response('image', {headers: {'Content-Type': 'image/png'}});
+      }
+    };
+    const images = await Promise.all(Array.from({length: 12}, (_, i) => f.store.cover(i + 1)));
+    assert.equal(images.filter(Boolean).length, 12);
+    assert.equal(peak, 6);
+    f.store.images.clear();
+    let calls = 0;
+    f.intercept = (url) => {
+      calls++;
+      return new Response(null, {status: 302, headers: {location: 'http://127.0.0.1/private'}});
+    };
+    assert.equal(await f.store.cover(1), null);
+    assert.equal(calls, 1);
+  });
   test('anime endpoints require login and same-origin mutations; settings stay outside the module', async (t) => {
     const f = fixture(t);
     const {createModule, settings} = await import('./02-hub/modules/anime/index.mjs');
@@ -4726,6 +4786,43 @@ import path from 'node:path';
     await job;
     assert.equal(mod.store.config().steam.syncing, false);
     assert.equal(mod.store.snapshot().games.length, 2);
+  });
+  test('trophies yearly activity includes old unlocks and card retains partial totals', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    const account = f.store.account('steam');
+    const game = {
+      id: '1',
+      title: 'Game',
+      achievements: [{id: 'a', soft: true, hard: false, date: f.now() - 200 * 86400000, rarity: 10}]
+    };
+    f.store.commitGame('steam', account, game);
+    const days = f.store.activity().days;
+    assert.equal(days[new Date(game.achievements[0].date).toISOString().slice(0, 10)], 1);
+    const {createModule} = await import('./02-hub/modules/trophies/index.mjs');
+    const mod = createModule(f.dir + '/summary', f.options);
+    mod.store.load();
+    t.after(() => mod.close());
+    mod.store.set('steam', {...account, error: 'Partial failure', lastSync: 0});
+    mod.store.commitGame('steam', account, game);
+    const summary = await mod.summary();
+    assert.equal(summary.state, 'warning');
+    assert.equal(summary.items.find((x) => x.label === 'Открыто').value, 1);
+  });
+  test('trophies covers fall back to a second Steam CDN and cache the result', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    let calls = 0;
+    f.store.options.fetcher = async (url) => {
+      calls++;
+      return url.hostname === 'shared.akamai.steamstatic.com'
+        ? new Response(null, {status: 404})
+        : new Response('image', {headers: {'content-type': 'image/jpeg'}});
+    };
+    assert.equal((await f.store.cover('steam', '1')).type, 'image/jpeg');
+    assert.equal(calls, 2);
+    await f.store.cover('steam', '1');
+    assert.equal(calls, 2);
   });
   test('trophies imports Steam and preserves secret boundaries, schema and rarity cache', async (t) => {
     const f = fixture(t);

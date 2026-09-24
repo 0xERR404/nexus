@@ -452,7 +452,7 @@ export class TrophiesStore {
         )
           return false;
         const complete = cached.achievements.every((a) => a.soft);
-        return age < (!cached.total ? 30 * 86400000 : complete ? 7 * 86400000 : 0);
+        return age < (!cached.total ? 30 * 86400000 : complete ? 7 * 86400000 : 3600000);
       };
       const worker = async () => {
         while (!fatal && cursor < total) {
@@ -573,7 +573,7 @@ export class TrophiesStore {
             date = hard ? x.hardDate : x.date,
             rarity = hard ? x.hardRarity : x.rarity;
           if (!unlocked) continue;
-          if (date && this.now() - date < 84 * 86400000 && date <= this.now()) {
+          if (date && this.now() - date < 366 * 86400000 && date <= this.now()) {
             const d = new Date(date).toISOString().slice(0, 10);
             days[d] = (days[d] ?? 0) + 1;
           }
@@ -614,7 +614,7 @@ export class TrophiesStore {
       return null;
     this.images ??= new Map();
     this.imageJobs ??= new Map();
-    const key = kind + id,
+    const key = kind + ':' + a.id + ':' + id + ':' + url.href,
       cached = this.images.get(key);
     if (cached && this.now() - cached.time < 86400000) return cached;
     if (this.imageJobs.has(key)) return this.imageJobs.get(key);
@@ -623,15 +623,26 @@ export class TrophiesStore {
       return this.cover(kind, id);
     }
     const task = (async () => {
-      const r = await (this.options.fetcher ?? fetch)(url, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(12000)
-      });
-      const type = r.headers.get('content-type')?.split(';')[0];
-      if (!r.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(type)) {
-        await r.body?.cancel();
-        return null;
+      const sources =
+        kind === 'steam'
+          ? [url, new URL(`https://cdn.akamai.steamstatic.com/steam/apps/${id}/header.jpg`)]
+          : [url];
+      let r, type;
+      for (const source of sources) {
+        try {
+          r = await (this.options.fetcher ?? fetch)(source, {
+            redirect: 'error',
+            signal: AbortSignal.timeout(8000)
+          });
+          type = r.headers.get('content-type')?.split(';')[0];
+          if (r.ok && ['image/jpeg', 'image/png', 'image/webp'].includes(type)) break;
+          await r.body?.cancel();
+          r = null;
+        } catch {
+          r = null;
+        }
       }
+      if (!r) return null;
       const reader = r.body.getReader(),
         chunks = [];
       let size = 0;
@@ -646,7 +657,13 @@ export class TrophiesStore {
         chunks.push(Buffer.from(value));
       }
       const image = {data: Buffer.concat(chunks), type, time: this.now()};
-      if (this.images.size >= 24) this.images.delete(this.images.keys().next().value);
+      while (
+        this.images.size &&
+        (this.images.size >= 128 ||
+          [...this.images.values()].reduce((n, x) => n + x.data.length, 0) + image.data.length >
+            24 * 1024 * 1024)
+      )
+        this.images.delete(this.images.keys().next().value);
       this.images.set(key, image);
       return image;
     })()

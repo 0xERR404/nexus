@@ -29,12 +29,14 @@
     if (!r.ok) throw Error(d.error || 'Не удалось выполнить запрос');
     return d;
   }
+  const gameNodes = new Map();
   let renderedList,
     snapshot,
     current,
     loading = false,
     disconnect,
-    activitySequence = 0;
+    activitySequence = 0,
+    activityKey = '';
   const mode = () => $('trophyMode')?.value ?? 'soft';
   const selected = () => {
     const value = new URLSearchParams(location.search).get('provider');
@@ -46,7 +48,13 @@
       else a.removeAttribute('aria-current');
     }
 
-    $('trophyAwardsSection').hidden = selected() === 'steam';
+    const overview = !selected();
+    for (const node of page.querySelectorAll(
+      '.trophy-search-row, #trophyCount, #trophyGames, #trophyAccounts, #trophyStatus, .trophy-sync-actions, #trophiesPage > details'
+    ))
+      node.hidden = overview;
+    $('trophyAwardsSection').hidden = selected() !== 'ra';
+    $('trophyYear').hidden = !overview;
   }
   function accountText(name, a) {
     if (!a.connected) return settings ? name + ': не подключён' : name + ' · не подключён';
@@ -103,90 +111,120 @@
         .map(([k, a]) => el('div', accountText(k === 'steam' ? 'Steam' : 'RetroAchievements', a)))
     );
     const search = $('trophySearch').value.toLocaleLowerCase(),
-      filter = '';
-    const games = snapshot.games
-      .filter((g) => {
-        const n = g.provider === 'ra' && mode() === 'hard' ? g.hard : g.soft;
-        return (
-          (!selected() || g.provider === selected()) &&
-          g.title.toLocaleLowerCase().includes(search) &&
-          (!filter ||
-            (filter === 'started' && n > 0 && n < g.total) ||
-            (filter === 'beaten' &&
-              (g.provider === 'ra' && mode() === 'hard' ? g.beatenHard : g.beaten)) ||
-            (filter === 'complete' && g.total > 0 && n === g.total))
-        );
-      })
-      .sort((a, b) => {
-        const sort = 'name';
-        const value = (g) =>
-          sort === 'hours'
-            ? (g.minutes ?? -1)
-            : sort === 'reviews'
-              ? (g.reviewPercent ?? -1)
-              : g.total
-                ? ((g.provider === 'ra' && mode() === 'hard' ? g.hard : g.soft) ?? 0) / g.total
-                : -1;
-        return (sort === 'name' ? 0 : value(b) - value(a)) || a.title.localeCompare(b.title);
-      });
+      sort = $('trophySort').value,
+      completion = $('trophyCompletion').value;
+    const games = selected()
+      ? snapshot.games
+          .filter(
+            (g) =>
+              g.provider === selected() &&
+              g.title.toLocaleLowerCase().includes(search) &&
+              (completion === 'all' || (completion === 'beaten' ? !!g.beaten : !g.beaten))
+          )
+          .sort((a, b) => {
+            const value = (g) =>
+              sort === 'time'
+                ? (g.minutes ?? -1)
+                : g.total > 0 && g.soft != null
+                  ? g.soft / g.total
+                  : -1;
+            return (
+              (sort === 'name' ? 0 : value(b) - value(a)) || a.title.localeCompare(b.title, 'ru')
+            );
+          })
+      : [];
     const signature = JSON.stringify(games);
     if (signature !== renderedList) {
       renderedList = signature;
-      $('trophyGames').replaceChildren(
-        ...games.map((g) => {
-          const b = el('button', undefined, 'trophy-card');
-          b.type = 'button';
-          if (g.cover) {
-            const image = el('img');
-            image.src = g.cover;
-            image.alt = '';
-            image.loading = 'lazy';
-            image.addEventListener('error', () => image.remove());
-            b.append(image);
-          }
-          b.append(el('strong', g.title), el('small', g.console));
-          if (g.provider === 'steam') {
-            if (g.minutes != null) b.append(el('small', `${Math.round(g.minutes / 6) / 10} ч`));
-            b.append(
-              el(
-                'small',
-                g.reviewPercent != null
-                  ? `${g.reviewPercent}% положительных · ${g.reviewCount.toLocaleString('ru-RU')}`
-                  : g.reviewCount === 0
-                    ? 'Пока нет отзывов'
-                    : 'Отзывы ещё не загружены',
-                'trophy-review'
-              )
-            );
-            if (g.metadataError) b.append(el('small', 'Отзывы / цена не обновлены'));
-          }
-          for (const [label, n] of g.provider === 'ra'
-            ? [
-                ['SC', g.soft],
-                ['HC', g.hard]
-              ]
-            : [['', g.soft]]) {
-            b.append(
-              el(
-                'small',
-                n === null
-                  ? 'Прогресс недоступен'
-                  : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
-              )
-            );
-            if (g.total > 0 && n !== null) {
-              const bar = el('progress');
-              bar.max = g.total;
-              bar.value = n;
-              bar.setAttribute('aria-label', label || 'Прогресс');
-              b.append(bar);
+      const cards = games.map((g) => {
+        const key = g.provider + ':' + g.id,
+          signature = JSON.stringify(g),
+          cached = gameNodes.get(key);
+        if (cached?.signature === signature) return cached.node;
+        const b = el('button', undefined, 'trophy-card');
+        b.type = 'button';
+        b.dataset.provider = g.provider;
+        if (g.cover) {
+          const image = el('img');
+          image.src = g.cover;
+          image.alt = '';
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          let retries = 0;
+          image.addEventListener('error', () => {
+            if (!retries++)
+              setTimeout(() => {
+                image.src = g.cover + '?retry=1';
+              }, 1500);
+            else {
+              image.hidden = true;
+              b.classList.add('cover-missing');
             }
+          });
+          b.append(image);
+        }
+        b.append(el('strong', g.title));
+        if (g.provider === 'steam') {
+          const review = el('small', undefined, 'trophy-review');
+          if (g.reviewPercent != null) {
+            review.append(
+              el('span', g.reviewPercent + '%'),
+              el(
+                'span',
+                ' положительных · ' + g.reviewCount.toLocaleString('ru-RU'),
+                'trophy-review-extra'
+              )
+            );
+            review.setAttribute('aria-label', g.reviewPercent + '% положительных отзывов');
+          } else review.textContent = g.reviewCount === 0 ? 'Нет отзывов' : 'Отзывы —';
+          const facts = el('div', undefined, 'trophy-card-facts');
+          facts.append(review);
+          if (g.minutes != null)
+            facts.append(el('small', `${Math.round(g.minutes / 6) / 10} ч`, 'trophy-hours'));
+          b.append(facts);
+          if (g.metadataError) b.append(el('small', 'Отзывы / цена не обновлены'));
+        }
+        for (const [label, n] of g.provider === 'ra'
+          ? [
+              ['SC', g.soft],
+              ['HC', g.hard]
+            ]
+          : [['', g.soft]]) {
+          b.append(
+            el(
+              'small',
+              n === null
+                ? 'Прогресс недоступен'
+                : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
+            )
+          );
+          if (g.total > 0 && n !== null) {
+            const bar = el('progress');
+            bar.max = g.total;
+            bar.value = n;
+            bar.setAttribute('aria-label', label || 'Прогресс');
+            b.append(bar);
           }
-          if (g.error) b.append(el('small', 'Не обновлено'));
-          b.addEventListener('click', () => openGame(g));
-          return b;
-        })
-      );
+        }
+        if (g.error) b.append(el('small', 'Не обновлено'));
+        b.addEventListener('click', () => openGame(g));
+        gameNodes.set(key, {signature, node: b});
+        return b;
+      });
+      const fragment = document.createDocumentFragment();
+      for (const [title, match] of [
+        ['С достижениями', (g) => g.total > 0],
+        ['Без достижений', (g) => g.available && g.total === 0],
+        ['Данные ещё не получены', (g) => !(g.total > 0) && !(g.available && g.total === 0)]
+      ]) {
+        const rows = games.map((g, i) => (match(g) ? cards[i] : null)).filter(Boolean);
+        if (!rows.length) continue;
+        fragment.append(el('h2', title + ' · ' + rows.length, 'trophy-group-title'), ...rows);
+      }
+      $('trophyGames').replaceChildren(fragment);
+      const ids = new Set(snapshot.games.map((g) => g.provider + ':' + g.id));
+      for (const key of gameNodes.keys()) if (!ids.has(key)) gameNodes.delete(key);
+
       if (!games.length)
         $('trophyGames').append(el('p', 'Нет игр по выбранным условиям.', 'trophy-muted'));
     }
@@ -200,17 +238,22 @@
       ['100%', known.filter((g) => g.total > 0 && unlocked(g) === g.total).length],
       ['Часов Steam', Math.round(library.reduce((n, g) => n + (g.minutes || 0), 0) / 6) / 10]
     ];
-    if (prices.length)
+    const steamCount = library.filter((g) => g.provider === 'steam').length;
+    if (steamCount)
       summary.push([
-        'Библиотека · USD',
-        '$' +
-          prices.reduce((n, g) => n + g.priceUsd, 0).toFixed(2) +
-          ` · ${prices.length}/${library.filter((g) => g.provider === 'steam').length}`
+        'Стоимость · USD',
+        prices.length ? '$' + prices.reduce((n, g) => n + g.priceUsd, 0).toFixed(2) : '—',
+        `Цена известна: ${prices.length}/${steamCount} · по $0: ${prices.filter((g) => g.priceUsd === 0).length} · без цены: ${steamCount - prices.length}`
       ]);
     $('trophyOverview').replaceChildren(
-      ...summary.map(([label, value]) => {
+      ...summary.map(([label, value, note]) => {
         const cell = el('div');
         cell.append(el('small', label), el('strong', String(value)));
+        if (note) {
+          cell.append(el('small', note, 'trophy-price-note'));
+          cell.title =
+            'Базовая стоимость магазина США. Это не сумма покупок. Неизвестная цена не считается нулевой.';
+        }
         return cell;
       })
     );
@@ -237,23 +280,49 @@
       $('trophyAwards').append(el('p', `Скрытых наград: ${snapshot.hiddenAwards}`, 'trophy-muted'));
   }
   async function activity() {
-    if (!page) return;
+    if (!page || !snapshot) return;
+    const key = JSON.stringify([
+      selected(),
+      mode(),
+      Math.floor(Date.now() / 86400000),
+      snapshot.games.map((g) => [g.provider, g.id, g.detailAt, g.soft, g.hard])
+    ]);
+    if (key === activityKey) return;
+    activityKey = key;
     const seq = ++activitySequence;
     try {
       const data = await api(`/activity?mode=${mode()}&provider=${selected()}`);
       if (seq !== activitySequence) return;
       const cells = [],
-        now = new Date();
-      now.setUTCHours(0, 0, 0, 0);
-      for (let n = 83; n >= 0; n--) {
-        const day = new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10),
-          count = data.days[day] || 0,
-          cell = el('span', count || '', 'trophy-day');
-        cell.dataset.active = String(count > 0);
-        cell.title = `${day}: ${count}`;
+        today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const start = new Date(today);
+      start.setUTCFullYear(start.getUTCFullYear() - 1);
+      start.setUTCDate(start.getUTCDate() + 1);
+      const pad = (start.getUTCDay() + 6) % 7;
+      for (let n = 0; n < pad; n++) {
+        const blank = el('span');
+        blank.setAttribute('aria-hidden', 'true');
+        cells.push(blank);
+      }
+      const max = Math.max(1, ...Object.values(data.days));
+      for (let time = start.getTime(); time <= today.getTime(); time += 86400000) {
+        const day = new Date(time).toISOString().slice(0, 10),
+          count = data.days[day] || 0;
+        const cell = el('button', undefined, 'trophy-day');
+        cell.type = 'button';
+        cell.dataset.level = String(count ? Math.min(4, Math.ceil((count / max) * 4)) : 0);
+        cell.title = day + ': ' + count + ' достижений';
         cell.setAttribute('aria-label', cell.title);
+        cell.onclick = () => {
+          $('trophyDayInfo').textContent = cell.title;
+        };
         cells.push(cell);
       }
+      $('trophyYearRange').textContent =
+        start.toLocaleDateString('ru-RU', {timeZone: 'UTC'}) +
+        ' — ' +
+        today.toLocaleDateString('ru-RU', {timeZone: 'UTC'});
       $('trophyCalendar').replaceChildren(...cells);
       $('trophyRare').replaceChildren(
         ...data.rare.map((a) =>
@@ -269,7 +338,10 @@
           )
         );
     } catch (e) {
-      status(e.message);
+      if (seq !== activitySequence) return;
+      activityKey = '';
+      if (!selected()) $('trophyDayInfo').textContent = e.message;
+      else status(e.message);
     }
   }
   function renderDetail() {
@@ -343,7 +415,7 @@
     }
   }
   if (page) {
-    for (const id of ['trophySearch'])
+    for (const id of ['trophySearch', 'trophySort', 'trophyCompletion'])
       $(id).addEventListener(id === 'trophySearch' ? 'input' : 'change', () => {
         render();
         if (id === 'trophyMode') void activity();
