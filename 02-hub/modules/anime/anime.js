@@ -11,8 +11,8 @@
     dropped: 'Бросил',
     rewatching: 'Пересматриваю'
   };
-  let snapshot,
-    current = 1,
+  let renderedList,
+    snapshot,
     loading = false,
     mutation = false,
     timer;
@@ -58,15 +58,12 @@
           (!query || (x.title + ' ' + x.name).toLocaleLowerCase('ru').includes(query))
       )
       .sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-    const total = Math.max(1, Math.ceil(items.length / 30));
-    current = Math.min(current, total);
     $('animeCount').textContent = items.length + ' из ' + snapshot.items.length;
-    $('animePageNumber').textContent = current + ' / ' + total;
-    $('animePrev').disabled = current <= 1;
-    $('animeNext').disabled = current >= total;
-    document.querySelector('.anime-pagination').hidden = total === 1;
+    const signature = JSON.stringify([items, snapshot.connected]);
+    if (signature === renderedList) return;
+    renderedList = signature;
     const fragment = document.createDocumentFragment();
-    for (const item of items.slice((current - 1) * 30, current * 30)) {
+    for (const item of items) {
       const card = node('article', undefined, 'anime-card');
       const cover = node('div', undefined, 'anime-cover');
       cover.setAttribute('aria-hidden', 'true');
@@ -212,19 +209,9 @@
   }
   if (page) {
     $('animeSearch').addEventListener('input', () => {
-      current = 1;
       renderList();
     });
     $('animeFilter').addEventListener('change', () => {
-      current = 1;
-      renderList();
-    });
-    $('animePrev').addEventListener('click', () => {
-      current--;
-      renderList();
-    });
-    $('animeNext').addEventListener('click', () => {
-      current++;
       renderList();
     });
     $('animeSync').addEventListener('click', () => mutate('/sync'));

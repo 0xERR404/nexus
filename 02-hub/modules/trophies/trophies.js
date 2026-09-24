@@ -28,14 +28,26 @@
     if (!r.ok) throw Error(d.error || 'Не удалось выполнить запрос');
     return d;
   }
-  let snapshot,
+  let renderedList,
+    snapshot,
     current,
-    index = 0,
     loading = false,
     disconnect,
     activitySequence = 0;
   const mode = () => $('trophyMode')?.value ?? 'soft';
-  const selected = () => $('trophyProvider')?.value ?? '';
+  const selected = () => {
+    const value = new URLSearchParams(location.search).get('provider');
+    return ['steam', 'ra'].includes(value) ? value : '';
+  };
+  function renderTabs() {
+    for (const a of document.querySelectorAll('[data-trophy-provider]')) {
+      if (a.dataset.trophyProvider === selected()) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
+    $('trophyMode').hidden = selected() === 'steam';
+    $('trophyModeHelp').hidden = selected() === 'steam';
+    $('trophyAwardsSection').hidden = selected() === 'steam';
+  }
   function accountText(name, a) {
     return `${name}: ${a.connected ? a.name + (a.mode === 'qr' ? ' · QR-сессия' : '') : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
   }
@@ -76,10 +88,11 @@
       }
       return;
     }
+    renderTabs();
     $('trophyAccounts').replaceChildren(
-      ...Object.entries(snapshot.config).map(([k, a]) =>
-        el('div', accountText(k === 'steam' ? 'Steam' : 'RetroAchievements', a))
-      )
+      ...Object.entries(snapshot.config)
+        .filter(([k]) => !selected() || k === selected())
+        .map(([k, a]) => el('div', accountText(k === 'steam' ? 'Steam' : 'RetroAchievements', a)))
     );
     const search = $('trophySearch').value.toLocaleLowerCase(),
       filter = $('trophyFilter').value;
@@ -97,53 +110,53 @@
         );
       })
       .sort((a, b) => a.title.localeCompare(b.title));
-    const pages = Math.max(1, Math.ceil(games.length / 24));
-    index = Math.min(index, pages - 1);
-    $('trophyGames').replaceChildren(
-      ...games.slice(index * 24, index * 24 + 24).map((g) => {
-        const b = el('button', undefined, 'trophy-card');
-        b.type = 'button';
-        if (g.cover) {
-          const image = el('img');
-          image.src = g.cover;
-          image.alt = '';
-          image.loading = 'lazy';
-          image.addEventListener('error', () => image.remove());
-          b.append(image);
-        }
-        b.append(el('strong', g.title), el('small', g.console));
-        for (const [label, n] of g.provider === 'ra'
-          ? [
-              ['SC', g.soft],
-              ['HC', g.hard]
-            ]
-          : [['', g.soft]]) {
-          b.append(
-            el(
-              'small',
-              n === null
-                ? 'Прогресс недоступен'
-                : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
-            )
-          );
-          if (g.total > 0 && n !== null) {
-            const bar = el('progress');
-            bar.max = g.total;
-            bar.value = n;
-            bar.setAttribute('aria-label', label || 'Прогресс');
-            b.append(bar);
+    const signature = JSON.stringify(games);
+    if (signature !== renderedList) {
+      renderedList = signature;
+      $('trophyGames').replaceChildren(
+        ...games.map((g) => {
+          const b = el('button', undefined, 'trophy-card');
+          b.type = 'button';
+          if (g.cover) {
+            const image = el('img');
+            image.src = g.cover;
+            image.alt = '';
+            image.loading = 'lazy';
+            image.addEventListener('error', () => image.remove());
+            b.append(image);
           }
-        }
-        if (g.error) b.append(el('small', 'Не обновлено'));
-        b.addEventListener('click', () => openGame(g));
-        return b;
-      })
-    );
-    if (!games.length)
-      $('trophyGames').append(el('p', 'Нет игр по выбранным условиям.', 'trophy-muted'));
-    $('trophyCount').textContent = `${games.length} игр · ${index + 1}/${pages}`;
-    $('trophyPrev').disabled = index === 0;
-    $('trophyNext').disabled = index + 1 === pages;
+          b.append(el('strong', g.title), el('small', g.console));
+          for (const [label, n] of g.provider === 'ra'
+            ? [
+                ['SC', g.soft],
+                ['HC', g.hard]
+              ]
+            : [['', g.soft]]) {
+            b.append(
+              el(
+                'small',
+                n === null
+                  ? 'Прогресс недоступен'
+                  : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
+              )
+            );
+            if (g.total > 0 && n !== null) {
+              const bar = el('progress');
+              bar.max = g.total;
+              bar.value = n;
+              bar.setAttribute('aria-label', label || 'Прогресс');
+              b.append(bar);
+            }
+          }
+          if (g.error) b.append(el('small', 'Не обновлено'));
+          b.addEventListener('click', () => openGame(g));
+          return b;
+        })
+      );
+      if (!games.length)
+        $('trophyGames').append(el('p', 'Нет игр по выбранным условиям.', 'trophy-muted'));
+    }
+    $('trophyCount').textContent = `${games.length} игр`;
     refreshButton();
     const names = {
       'Game Beaten': 'Пройдена',
@@ -266,20 +279,24 @@
     }
   }
   if (page) {
-    for (const id of ['trophySearch', 'trophyFilter', 'trophyProvider', 'trophyMode'])
+    for (const id of ['trophySearch', 'trophyFilter', 'trophyMode'])
       $(id).addEventListener(id === 'trophySearch' ? 'input' : 'change', () => {
-        index = 0;
         render();
-        if (id === 'trophyProvider' || id === 'trophyMode') void activity();
+        if (id === 'trophyMode') void activity();
       });
-    $('trophyPrev').onclick = () => {
-      index--;
+    for (const tab of document.querySelectorAll('[data-trophy-provider]'))
+      tab.addEventListener('click', (event) => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)
+          return;
+        event.preventDefault();
+        if (tab.dataset.trophyProvider !== selected()) history.pushState(null, '', tab.href);
+        render();
+        void activity();
+      });
+    window.addEventListener('popstate', () => {
       render();
-    };
-    $('trophyNext').onclick = () => {
-      index++;
-      render();
-    };
+      void activity();
+    });
     $('trophyClose').onclick = () => $('trophyDialog').close();
     $('trophyUnlockFilter').onchange = renderDetail;
     $('trophyBeaten').onclick = async () => {

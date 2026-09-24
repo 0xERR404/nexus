@@ -20,7 +20,6 @@ const types = {
 };
 const assets = [
   'app.css',
-  'cosmos.webp',
   'app.js',
   'manifest.json',
   'offline.html',

@@ -99,7 +99,6 @@ export const projectFiles = [
   '02-hub/modules/signal/signal.js',
   '02-hub/package.json',
   '02-hub/public/app.css',
-  '02-hub/public/cosmos.webp',
   '02-hub/public/app.js',
   '02-hub/public/apple-touch-icon.png',
   '02-hub/public/fonts/jetbrains-mono.woff2',
