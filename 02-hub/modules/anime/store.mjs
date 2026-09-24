@@ -388,10 +388,11 @@ export class AnimeStore {
     return this.exclusive(async () => {
       const items = [],
         ids = new Set();
+      let expectedNext = null;
       try {
         this.commit({...this.data, nextAttempt: this.now() + 60000});
         for (let page = 1; ; page++) {
-          if (page > 1000)
+          if (page > 1001)
             throw fail('Список превышает предел загрузки. Предыдущие данные сохранены.');
           const list = await this.api(
             '/api/users/' +
@@ -400,9 +401,14 @@ export class AnimeStore {
               page +
               '&limit=100'
           );
-          if (!Array.isArray(list)) throw fail('Неожиданный формат списка Shikimori.');
+          // Shikimori returns limit + 1 records; a page past the end can be null.
+          if (list === null && page > 1 && expectedNext === null) break;
+          if (!Array.isArray(list) || list.length > 101)
+            throw fail('Неожиданный формат списка Shikimori.');
+          if (expectedNext !== null && (!list.length || normalize(list[0]).id !== expectedNext))
+            throw fail('Список изменился во время загрузки. Повторим позже.');
           if (!list.length) break;
-          for (const rate of list) {
+          for (const rate of list.slice(0, 100)) {
             const item = normalize(rate);
             if (ids.has(item.id)) throw fail('Список изменился во время загрузки. Повторим позже.');
             ids.add(item.id);
@@ -410,6 +416,10 @@ export class AnimeStore {
           }
           if (items.length > 100000)
             throw fail('Список слишком большой. Предыдущие данные сохранены.');
+          expectedNext = list.length === 101 ? normalize(list[100]).id : null;
+          if (expectedNext !== null && ids.has(expectedNext))
+            throw fail('Список изменился во время загрузки. Повторим позже.');
+          if (list.length < 100) break;
         }
         for (let offset = 0; offset < items.length; offset += 50) {
           const batch = items.slice(offset, offset + 50);

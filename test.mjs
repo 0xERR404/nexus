@@ -54,7 +54,7 @@ import path from 'node:path';
         if (url.endsWith('/oauth/token')) return Response.json(tokens(++f.serial));
         if (url.endsWith('/whoami')) return Response.json({id: f.userId, nickname: 'Viewer'});
         if (url.includes('/anime_rates'))
-          return Response.json(f.pages[Number(new URL(url).searchParams.get('page')) - 1] ?? []);
+          return Response.json(f.pages[Number(new URL(url).searchParams.get('page')) - 1] ?? null);
         if (url.endsWith('/api/graphql')) {
           const ids = JSON.parse(init.body)
             .query.match(/ids: "([\d,]+)"/)[1]
@@ -102,10 +102,10 @@ import path from 'node:path';
     assert.equal(f.calls[1].init.headers.Authorization, 'Bearer ' + tokens(1).access_token);
     assert.equal(f.calls[1].init.redirect, 'error');
   });
-  test('anime imports every page including a short intermediate page, and batches posters', async (t) => {
+  test('anime imports overlapping limit-plus-one pages exactly once and batches posters', async (t) => {
     const f = fixture(t);
     await f.connect();
-    f.pages = [Array.from({length: 100}, (_, i) => rate(i + 1)), [rate(101)], [rate(102)], []];
+    f.pages = [Array.from({length: 101}, (_, i) => rate(i + 1)), [rate(101), rate(102)]];
     assert.equal(await f.store.sync(), true);
     const d = f.store.snapshot();
     assert.equal(d.items.length, 102);
@@ -113,9 +113,57 @@ import path from 'node:path';
     assert.equal(d.stale, false);
     assert.ok(d.syncedAt);
     assert.equal(f.calls.filter((x) => x.url.endsWith('/api/graphql')).length, 3);
-    assert.equal(f.calls.filter((x) => x.url.includes('/anime_rates')).length, 4);
+    assert.equal(f.calls.filter((x) => x.url.includes('/anime_rates')).length, 2);
     for (let i = 1; i < f.calls.length; i++) assert.ok(f.calls[i].at - f.calls[i - 1].at >= 1100);
     assert.equal(new AnimeStore(f.dir, f.options).snapshot().items.length, 102);
+  });
+  test('anime handles real Shikimori pagination boundaries and null terminal pages', async (t) => {
+    for (const count of [0, 1, 99, 100, 101, 200, 201]) {
+      const f = fixture(t);
+      await f.connect();
+      const all = Array.from({length: count}, (_, i) => rate(i + 1));
+      f.intercept = (url) => {
+        if (!url.includes('/anime_rates')) return null;
+        const offset = (Number(new URL(url).searchParams.get('page')) - 1) * 100;
+        return Response.json(offset > count ? null : all.slice(offset, offset + 101));
+      };
+      assert.equal(await f.store.sync(), true, 'count=' + count);
+      assert.deepEqual(
+        f.store.snapshot().items.map((x) => x.id),
+        all.map((x) => x.anime.id)
+      );
+      assert.ok(!f.store.snapshot().error);
+    }
+    const f = fixture(t);
+    await f.connect();
+    f.pages = [Array.from({length: 100}, (_, i) => rate(i + 1)), null];
+    assert.equal(await f.store.sync(), true);
+    assert.equal(f.store.snapshot().items.length, 100);
+  });
+  test('anime refuses null first pages and error objects without erasing saved data', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    const before = f.store.snapshot();
+    for (const response of [null, {error: 'upstream failure'}, {data: []}, '']) {
+      f.advance(3600000);
+      f.intercept = (url) => (url.includes('/anime_rates') ? Response.json(response) : null);
+      assert.equal(await f.store.sync(), false);
+      assert.deepEqual(f.store.snapshot().items, before.items);
+      assert.equal(f.store.snapshot().syncedAt, before.syncedAt);
+    }
+  });
+  test('anime rejects a missing or changed lookahead record instead of publishing an incomplete list', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    const before = f.store.snapshot().items;
+    for (const next of [[], null, [rate(102)]]) {
+      f.advance(3600000);
+      f.pages = [Array.from({length: 101}, (_, i) => rate(i + 1)), next];
+      assert.equal(await f.store.sync(), false);
+      assert.deepEqual(f.store.snapshot().items, before);
+    }
   });
   test('anime preserves last complete snapshot and timestamp after failure on a later page', async (t) => {
     const f = fixture(t);
@@ -123,7 +171,7 @@ import path from 'node:path';
     await f.store.sync();
     const before = f.store.snapshot();
     f.advance(3600000);
-    f.pages = [[rate(2)], [{broken: true}]];
+    f.pages = [Array.from({length: 100}, (_, i) => rate(i + 2)), [{broken: true}]];
     assert.equal(await f.store.sync(), false);
     const after = new AnimeStore(f.dir, f.options).snapshot();
     assert.deepEqual(after.items, before.items);
@@ -137,7 +185,7 @@ import path from 'node:path';
     await f.store.sync();
     const before = f.store.snapshot().items;
     f.advance(3600000);
-    f.pages = [[rate(2)], [rate(2)]];
+    f.pages = [Array.from({length: 100}, (_, i) => rate(i + 2)), [rate(2)]];
     assert.equal(await f.store.sync(), false);
     assert.deepEqual(f.store.snapshot().items, before);
     f.advance(3600000);
