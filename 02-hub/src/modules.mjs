@@ -86,6 +86,21 @@ export async function moduleSummary(module, timeout = 3000) {
       throw new Error('Invalid summary');
     return {
       state: data.state,
+      ...(module.id === 'signal' && Array.isArray(data.preview)
+        ? {
+            preview: data.preview
+              .slice(0, 2)
+              .filter((e) => e && Number.isFinite(e.time) && e.time > 0)
+              .map((e) => ({title: String(e.title ?? '').slice(0, 100), time: e.time}))
+          }
+        : {}),
+      ...(module.id === 'anime' && Array.isArray(data.covers)
+        ? {
+            covers: data.covers
+              .filter((id) => Number.isSafeInteger(id) && id > 0 && id <= 9999999999)
+              .slice(0, 3)
+          }
+        : {}),
       ...(data.chart &&
       ['RUB', 'USD', 'EUR'].includes(data.chart.currency) &&
       /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(data.chart.month) &&

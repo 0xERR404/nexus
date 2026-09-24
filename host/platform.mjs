@@ -403,7 +403,8 @@ export function moduleFiles(
   id,
   {root = ROOT, hub = HUB, state = STATE, copy = fs.copyFileSync} = {}
 ) {
-  if (!/^(pulse|signal|balance|chat|anime)$/.test(id)) throw new Error('Неизвестный модуль');
+  if (!/^(pulse|signal|balance|chat|anime|trophies)$/.test(id))
+    throw new Error('Неизвестный модуль');
   const source = root + '/02-hub/modules/' + id,
     target = hub + '/modules/' + id,
     marker = state + '/' + id + '-installed';
@@ -478,9 +479,9 @@ export async function installModule(ui, id, maintenance = true) {
   supported();
   if (!fs.existsSync(HUB + '/config/auth.json'))
     throw new Error('Сначала установи хаб через пункт 5');
-  if (!['pulse', 'signal', 'balance', 'chat', 'anime'].includes(id))
+  if (!['pulse', 'signal', 'balance', 'chat', 'anime', 'trophies'].includes(id))
     throw new Error('Неизвестный модуль');
-  const embedded = ['balance', 'chat', 'anime'].includes(id);
+  const embedded = ['balance', 'chat', 'anime', 'trophies'].includes(id);
   const override = embedded ? null : moduleOverride(id);
   const installed = query(
     'docker',
@@ -540,19 +541,26 @@ export async function installModule(ui, id, maintenance = true) {
   }
   await restartHub(ui);
   await waitModule(ui, id);
+  if (id === 'trophies' && fs.existsSync(STATE + '/signal-installed'))
+    await ui.run('Уведомления достижений', 'systemctl', ['restart', 'nexus404-signal.service']);
   if (maintenance) await migrate(ui);
   ui.line(
     '[✓] Модуль ' +
-      {pulse: '«Пульс»', signal: '«Сигнал»', balance: '«Баланс»', chat: '«Чат»', anime: '«Кадр»'}[
-        id
-      ] +
+      {
+        pulse: '«Пульс»',
+        signal: '«Сигнал»',
+        balance: '«Баланс»',
+        chat: '«Чат»',
+        anime: '«Кадр»',
+        trophies: '«Трофеи»'
+      }[id] +
       ' установлен'
   );
   event('system.update.completed', 'Модуль ' + id + ' обновлён');
 }
 
 export async function waitModule(ui, id) {
-  const embedded = ['balance', 'chat', 'anime'].includes(id);
+  const embedded = ['balance', 'chat', 'anime', 'trophies'].includes(id);
   const file = id === 'pulse' ? '/app/metrics/pulse.json' : '/app/signal/feed.json';
   const code = embedded
     ? `import('/app/modules/${id}/index.mjs').then(async m=>{await m.summary();process.exit(0)}).catch(()=>process.exit(1))`

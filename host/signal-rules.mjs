@@ -5,7 +5,8 @@ export const categories = [
   'security',
   'maintenance',
   'recovery',
-  'summary'
+  'summary',
+  'achievements'
 ];
 export const defaultSettings = {
   categories: Object.fromEntries(categories.map((c) => [c, true])),

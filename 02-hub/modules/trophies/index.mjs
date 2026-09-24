@@ -1,0 +1,137 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {modulePage} from '../../src/views.mjs';
+import {body} from '../../src/server.mjs';
+import {TrophiesStore} from './store.mjs';
+const head =
+  '<link rel="stylesheet" href="/modules/trophies/trophies.css"><script src="/modules/trophies/trophies.js" defer></script>';
+const status = '<p id="trophyStatus" role="status" aria-live="polite"></p>';
+const content = `${head}<section id="trophiesPage">${status}<div class="trophy-toolbar"><input id="trophySearch" type="search" placeholder="Найти игру" aria-label="Найти игру" maxlength="200"><select id="trophyProvider" aria-label="Сервис"><option value="">Все сервисы</option><option value="steam">Steam</option><option value="ra">RetroAchievements</option></select><select id="trophyFilter" aria-label="Прогресс"><option value="">Все игры</option><option value="started">Начатые</option><option value="beaten">Пройдены</option><option value="complete">100%</option></select><select id="trophyMode" aria-label="Режим RetroAchievements"><option value="soft">RA · Softcore</option><option value="hard">RA · Hardcore</option></select><button id="trophySync">Обновить</button></div><p class="trophy-muted">Softcore включает открытия в Hardcore. «Пройдена» — награда RA или твоя отметка Steam.</p><div id="trophyAccounts" class="trophy-meta"></div><div id="trophyGames" class="trophy-grid"></div><div class="trophy-toolbar"><button id="trophyPrev">←</button><span id="trophyCount"></span><button id="trophyNext">→</button></div><details><summary>Активность · 12 недель · UTC</summary><div id="trophyCalendar" class="trophy-calendar"></div><p class="trophy-muted">Только достижения с известной датой открытия.</p></details><details><summary>Редкие достижения · до 5%</summary><div id="trophyRare"></div></details><details><summary>Награды RetroAchievements</summary><div id="trophyAwards"></div></details><dialog id="trophyDialog" aria-labelledby="trophyDialogTitle"><div class="trophy-meta"><h2 id="trophyDialogTitle"></h2><button id="trophyClose" class="dialog-close" aria-label="Закрыть">×</button></div><p id="trophyDetailStatus"></p><div class="trophy-toolbar"><select id="trophyUnlockFilter" aria-label="Достижения"><option value="all">Все</option><option value="unlocked">Открытые</option><option value="locked">Оставшиеся</option></select><button id="trophyBeaten" hidden>Отметить прохождение</button></div><div id="trophyAchievements"></div></dialog></section>`;
+export const settings = {
+  title: 'Трофеи · Steam и RetroAchievements',
+  content: `${head}<section id="trophiesSettings">${status}<div class="trophy-grid">${[
+    [
+      'steam',
+      'Steam',
+      'SteamID64 или ссылка на профиль',
+      'https://steamcommunity.com/dev/apikey',
+      'Web API key. В Steam открой профиль и сведения об играх.'
+    ],
+    [
+      'ra',
+      'RetroAchievements',
+      'Имя пользователя',
+      'https://retroachievements.org/controlpanel.php',
+      'Web API key из Control Panel → Keys, не Connect Key.'
+    ]
+  ]
+    .map(
+      ([id, title, placeholder, url, help]) =>
+        `<section class="trophy-panel"><h2>${title}</h2><p id="${id}Account"></p><form data-trophy-connect="${id}"><label>${placeholder}<input name="account" required maxlength="200" autocomplete="off"></label><label>Ключ API<input name="key" required type="password" maxlength="256" autocomplete="new-password"></label><button type="submit">Подключить</button><button data-trophy-disconnect="${id}" type="button" hidden>Отключить</button></form><p class="trophy-muted">${help} <a href="${url}" target="_blank" rel="noopener noreferrer">Получить ключ ↗</a></p></section>`
+    )
+    .join(
+      ''
+    )}</div><p class="trophy-muted">Ключи хранятся только на сервере. Обновление каждый час, ручное — раз в 5 минут. Большая библиотека загружается постепенно. Первая загрузка каждой игры проходит без уведомлений. Новые достижения после неё поступают в «Сигнал» — включи категорию «Достижения» и Push в его настройках.</p><dialog id="trophyDisconnectDialog"><div class="trophy-meta"><h2>Отключить аккаунт?</h2><button id="trophyDisconnectClose" class="dialog-close" aria-label="Закрыть">×</button></div><p>Список этого сервиса будет удалён из хаба. Сам аккаунт останется.</p><div class="trophy-toolbar"><button id="trophyConfirmDisconnect">Отключить</button><button id="trophyCancelDisconnect">Отмена</button></div></dialog></section>`
+};
+const assets = new Map(
+  ['trophies.css', 'trophies.js'].map((x) => [
+    '/' + x,
+    fs.readFileSync(new URL(x, import.meta.url))
+  ])
+);
+export function createModule(
+  directory = path.join(process.env.DATA_DIR ?? '/app/data', 'trophies'),
+  options = {}
+) {
+  const store = new TrophiesStore(directory, options);
+  return {
+    store,
+    start: () => store.start(),
+    close: () => store.close(),
+    async summary() {
+      const s = store.snapshot();
+      return {
+        state:
+          Object.values(s.config).some((a) => a.error || (a.connected && !a.lastSync)) ||
+          !s.games.length
+            ? 'stale'
+            : 'ok',
+        items: [
+          {label: 'Игр', value: s.games.length},
+          {label: '100%', value: s.games.filter((g) => g.total > 0 && g.soft === g.total).length},
+          {label: 'Открыто', value: s.games.reduce((n, g) => n + (g.soft ?? 0), 0)}
+        ]
+      };
+    },
+    async handle({request, path: route, user, searchParams}) {
+      try {
+        if (['GET', 'HEAD'].includes(request.method)) {
+          if (route === '/')
+            return new Response(modulePage({username: user.username, title: 'Трофеи', content}), {
+              headers: {'Content-Type': 'text/html; charset=utf-8'}
+            });
+          if (assets.has(route))
+            return new Response(assets.get(route), {
+              headers: {
+                'Content-Type': route.endsWith('.css')
+                  ? 'text/css; charset=utf-8'
+                  : 'text/javascript; charset=utf-8'
+              }
+            });
+          if (route === '/api') return Response.json(store.snapshot());
+          if (route === '/config') return Response.json(store.config());
+          if (route === '/activity')
+            return Response.json(
+              store.activity(searchParams?.get('mode'), searchParams?.get('provider'))
+            );
+          const game = /^\/game\/(steam|ra)\/(\d{1,12})$/.exec(route);
+          if (game) return Response.json(store.detail(game[1], game[2]));
+          const cover = /^\/cover\/(steam|ra)\/(\d{1,12})$/.exec(route);
+          if (cover) {
+            const r = await store.cover(cover[1], cover[2]);
+            return r
+              ? new Response(r.data, {headers: {'Content-Type': r.type}})
+              : new Response(null, {status: 404});
+          }
+        }
+        if (
+          request.method === 'POST' &&
+          ['/connect', '/disconnect', '/sync', '/beaten'].includes(route)
+        ) {
+          if (!request.headers['content-type']?.startsWith('application/json'))
+            return Response.json({error: 'Ожидается JSON'}, {status: 415});
+          let d;
+          try {
+            d = JSON.parse(await body(request, 4096));
+          } catch {
+            return Response.json({error: 'Некорректный JSON'}, {status: 400});
+          }
+          if (!d || typeof d !== 'object' || Array.isArray(d))
+            return Response.json({error: 'Некорректный запрос'}, {status: 400});
+          if (route === '/connect')
+            return Response.json(await store.connect(d.provider, d.account, d.key));
+          if (route === '/disconnect') return Response.json(store.disconnect(d.provider));
+          if (route === '/beaten') return Response.json(store.mark(d.id, d.beaten));
+          const c = store.config()[d.provider];
+          if (!c?.connected)
+            return Response.json({error: 'Подключи аккаунт в настройках'}, {status: 400});
+          if (!c.syncing && Date.now() < c.nextAttempt)
+            return Response.json(
+              {error: 'Дождись окончания паузы между обновлениями'},
+              {status: 429}
+            );
+          void store.sync(d.provider).catch(() => {});
+          return Response.json({syncing: true}, {status: 202});
+        }
+        return Response.json({error: 'Маршрут не найден'}, {status: 404});
+      } catch (e) {
+        return Response.json(
+          {error: e.status ? e.message : 'Не удалось обработать данные «Трофеев»'},
+          {status: e.status ?? 503}
+        );
+      }
+    }
+  };
+}
+const module = createModule();
+export const {handle, summary, start, close} = module;

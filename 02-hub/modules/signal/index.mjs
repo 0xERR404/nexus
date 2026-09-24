@@ -13,7 +13,8 @@ const categories = {
   security: 'Безопасность',
   maintenance: 'Обслуживание',
   recovery: 'Восстановление',
-  summary: 'Ежедневная сводка'
+  summary: 'Ежедневная сводка',
+  achievements: 'Достижения'
 };
 const assetsHTML = `<link rel="stylesheet" href="/modules/signal/signal.css"><script src="/modules/signal/signal.js" defer></script>`;
 const statusHTML = `<p id="signalStatus" class="signal-status" role="status" aria-live="polite">Подключение к «Сигналу»…</p>`;
@@ -63,7 +64,9 @@ export function createHandler({
     const auth = readJSON(authFile, {}),
       identity = digest((auth.username ?? '') + ':' + (auth.salt ?? '') + ':' + (auth.hash ?? ''));
     const saved = readJSON(file, null, 256 * 1024);
-    return saved?.identity === identity ? saved : {...defaults(), identity};
+    return saved?.identity === identity
+      ? {...defaults(), ...saved, categories: {...defaults().categories, ...saved.categories}}
+      : {...defaults(), identity};
   }
   function save(data) {
     fs.mkdirSync(path.dirname(file), {recursive: true, mode: 0o700});
@@ -202,6 +205,7 @@ export function createSummary(handler) {
     const data = await response.json();
     return {
       state: data.stale ? 'stale' : data.active.length ? 'warning' : 'ok',
+      preview: data.events.slice(0, 2).map((e) => ({title: e.title, time: e.time})),
       items: [
         {label: 'Тревоги', value: String(data.active.length)},
         {label: 'Устройства', value: String(data.devices.filter((d) => !d.expired).length)}

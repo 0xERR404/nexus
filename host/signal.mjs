@@ -129,6 +129,36 @@ export function probeHTTPS(domain) {
     request.on('error', (e) => resolve({ok: false, error: e.code ?? 'HTTPS не отвечает'}));
   });
 }
+export function achievementEvents(file, state, now = Date.now()) {
+  state.achievementSeen ??= {};
+  for (const [id, time] of Object.entries(state.achievementSeen))
+    if (now - time > 172800000) delete state.achievementSeen[id];
+  const rows = json(file, [], 2 * 1024 * 1024);
+  if (!Array.isArray(rows)) return [];
+  const events = [];
+  for (const row of rows.slice(0, 1000)) {
+    if (
+      !row ||
+      !/^[a-f0-9]{64}$/.test(row.id ?? '') ||
+      !Number.isFinite(row.time) ||
+      row.time > now ||
+      now - row.time >= 86400000 ||
+      state.achievementSeen[row.id]
+    )
+      continue;
+    state.achievementSeen[row.id] = now;
+    events.push({
+      id: row.id,
+      key: 'achievement.' + row.id,
+      title: String(row.title ?? 'Новое достижение').slice(0, 160),
+      body: String(row.body ?? '').slice(0, 500),
+      category: 'achievements',
+      level: 'info',
+      time: row.time
+    });
+  }
+  return events;
+}
 export class Signal {
   constructor({directory = DIR, settings = readSettings, sender = sendPush, now = Date.now} = {}) {
     this.dir = directory;
@@ -473,6 +503,12 @@ export class Signal {
     const settings = this.settingsReader(),
       data = this.collector.sample();
     this.rules.metrics(data);
+    for (const event of achievementEvents(
+      HUB + '/data/trophies/notifications.json',
+      this.state,
+      this.now()
+    ))
+      this.enqueue(event, settings);
     for (const file of ['/opt/nexus404/hooks/events/events.jsonl', HUB + '/data/auth-events.jsonl'])
       for (const e of readEvents(file, (this.state.cursors[file] ??= {}))) this.rules.event(e);
     this.rules.flushGroups();

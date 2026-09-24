@@ -15,10 +15,12 @@ const types = {
   '.json': 'application/manifest+json',
   '.html': 'text/html',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.woff2': 'font/woff2'
 };
 const assets = [
   'app.css',
+  'cosmos.webp',
   'app.js',
   'manifest.json',
   'offline.html',
@@ -162,7 +164,9 @@ export function createApp({
         if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Метод не поддерживается');
         response.setHeader(
           'Cache-Control',
-          url.pathname.endsWith('.png') || url.pathname.endsWith('.woff2')
+          url.pathname.endsWith('.png') ||
+            url.pathname.endsWith('.webp') ||
+            url.pathname.endsWith('.woff2')
             ? 'public, max-age=86400'
             : 'no-cache'
         );

@@ -1047,7 +1047,15 @@ import path from 'node:path';
       },
       maintenance: async () => events.push('maintenance')
     });
-    assert.deepEqual(events, ['pulse', 'signal', 'chat', 'balance', 'anime', 'maintenance']);
+    assert.deepEqual(events, [
+      'pulse',
+      'signal',
+      'chat',
+      'balance',
+      'anime',
+      'trophies',
+      'maintenance'
+    ]);
   });
   test('individual selection runs only the requested module; invalid ID runs nothing', async () => {
     const calls = [],
@@ -4448,7 +4456,8 @@ import path from 'node:path';
         security: true,
         maintenance: true,
         recovery: true,
-        summary: false
+        summary: false,
+        achievements: true
       },
       dailyTime: '22:30',
       detailOnLockScreen: true
@@ -4498,6 +4507,7 @@ import path from 'node:path';
     const summary = createSummary(async () => request('/api'));
     assert.deepEqual(await summary(), {
       state: 'warning',
+      preview: [],
       items: [
         {label: 'Тревоги', value: '1'},
         {label: 'Устройства', value: '1'}
@@ -4541,3 +4551,407 @@ import path from 'node:path';
     assert.equal((await summarize()).chart, undefined);
   });
 }
+
+// tests/trophies
+{
+  const {TrophiesStore} = await import('./02-hub/modules/trophies/store.mjs');
+  const {Provider, steamId, timestamp} = await import('./02-hub/modules/trophies/providers.mjs');
+  const {achievementEvents} = await import('./host/signal.mjs');
+  function fixture(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-trophies-'));
+    let now = Date.now();
+    const f = {
+      dir,
+      requests: [],
+      unlocked: false,
+      hard: false,
+      broken: false,
+      games: 2,
+      now: () => now,
+      advance: () => (now += 3600001)
+    };
+    f.fetcher = async (url) => {
+      f.requests.push(new URL(url));
+      const p = url.pathname;
+      if (f.broken) return new Response('{broken', {status: 200});
+      let data;
+      if (p.includes('GetOwnedGames'))
+        data = {
+          response: {
+            game_count: f.games,
+            games: Array.from({length: f.games}, (_, i) => ({
+              appid: i + 1,
+              name: 'Game ' + (i + 1)
+            }))
+          }
+        };
+      else if (p.includes('GetSchemaForGame'))
+        data = {
+          game: {
+            gameName: 'Game',
+            availableGameStats: {
+              achievements: [{name: 'FIRST', displayName: 'First', description: 'Play'}]
+            }
+          }
+        };
+      else if (p.includes('GetPlayerAchievements'))
+        data = {
+          playerstats: {
+            success: true,
+            achievements: [
+              {
+                apiname: 'FIRST',
+                achieved: Number(f.unlocked),
+                unlocktime: f.unlocked ? Math.floor(now / 1000) : 0
+              }
+            ]
+          }
+        };
+      else if (p.includes('GetGlobalAchievement'))
+        data = {achievementpercentages: {achievements: [{name: 'FIRST', percent: '2.5'}]}};
+      else if (p.includes('GetPlayerSummaries'))
+        data = {response: {players: [{steamid: '76561198000000000', personaname: 'Player'}]}};
+      else if (p.includes('GetUserProfile'))
+        data = {ULID: '01J00000000000000000000000', User: 'Player'};
+      else if (p.includes('GetUserCompletionProgress'))
+        data = {
+          Count: 1,
+          Total: 1,
+          Results: [
+            {
+              GameID: 1,
+              Title: 'Retro Game',
+              ImageIcon: '/Images/123.png',
+              ConsoleName: 'NES',
+              MaxPossible: 1,
+              NumAwarded: Number(f.unlocked),
+              NumAwardedHardcore: Number(f.hard)
+            }
+          ]
+        };
+      else if (p.includes('GetUserAwards'))
+        data = {
+          HiddenAwardsCount: 1,
+          VisibleUserAwards: [
+            {
+              AwardType: 'Game Beaten',
+              AwardData: 1,
+              AwardDataExtra: 1,
+              Title: 'Retro Game',
+              AwardedAt: '2026-01-01T00:00:00Z'
+            }
+          ]
+        };
+      else if (p.includes('GetGameInfoAndUserProgress'))
+        data = {
+          ID: 1,
+          NumAchievements: 1,
+          NumDistinctPlayersCasual: 100,
+          NumDistinctPlayersHardcore: 20,
+          Achievements: {
+            7: {
+              ID: 7,
+              Title: 'Rare',
+              Description: 'Win',
+              Points: 5,
+              NumAwarded: 4,
+              NumAwardedHardcore: 1,
+              ...(f.unlocked ? {DateEarned: new Date(now).toISOString()} : {}),
+              ...(f.hard ? {DateEarnedHardcore: new Date(now).toISOString()} : {})
+            }
+          }
+        };
+      else throw Error('Unexpected endpoint ' + p);
+      return Response.json(data);
+    };
+    f.options = {now: f.now, fetcher: f.fetcher, sleep: async () => {}};
+    f.store = new TrophiesStore(dir, f.options);
+    f.store.load();
+    f.account = {
+      id: '76561198000000000',
+      key: 'test-key-not-secret-12345',
+      name: 'Player',
+      connectedAt: now - 86400000
+    };
+    f.store.set('steam', {...f.account});
+    t.after(async () => {
+      await f.store.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    return f;
+  }
+  test('trophies imports Steam and preserves secret boundaries, schema and rarity cache', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    assert.equal(f.store.snapshot().games.length, 2);
+    assert.equal(f.store.detail('steam', '1').achievements[0].rarity, 2.5);
+    assert.doesNotMatch(JSON.stringify(f.store.snapshot()), /test-key|schema|76561198000000000/);
+    assert.equal(fs.statSync(f.dir + '/trophies.db').mode & 0o777, 0o600);
+    assert.equal(fs.statSync(f.dir).mode & 0o777, 0o700);
+    f.advance();
+    const before = f.requests.length;
+    await f.store.sync('steam');
+    assert.equal(
+      f.requests
+        .slice(before)
+        .filter((u) => /GetSchemaForGame|GetGlobalAchievement/.test(u.pathname)).length,
+      0
+    );
+  });
+  test('trophies notification baseline, durable dedup and Signal dedup survive restart', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    assert.deepEqual(JSON.parse(fs.readFileSync(f.dir + '/notifications.json')), []);
+    f.unlocked = true;
+    f.advance();
+    await f.store.sync('steam');
+    const events = JSON.parse(fs.readFileSync(f.dir + '/notifications.json'));
+    assert.equal(events.length, 2);
+    const state = {};
+    assert.equal(achievementEvents(f.dir + '/notifications.json', state, f.now()).length, 2);
+    assert.equal(
+      achievementEvents(f.dir + '/notifications.json', JSON.parse(JSON.stringify(state)), f.now())
+        .length,
+      0
+    );
+    await f.store.close();
+    f.store = new TrophiesStore(f.dir, f.options);
+    f.advance();
+    await f.store.sync('steam');
+    assert.equal(JSON.parse(fs.readFileSync(f.dir + '/notifications.json')).length, 2);
+    assert.equal(f.store.activity().rare.length, 2);
+    assert.equal(
+      Object.values(f.store.activity().days).reduce((a, b) => a + b, 0),
+      2
+    );
+  });
+  test('trophies initial unlocked achievements stay silent and failed sync keeps prior list', async (t) => {
+    const f = fixture(t);
+    f.unlocked = true;
+    await f.store.sync('steam');
+    const old = f.store.snapshot(),
+      last = old.config.steam.lastSync;
+    assert.equal(JSON.parse(fs.readFileSync(f.dir + '/notifications.json')).length, 0);
+    f.broken = true;
+    f.advance();
+    await f.store.sync('steam');
+    const current = f.store.snapshot();
+    assert.deepEqual(current.games, old.games);
+    assert.equal(current.config.steam.lastSync, last);
+    assert.ok(current.config.steam.error);
+  });
+  test('trophies RA mode counts, separate rarity, awards and HC upgrades', async (t) => {
+    const f = fixture(t);
+    f.store.set('ra', {...f.account, id: '01J00000000000000000000000'});
+    await f.store.sync('ra');
+    f.advance();
+    f.unlocked = true;
+    await f.store.sync('ra');
+    let a = f.store.detail('ra', '1').achievements[0];
+    assert.equal(a.rarity, 4);
+    assert.equal(a.hardRarity, 5);
+    assert.equal(a.hard, false);
+    assert.equal(f.store.snapshot().games.find((g) => g.provider === 'ra').beatenHard, true);
+    f.advance();
+    f.hard = true;
+    await f.store.sync('ra');
+    assert.equal(JSON.parse(fs.readFileSync(f.dir + '/notifications.json')).length, 2);
+    assert.equal(f.store.snapshot().games.find((g) => g.provider === 'ra').soft, 1);
+    assert.equal(f.store.snapshot().games.find((g) => g.provider === 'ra').hard, 1);
+    assert.equal(f.store.activity('hard', 'ra').rare.length, 1);
+    f.advance();
+    await f.store.sync('ra');
+    assert.equal(JSON.parse(fs.readFileSync(f.dir + '/notifications.json')).length, 2);
+  });
+  test('trophies simultaneous RA soft+hard unlock emits one event', async (t) => {
+    const f = fixture(t);
+    f.store.set('ra', {...f.account, id: '01J00000000000000000000000'});
+    await f.store.sync('ra');
+    f.advance();
+    f.unlocked = f.hard = true;
+    await f.store.sync('ra');
+    const events = JSON.parse(fs.readFileSync(f.dir + '/notifications.json'));
+    assert.equal(events.length, 1);
+    assert.match(events[0].title, /Hardcore/);
+  });
+  test('trophies manual beaten mark persists through sync and disconnect removes keys', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    f.store.mark('1', true);
+    f.advance();
+    await f.store.sync('steam');
+    assert.equal(f.store.detail('steam', '1').beaten, true);
+    f.store.disconnect('steam');
+    assert.equal(f.store.account('steam'), null);
+    assert.equal(f.store.snapshot().games.length, 0);
+  });
+  test('trophies single flight and cooldown reject repeated requests', async (t) => {
+    const f = fixture(t);
+    const first = f.store.sync('steam');
+    assert.equal(f.store.sync('steam'), first);
+    await first;
+    await assert.rejects(f.store.sync('steam'), (e) => e.status === 429);
+  });
+  test('trophies RA pagination rejects duplicate, missing or truncated records', async () => {
+    let pages = 0;
+    const provider = new Provider(
+      'ra',
+      {id: 'x', key: 'key'},
+      {
+        sleep: async () => {},
+        fetcher: async (url) => {
+          if (url.pathname.includes('Awards')) return Response.json({VisibleUserAwards: []});
+          pages++;
+          return Response.json({
+            Count: 1,
+            Total: 2,
+            Results: [{GameID: pages, MaxPossible: 1, Title: 'G'}]
+          });
+        }
+      }
+    );
+    assert.equal((await provider.library()).items.length, 2);
+    assert.equal(pages, 2);
+    provider.fetcher = async () => Response.json({Count: 0, Total: 1, Results: []});
+    await assert.rejects(provider.library(), /Неполный/);
+    provider.fetcher = async () =>
+      Response.json({Count: 1, Total: 2, Results: [{GameID: 1, MaxPossible: 1}]});
+    await assert.rejects(provider.library(), /Неполный/);
+  });
+  test('trophies Steam private response is not an empty library', async () => {
+    const p = new Provider(
+      'steam',
+      {id: 'x', key: 'key'},
+      {sleep: async () => {}, fetcher: async () => Response.json({response: {}})}
+    );
+    await assert.rejects(p.library(), /недоступен/);
+    p.fetcher = async () => Response.json({response: {game_count: 0}});
+    assert.deepEqual((await p.library()).items, []);
+  });
+  test('trophies honors Retry-After and masks remote error bodies', async () => {
+    let calls = 0,
+      now = Date.now();
+    const waits = [];
+    const p = new Provider(
+      'steam',
+      {key: 'secret'},
+      {
+        now: () => now,
+        sleep: async (ms) => {
+          waits.push(ms);
+          now += ms;
+        },
+        fetcher: async () =>
+          ++calls === 1
+            ? new Response('secret', {status: 429, headers: {'Retry-After': '3'}})
+            : Response.json({ok: true})
+      }
+    );
+    assert.deepEqual(await p.get('test'), {ok: true});
+    assert.ok(waits.includes(3000));
+    p.fetcher = async () => new Response('secret', {status: 403});
+    await assert.rejects(p.get('test'), (e) => !e.message.includes('secret'));
+  });
+  test('trophies validates profile links, dates and unavailable achievement details', async (t) => {
+    assert.equal(
+      steamId('https://steamcommunity.com/profiles/76561198000000000/'),
+      '76561198000000000'
+    );
+    assert.throws(() => steamId('https://evil.test/id/user'));
+    assert.equal(timestamp(0), null);
+    assert.equal(timestamp('bad'), null);
+    assert.equal(timestamp('2026-01-01 12:00:00'), Date.parse('2026-01-01T12:00:00Z'));
+    const f = fixture(t);
+    await f.store.sync('steam');
+    const original = f.fetcher;
+    f.store.options.fetcher = async (u) =>
+      u.pathname.includes('GetPlayerAchievements')
+        ? Response.json({playerstats: {success: false}})
+        : original(u);
+    f.advance();
+    await f.store.sync('steam');
+    assert.equal(f.store.detail('steam', '1').achievements.length, 1);
+    assert.ok(f.store.detail('steam', '1').error);
+  });
+  test('trophies uses persistent API budget before sending a request', async (t) => {
+    const f = fixture(t);
+    f.store.set('budget:steam', {day: new Date(f.now()).toISOString().slice(0, 10), count: 20000});
+    await f.store.sync('steam');
+    assert.equal(f.requests.length, 0);
+    assert.match(f.store.config().steam.error, /лимит/);
+  });
+}
+
+{
+  const {Provider} = await import('./02-hub/modules/trophies/providers.mjs');
+  test('trophies refreshes an outdated Steam schema when new achievements appear', async () => {
+    let schemas = 0;
+    const p = new Provider(
+      'steam',
+      {id: 'user', key: 'key'},
+      {
+        sleep: async () => {},
+        fetcher: async (u) => {
+          if (u.pathname.includes('GetSchemaForGame')) {
+            schemas++;
+            return Response.json({
+              game: {availableGameStats: {achievements: [{name: 'OLD'}, {name: 'NEW'}]}}
+            });
+          }
+          if (u.pathname.includes('GetPlayerAchievements'))
+            return Response.json({
+              playerstats: {
+                success: true,
+                achievements: [
+                  {apiname: 'OLD', achieved: 1, unlocktime: 0},
+                  {apiname: 'NEW', achieved: 0, unlocktime: 0}
+                ]
+              }
+            });
+          return Response.json({achievementpercentages: {achievements: []}});
+        }
+      }
+    );
+    const result = await p.game({id: '1'}, {schema: [{name: 'OLD'}], schemaAt: Date.now()});
+    assert.equal(schemas, 1);
+    assert.equal(result.achievements.length, 2);
+    assert.equal(result.achievements[0].date, null);
+    assert.equal(result.achievements[0].rarity, null);
+  });
+  test('trophies RA malformed progress does not become a locked or empty game', async () => {
+    const p = new Provider(
+      'ra',
+      {id: 'user', key: 'key'},
+      {
+        sleep: async () => {},
+        fetcher: async () => Response.json({ID: 1, NumAchievements: 2, Achievements: {}})
+      }
+    );
+    await assert.rejects(p.game({id: '1'}), /Неполный/);
+  });
+}
+
+test('dashboard previews allow only bounded public fields for their own modules', async () => {
+  const {moduleSummary} = await import('./02-hub/src/modules.mjs');
+  const data = {
+    state: 'ok',
+    items: [],
+    covers: [1, '../secret', -1, 2, 3, 4, Infinity],
+    preview: [
+      {title: 'Event', time: 100, key: 'secret'},
+      {title: 'x'.repeat(200), time: 200}
+    ],
+    token: 'secret'
+  };
+  const anime = await moduleSummary({id: 'anime', summary: () => data});
+  assert.deepEqual(anime.covers, [1, 2, 3]);
+  assert.equal(anime.preview, undefined);
+  const signal = await moduleSummary({id: 'signal', summary: () => data});
+  assert.equal(signal.covers, undefined);
+  assert.equal(signal.preview[0].key, undefined);
+  assert.equal(signal.preview[1].title.length, 100);
+  assert.doesNotMatch(JSON.stringify(signal), /secret|token/);
+  const other = await moduleSummary({id: 'chat', summary: () => data});
+  assert.equal(other.covers, undefined);
+  assert.equal(other.preview, undefined);
+});
