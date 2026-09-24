@@ -10,9 +10,11 @@
     return n;
   };
   const label = (model) =>
-    ({'deepseek-v4-pro': 'Pro', 'deepseek-flash': 'Flash', 'producer:standard': 'FlowMusic'})[
-      model
-    ] ?? model;
+    (model ?? '').startsWith('deepseek-')
+      ? 'DeepSeek'
+      : model === 'producer:standard'
+        ? 'FlowMusic'
+        : model;
   let provider =
     new URLSearchParams(location.search).get('provider') === 'flowmusic' ? 'flowmusic' : 'deepseek';
   const flow = () => provider === 'flowmusic';
@@ -26,11 +28,8 @@
       : config.configured
         ? ''
         : 'API-ключ DeepSeek не задан.';
-  function modelOptions(id, selected) {
-    const list = config.models ?? ['deepseek-flash', 'deepseek-v4-pro'];
-    $(id).replaceChildren(...list.map((m) => new Option(label(m), m)));
-    $(id).value = list.includes(selected) ? selected : config.model;
-    if (id === 'chatModel') $(id).hidden = flow();
+  function modelOptions(id) {
+    $(id).value = config.model;
   }
   let creditData,
     creditLoading = false;
@@ -263,6 +262,164 @@
       node.append(p);
     }
   }
+  let downloadTrack,
+    downloading = false;
+  if (!isSettings) {
+    $('audioDownloadClose').onclick = () => {
+      if (!downloading) $('audioDownloadDialog').close();
+    };
+    $('audioDownloadDialog').addEventListener('cancel', (e) => {
+      if (downloading) e.preventDefault();
+    });
+    document.querySelectorAll('[data-audio-format]').forEach(
+      (button) =>
+        (button.onclick = async () => {
+          if (downloading || !downloadTrack) return;
+          downloading = true;
+          const buttons = [
+            ...document.querySelectorAll('[data-audio-format]'),
+            $('audioDownloadClose')
+          ];
+          buttons.forEach((b) => (b.disabled = true));
+          const format = button.dataset.audioFormat;
+          $('audioDownloadStatus').textContent = 'Подготовка ' + format.toUpperCase() + '…';
+          try {
+            const response = await fetch(downloadTrack.src + '?download=1&format=' + format, {
+              signal: AbortSignal.timeout(135000)
+            });
+            if (!response.ok) {
+              let data;
+              try {
+                data = await response.json();
+              } catch {}
+              throw Error(data?.error || 'Не удалось скачать трек.');
+            }
+            if (
+              response.redirected ||
+              !/^audio\//i.test(response.headers.get('content-type') || '')
+            )
+              throw Error('Сессия истекла или сервер не вернул аудио. Обнови страницу.');
+            const blob = await response.blob(),
+              url = URL.createObjectURL(blob),
+              a = make('a');
+            a.href = url;
+            a.download =
+              (downloadTrack.title || 'flowmusic')
+                .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+                .slice(0, 100) +
+              '.' +
+              format;
+            document.body.append(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            $('audioDownloadStatus').textContent = 'Файл готов.';
+          } catch (e) {
+            $('audioDownloadStatus').textContent = e.message;
+          } finally {
+            downloading = false;
+            buttons.forEach((b) => (b.disabled = false));
+          }
+        })
+    );
+  }
+  function audioCard(track) {
+    const card = make('div', undefined, 'chat-audio'),
+      player = make('audio'),
+      play = make('button', undefined, 'audio-play'),
+      title = make('strong', track.title || 'Трек', 'audio-title'),
+      seek = make('input', undefined, 'audio-seek'),
+      time = make('span', '0:00 / —', 'audio-time'),
+      download = make('button', undefined, 'audio-download'),
+      error = make('span', '', 'audio-error');
+    const icon = (node, path) => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      const p = document.createElementNS(svg.namespaceURI, 'path');
+      p.setAttribute('d', path);
+      svg.append(p);
+      node.replaceChildren(svg);
+    };
+    const clock = (n) =>
+      Number.isFinite(n)
+        ? Math.floor(n / 60) + ':' + String(Math.floor(n % 60)).padStart(2, '0')
+        : '—';
+    player.preload = 'metadata';
+    player.src = track.src;
+    player.hidden = true;
+    play.type = 'button';
+    play.setAttribute('aria-label', 'Воспроизвести');
+    icon(play, 'M9 5 19 12 9 19Z');
+    seek.type = 'range';
+    seek.min = '0';
+    seek.max = '100';
+    seek.step = '0.1';
+    seek.value = '0';
+    seek.disabled = true;
+    seek.setAttribute('aria-label', 'Позиция воспроизведения');
+    download.type = 'button';
+    download.onclick = () => {
+      downloadTrack = track;
+      $('audioDownloadTitle').textContent = track.title || 'Скачать трек';
+      $('audioDownloadStatus').textContent = '';
+      $('audioDownloadDialog').showModal();
+    };
+    download.title = 'Скачать трек';
+    download.setAttribute('aria-label', 'Скачать трек');
+    icon(download, 'M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5');
+    error.setAttribute('role', 'status');
+    const update = () => {
+      const ready = Number.isFinite(player.duration) && player.duration > 0;
+      seek.disabled = !ready;
+      if (ready) {
+        seek.max = String(player.duration);
+        seek.value = String(player.currentTime);
+        seek.style.setProperty('--played', (player.currentTime / player.duration) * 100 + '%');
+      }
+      time.textContent = clock(player.currentTime) + ' / ' + clock(player.duration);
+      seek.setAttribute('aria-valuetext', clock(player.currentTime));
+    };
+    const state = () => {
+      const playing = !player.paused;
+      play.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
+      play.setAttribute('aria-pressed', String(playing));
+      icon(play, playing ? 'M8 5v14M16 5v14' : 'M9 5 19 12 9 19Z');
+      card.dataset.playing = String(playing);
+    };
+    play.onclick = async () => {
+      if (!player.paused) {
+        player.pause();
+        return;
+      }
+      error.textContent = '';
+      try {
+        if (player.error) player.load();
+        await player.play();
+      } catch {
+        error.textContent = 'Не удалось воспроизвести. Попробуй ещё раз.';
+        state();
+      }
+    };
+    seek.oninput = () => {
+      if (Number.isFinite(player.duration)) player.currentTime = Number(seek.value);
+      update();
+    };
+    player.addEventListener('play', () => {
+      document.querySelectorAll('#chatMessages audio').forEach((other) => {
+        if (other !== player) other.pause();
+      });
+      state();
+    });
+    for (const event of ['pause', 'ended']) player.addEventListener(event, state);
+    for (const event of ['loadedmetadata', 'durationchange', 'timeupdate'])
+      player.addEventListener(event, update);
+    player.addEventListener('error', () => {
+      error.textContent = 'Трек недоступен. Нажми воспроизведение, чтобы повторить.';
+    });
+    card.append(player, play, title, download, seek, time, error);
+    return card;
+  }
   function message(m) {
     const row = make('article', undefined, 'chat-message');
     row.dataset.role = m.role;
@@ -272,11 +429,7 @@
     head.append(
       make(
         'strong',
-        m.role === 'user'
-          ? 'Ты'
-          : m.model === 'producer:standard'
-            ? 'FlowMusic'
-            : 'DeepSeek · ' + label(m.model)
+        m.role === 'user' ? 'Ты' : m.model === 'producer:standard' ? 'FlowMusic' : 'DeepSeek'
       ),
       make(
         'span',
@@ -290,19 +443,8 @@
     if (m.role === 'user') content.textContent = m.content;
     else markdown(content, m.content);
     row.append(head, content);
-    for (const track of m.audio ?? []) {
-      const card = make('div', undefined, 'chat-audio'),
-        player = make('audio'),
-        download = make('a', 'Скачать');
-      player.controls = true;
-      player.preload = 'none';
-      player.src = track.src;
-      player.setAttribute('aria-label', track.title || 'Трек');
-      download.href = track.src + '?download=1';
-      download.download = 'flowmusic.' + track.extension;
-      card.append(make('span', track.title || 'Трек'), player, download);
-      row.append(card);
-    }
+    for (const track of m.audio ?? []) row.append(audioCard(track));
+    row.dataset.signature = JSON.stringify(m);
     if (m.status === 'running') row.append(make('p', 'Отвечает…', 'chat-notice'));
     if (m.notice) row.append(make('p', m.notice, 'chat-notice'));
     if (m.usage)
@@ -340,11 +482,21 @@
     });
   }
   function render() {
-    $('chatMessages').replaceChildren(
-      ...(current
-        ? current.messages.map(message)
-        : [make('p', 'Создай тему, чтобы начать разговор.', 'chat-help')])
-    );
+    const list = $('chatMessages'),
+      rows = new Map([...list.children].filter((n) => n.dataset.id).map((n) => [n.dataset.id, n]));
+    const wanted = (current?.messages ?? []).map((m) => {
+      const old = rows.get(String(m.id));
+      return old?.dataset.signature === JSON.stringify(m) ? old : message(m);
+    });
+    if (!current) wanted.push(make('p', 'Создай тему, чтобы начать разговор.', 'chat-help'));
+    for (const old of [...list.children])
+      if (!wanted.includes(old)) {
+        old.querySelectorAll('audio').forEach((a) => a.pause());
+        old.remove();
+      }
+    wanted.forEach((row, i) => {
+      if (list.children[i] !== row) list.insertBefore(row, list.children[i] ?? null);
+    });
     const usage =
       current?.messages.filter((m) => m.usage).reduce((sum, m) => sum + m.usage.total_tokens, 0) ??
       0;
@@ -630,7 +782,7 @@
       try {
         const checked = await api('/check', {});
         await settingsLoad();
-        status('DeepSeek подключён. Модели: ' + checked.models.map(label).join(', ') + '.');
+        status('DeepSeek подключён.');
       } catch (e) {
         status(e.message, true);
       } finally {

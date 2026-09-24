@@ -14,3 +14,5 @@
 
 #balanceAI{display:grid;grid-template-columns:1fr;gap:6px}.balance-credit-row{display:flex;justify-content:space-between;gap:8px;font-size:12px}.balance-credit-row strong{text-align:right;overflow-wrap:anywhere;font-weight:500}.balance-credit-row strong[data-stale=true]{color:var(--amber)}
 @media(max-width:600px){.balance-pagination{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.balance-pagination>span{grid-column:1/-1;grid-row:1;text-align:center}.balance-actions{gap:6px}}
+
+.balance-insights,.balance-totals,.balance-accounts{gap:var(--card-gap)}

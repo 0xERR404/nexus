@@ -5639,3 +5639,94 @@ test('dashboard previews allow only bounded public fields for their own modules'
     assert.equal(fs.existsSync(f.s.creditFile), false);
   });
 }
+
+test('FlowMusic exports real WAV, MP3 and M4A, caches conversions and removes them', async (t) => {
+  const {spawnSync} = await import('node:child_process');
+  if (
+    spawnSync('ffmpeg', ['-version']).status !== 0 ||
+    spawnSync('ffprobe', ['-version']).status !== 0
+  ) {
+    t.skip('FFmpeg and ffprobe required for codec integration test');
+    return;
+  }
+  const {FlowAudio} = await import('./02-hub/modules/chat/flow-audio.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-export-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const audio = new FlowAudio(dir),
+    id = crypto.randomUUID();
+  fs.mkdirSync(audio.directory);
+  const source = path.join(audio.directory, id);
+  const fixture = spawnSync('ffmpeg', [
+    '-v',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:duration=1',
+    '-f',
+    'wav',
+    source
+  ]);
+  assert.equal(fixture.status, 0, fixture.stderr.toString());
+  fs.writeFileSync(source + '.json', JSON.stringify({extension: 'wav', type: 'audio/wav'}));
+  const request = {method: 'GET', headers: {}};
+  for (const [format, codec, mime] of [
+    ['wav', 'pcm_s16le', 'audio/wav'],
+    ['mp3', 'mp3', 'audio/mpeg'],
+    ['m4a', 'aac', 'audio/mp4']
+  ]) {
+    const responses = await Promise.all([
+      audio.download(id, request, format),
+      audio.download(id, request, format)
+    ]);
+    for (const response of responses) {
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), mime);
+      assert.ok(response.headers.get('content-disposition').endsWith('.' + format + '"'));
+      assert.ok((await response.arrayBuffer()).byteLength > 100);
+    }
+    const file = format === 'wav' ? source : source + '.' + format;
+    const probe = spawnSync('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=codec_name',
+      '-of',
+      'json',
+      file
+    ]);
+    assert.equal(probe.status, 0);
+    assert.equal(JSON.parse(probe.stdout).streams[0].codec_name, codec);
+    const modified = fs.statSync(file).mtimeMs;
+    const head = await audio.download(id, {method: 'HEAD', headers: {}}, format);
+    assert.equal(head.body, null);
+    assert.equal(fs.statSync(file).mtimeMs, modified);
+    const range = await audio.download(id, {method: 'GET', headers: {range: 'bytes=0-9'}}, format);
+    assert.equal(range.status, 206);
+    assert.equal((await range.arrayBuffer()).byteLength, 10);
+  }
+  await assert.rejects(audio.download(id, request, 'exe'), (e) => e.status === 400);
+  await assert.rejects(audio.download('../secret', request, 'mp3'), (e) => e.status === 400);
+  const compressedId = crypto.randomUUID();
+  fs.copyFileSync(source + '.mp3', path.join(audio.directory, compressedId));
+  fs.writeFileSync(
+    path.join(audio.directory, compressedId + '.json'),
+    JSON.stringify({extension: 'mp3', type: 'audio/mpeg'})
+  );
+  const wav = await audio.download(compressedId, request, 'wav');
+  const bytes = Buffer.from(await wav.arrayBuffer());
+  assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
+  const probeWav = spawnSync('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'stream=codec_name',
+    '-of',
+    'json',
+    path.join(audio.directory, compressedId + '.wav')
+  ]);
+  assert.equal(JSON.parse(probeWav.stdout).streams[0].codec_name, 'pcm_s16le');
+  audio.remove([id, compressedId]);
+  assert.deepEqual(fs.readdirSync(audio.directory), []);
+});

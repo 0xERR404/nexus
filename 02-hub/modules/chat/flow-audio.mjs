@@ -1,4 +1,12 @@
 import fs from 'node:fs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const convert = promisify(execFile);
+const exports = {
+  wav: ['audio/wav', 'pcm_s16le', 'wav'],
+  mp3: ['audio/mpeg', 'libmp3lame', 'mp3'],
+  m4a: ['audio/mp4', 'aac', 'mp4']
+};
 import path from 'node:path';
 import {Readable} from 'node:stream';
 import {randomUUID} from 'node:crypto';
@@ -34,6 +42,7 @@ export class FlowAudio {
   constructor(directory, fetcher = fetch) {
     this.directory = path.join(directory, 'audio');
     this.fetcher = fetcher;
+    this.conversions = new Map();
   }
   async save(clip, id, signal) {
     if (!uuid(id)) fail('Некорректный файл.');
@@ -88,15 +97,93 @@ export class FlowAudio {
   remove(ids) {
     for (const id of ids)
       if (uuid(id))
-        for (const suffix of ['', '.json'])
+        for (const suffix of ['', '.json', '.wav', '.mp3', '.m4a'])
           fs.rmSync(path.join(this.directory, id + suffix), {force: true});
   }
-  serve(id, request, download) {
+  async download(id, request, format) {
+    if (!uuid(id) || !Object.hasOwn(exports, format)) fail('Неизвестный формат.', 400);
+    const source = path.join(this.directory, id);
+    let meta;
+    try {
+      meta = JSON.parse(fs.readFileSync(source + '.json', 'utf8'));
+      fs.accessSync(source);
+    } catch {
+      fail('Файл не найден.', 404);
+    }
+    if (meta.extension === format) return this.serve(id, request, true);
+    const target = source + '.' + format;
+    if (!fs.existsSync(target)) {
+      const key = id + ':' + format;
+      if (!this.conversions.has(key)) {
+        if (this.conversions.size)
+          fail('Другой трек ещё готовится. Повтори скачивание чуть позже.', 429);
+        const job = (async () => {
+          const temp = target + '.' + randomUUID();
+          try {
+            await convert(
+              'ffmpeg',
+              [
+                '-nostdin',
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-protocol_whitelist',
+                'file,pipe',
+                '-format_whitelist',
+                'mp3,wav,mov,ogg,flac,matroska,webm,aac',
+                '-i',
+                source,
+                '-map',
+                '0:a:0',
+                '-vn',
+                '-map_metadata',
+                '-1',
+                '-threads',
+                '1',
+                '-c:a',
+                exports[format][1],
+                ...(format === 'wav' ? [] : ['-b:a', '192k']),
+                ...(format === 'm4a' ? ['-movflags', '+faststart'] : []),
+                '-fs',
+                '136314880',
+                '-f',
+                exports[format][2],
+                temp
+              ],
+              {timeout: 120000, maxBuffer: 65536}
+            );
+            fs.chmodSync(temp, 0o600);
+            const size = fs.statSync(temp).size;
+            if (!size || size >= 134217728) fail('Получившийся файл превышает лимит 128 МБ.', 413);
+            if (!fs.existsSync(source)) fail('Трек удалён.', 404);
+            fs.renameSync(temp, target);
+          } catch (e) {
+            if (e.status) throw e;
+            fail(
+              e.code === 'ENOENT'
+                ? 'Для экспорта нужен FFmpeg. Обнови установку хаба.'
+                : 'Не удалось подготовить трек. Попробуй ещё раз.',
+              503
+            );
+          } finally {
+            fs.rmSync(temp, {force: true});
+          }
+        })().finally(() => this.conversions.delete(key));
+        this.conversions.set(key, job);
+      }
+      await this.conversions.get(key);
+    }
+    return this.serve(id, request, true, format);
+  }
+  serve(id, request, download, format) {
     if (!uuid(id)) fail('Файл не найден.', 404);
-    const file = path.join(this.directory, id);
+    const source = path.join(this.directory, id),
+      file = format ? source + '.' + format : source;
     let meta, size;
     try {
-      meta = JSON.parse(fs.readFileSync(file + '.json', 'utf8'));
+      meta = format
+        ? {type: exports[format][0], extension: format}
+        : JSON.parse(fs.readFileSync(file + '.json', 'utf8'));
       size = fs.statSync(file).size;
     } catch {
       fail('Файл не найден.', 404);

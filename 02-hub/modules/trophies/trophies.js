@@ -242,18 +242,12 @@
     if (steamCount)
       summary.push([
         'Стоимость · USD',
-        prices.length ? '$' + prices.reduce((n, g) => n + g.priceUsd, 0).toFixed(2) : '—',
-        `Цена известна: ${prices.length}/${steamCount} · по $0: ${prices.filter((g) => g.priceUsd === 0).length} · без цены: ${steamCount - prices.length}`
+        prices.length ? '$' + prices.reduce((n, g) => n + g.priceUsd, 0).toFixed(2) : '—'
       ]);
     $('trophyOverview').replaceChildren(
-      ...summary.map(([label, value, note]) => {
+      ...summary.map(([label, value]) => {
         const cell = el('div');
         cell.append(el('small', label), el('strong', String(value)));
-        if (note) {
-          cell.append(el('small', note, 'trophy-price-note'));
-          cell.title =
-            'Базовая стоимость магазина США. Это не сумма покупок. Неизвестная цена не считается нулевой.';
-        }
         return cell;
       })
     );

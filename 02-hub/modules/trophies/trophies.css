@@ -22,3 +22,5 @@
 .trophy-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;margin-top:8px}.trophy-search-row #trophySearch{margin:0}@media(max-width:600px){.trophy-search-row{grid-template-columns:repeat(2,minmax(0,1fr))}.trophy-search-row #trophySearch{grid-column:1/-1}.trophy-search-row select{width:100%}}
 
 .trophy-price-note{margin-top:5px;line-height:1.5}
+
+.trophy-grid,.trophy-overview{gap:var(--card-gap)}

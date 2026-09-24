@@ -33,3 +33,5 @@ body{padding-top:max(20px,env(safe-area-inset-top))}.header{padding:10px 14px;ma
 @media(max-width:600px){body{padding-top:max(10px,env(safe-area-inset-top))}.header{padding:8px 10px;margin-bottom:10px}.header-top{gap:5px}.brand-name{font-size:15px;letter-spacing:2px}.module-card{padding:9px}.module-heading{gap:5px}.module-heading h2{font-size:13px}.module-heading .ui-icon{width:18px;height:18px}.module-stat span{font-size:11px}.module-summary[data-summary=balance] strong{font-size:1.35rem}.module-summary[data-summary=pulse] .module-stats{gap:9px}.page:not(:has(.modules-grid))>main{padding:9px}.settings-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.settings-tabs a{justify-content:center;padding:4px 6px}.settings-tabs a:last-child:nth-child(odd){grid-column:1/-1}.signal-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.signal-actions>:last-child:nth-child(odd){grid-column:1/-1}}
 
 .modules-grid{grid-auto-rows:1fr}.modules-grid>.module-card{height:100%}.module-heading{min-height:29px;flex:none}
+
+:root{--card-gap:8px}.modules-grid{gap:var(--card-gap)}
