@@ -55,7 +55,7 @@ export function validUpstream(v) {
 export function renderCaddy(domain, upstream) {
   if (!validDomain(domain) || !validUpstream(upstream))
     throw new Error('Некорректный домен или адрес сервиса');
-  return `${domain} {\n    ${upstream ? 'reverse_proxy ' + upstream : 'respond "NEXUS404: Caddy ready" 200'}\n    encode gzip\n    log {\n        output file /data/access.log {\n            roll_size 10mb\n            roll_keep 5\n        }\n    }\n}\n`;
+  return `${domain} {\n    ${upstream ? 'reverse_proxy ' + upstream : 'respond "NEXUS404: Caddy ready" 200'}\n    encode gzip\n    header Strict-Transport-Security "max-age=604800"\n    log {\n        output file /data/access.log {\n            roll_size 10mb\n            roll_keep 5\n        }\n    }\n}\n`;
 }
 export function preflight(domain, run = query) {
   const expected = new Set(['tcp:80', 'tcp:443', 'udp:443']),

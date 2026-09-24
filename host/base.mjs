@@ -380,7 +380,7 @@ export class BaseSetup {
     this.ssh.managed();
     this.ssh.clearPorts();
     fs.appendFileSync(
-      '/etc/ssh/sshd_config.d/00-nexus404.conf',
+      this.ssh.managedFile,
       [...new Set([...old, port])].map((p) => 'Port ' + p + '\n').join('')
     );
     this.ssh.set('MaxAuthTries', '3');

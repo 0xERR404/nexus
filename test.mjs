@@ -285,6 +285,11 @@ import path from 'node:path';
     assert.equal(validDomain('x\n{}'), false);
     assert.throws(() => renderCaddy('x {}', ''));
     assert.match(renderCaddy('server.example.com', ''), /Caddy ready/);
+    assert.match(
+      renderCaddy('server.example.com', 'http://nexus404-hub:3000'),
+      /header Strict-Transport-Security "max-age=604800"/
+    );
+    assert.doesNotMatch(renderCaddy('server.example.com', ''), /includeSubDomains|preload/);
   });
   test('Caddy preflight rejects other container on ports', () => {
     const run = (cmd, args) =>
@@ -1262,7 +1267,7 @@ import path from 'node:path';
 
 // tests/ssh
 {
-  const {SSH, rollback} = await import('./host/ssh.mjs');
+  const {SSH, rollback, migrateManagedSSH} = await import('./host/ssh.mjs');
   const {exec, read} = await import('./host/common.mjs');
   function fixture(t) {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-guard-')),
@@ -1288,6 +1293,82 @@ import path from 'node:path';
     const ui = {line() {}, confirm: async () => true};
     return {base, sshDirectory, calls, options, ui, ssh: new SSH(ui, options)};
   }
+  function legacyFixture(t) {
+    const f = fixture(t);
+    f.legacy = f.sshDirectory + '/sshd_config.d/00-nexus404.conf';
+    fs.writeFileSync(
+      f.legacy,
+      'Port 12345\nAllowUsers deploy\nPermitRootLogin no\nPasswordAuthentication yes\n'
+    );
+    fs.writeFileSync(f.base + '/sudo_user', 'deploy');
+    fs.writeFileSync(
+      f.sshDirectory + '/sshd_config',
+      'Include ' + f.legacy + '\nInclude ' + f.sshDirectory + '/sshd_config.d/*.conf\n'
+    );
+    f.options.inspect = (cmd, args) => {
+      if (cmd === 'sshd')
+        return {
+          ok: true,
+          text: fs.existsSync(f.legacy)
+            ? 'port 12345\nport 12345\nallowusers deploy\nallowusers deploy\npermitrootlogin no\npasswordauthentication yes'
+            : 'port 12345\nallowusers deploy\npermitrootlogin no\npasswordauthentication yes'
+        };
+      return {ok: args.at(-1) !== 'ssh.socket', text: ''};
+    };
+    return f;
+  }
+  test('SSH migration removes duplicate wildcard inclusion without reloading unchanged policy', async (t) => {
+    const f = legacyFixture(t);
+    assert.equal(await migrateManagedSSH(f.ui, f.options), true);
+    assert.equal(fs.existsSync(f.legacy), false);
+    assert.match(read(f.ssh.managedFile), /Port 12345/);
+    assert.match(read(f.sshDirectory + '/sshd_config'), /nexus404\.inc/);
+    assert.equal(
+      f.calls.some(
+        ([cmd, args]) =>
+          cmd === 'systemctl' && ['restart', 'reload', 'reload-or-restart'].includes(args[0])
+      ),
+      false
+    );
+    assert.equal(await migrateManagedSSH(f.ui, f.options), false);
+    assert.equal(fs.statSync(f.ssh.managedFile).mode & 0o777, 0o600);
+  });
+  test('SSH migration restores legacy files if effective policy changes', async (t) => {
+    const f = legacyFixture(t),
+      inspect = f.options.inspect;
+    f.options.inspect = (cmd, args) => {
+      const result = inspect(cmd, args);
+      if (cmd === 'sshd' && !fs.existsSync(f.legacy)) result.text += '\npermitrootlogin yes';
+      return result;
+    };
+    await assert.rejects(migrateManagedSSH(f.ui, f.options), /изменил политику/);
+    assert.equal(fs.existsSync(f.legacy), true);
+    assert.equal(fs.existsSync(f.ssh.managedFile), false);
+    assert.match(read(f.sshDirectory + '/sshd_config'), /00-nexus404\.conf/);
+  });
+  test('SSH migration rolls back failed validation and rejects ambiguous files', async (t) => {
+    const f = legacyFixture(t),
+      run = f.options.run;
+    f.options.run = async (cmd, args) => {
+      if (cmd === 'sshd' && fs.existsSync(f.ssh.managedFile))
+        throw new Error('invalid configuration');
+      return run(cmd, args);
+    };
+    await assert.rejects(migrateManagedSSH(f.ui, f.options), /invalid configuration/);
+    assert.equal(fs.existsSync(f.legacy), true);
+    fs.writeFileSync(f.ssh.managedFile, 'Custom settings');
+    assert.throws(() => f.ssh.managed(), /ручной перенос/);
+    assert.equal(read(f.ssh.managedFile), 'Custom settings');
+  });
+  test('SSH global port cleanup includes the new managed extension', (t) => {
+    const f = fixture(t);
+    f.ssh.managed();
+    f.ssh.set('Port', '12345');
+    f.ssh.set('AllowUsers', 'deploy');
+    f.ssh.clearPorts();
+    assert.doesNotMatch(read(f.ssh.managedFile), /Port /);
+    assert.match(read(f.ssh.managedFile), /AllowUsers deploy/);
+  });
   test('SSH recreates its runtime directory immediately before each configuration check', (t) => {
     const f = fixture(t),
       directory = f.options.runtimeDirectory,

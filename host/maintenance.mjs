@@ -15,6 +15,7 @@ import {
   clean
 } from './common.mjs';
 import {report} from './security.mjs';
+import {migrateManagedSSH} from './ssh.mjs';
 export async function waitForSSHJail(ui, {inspect = query, pause = sleep, now = Date.now} = {}) {
   await ui.task('Проверка SSH jail', async () => {
     const deadline = now() + 30000;
@@ -278,6 +279,7 @@ export function installSchedules(time, day, health, {write = atomic, remove = fs
 }
 export async function migrate(ui) {
   if (!fs.existsSync(BASE + '/installed.flag')) return;
+  await migrateManagedSSH(ui);
   const r = cronSchedule('/etc/cron.d/deploy_kit_weekly_reboot'),
     h = cronSchedule('/etc/cron.d/deploy_kit_healthcheck');
   if (!r || !/^\d$/.test(r.day) || +r.day > 6 || !h || h.day !== '*')

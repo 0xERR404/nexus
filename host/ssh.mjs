@@ -54,7 +54,7 @@ export class SSH {
     this.base = base;
     this.sshDirectory = sshDirectory;
     this.runtimeDirectory = runtimeDirectory;
-    this.managedFile = sshDirectory + '/sshd_config.d/00-nexus404.conf';
+    this.managedFile = sshDirectory + '/sshd_config.d/nexus404.inc';
     this.run = run;
     this.inspect = inspect;
     this.service = this.inspect('systemctl', ['cat', 'ssh.service']).ok
@@ -104,13 +104,41 @@ export class SSH {
     fs.mkdirSync(path.dirname(this.managedFile), {recursive: true});
     const file = this.sshDirectory + '/sshd_config',
       text = read(file);
-    if (!text.split('\n').includes('Include ' + this.managedFile))
-      atomic(
-        file,
-        'Include ' + this.managedFile + '\n' + text + '\n',
-        fs.statSync(file).mode & 0o777
-      );
+    const legacy = this.sshDirectory + '/sshd_config.d/00-nexus404.conf';
+    const mode = fs.statSync(file).mode & 0o777;
+    if (fs.existsSync(legacy)) {
+      if (
+        !fs.lstatSync(legacy).isFile() ||
+        fs.existsSync(this.managedFile) ||
+        text.split('\n')[0].trim() !== 'Include ' + legacy ||
+        /^\s*(Match|Include)\s/im.test(read(legacy))
+      )
+        throw new Error('Нестандартное подключение SSH: нужен ручной перенос настроек');
+      const contents = fs.readFileSync(legacy, 'utf8');
+      try {
+        atomic(this.managedFile, contents);
+        atomic(
+          file,
+          text
+            .split('\n')
+            .map((line) =>
+              line.trim() === 'Include ' + legacy ? 'Include ' + this.managedFile : line
+            )
+            .join('\n') + '\n',
+          mode
+        );
+        fs.unlinkSync(legacy);
+      } catch (error) {
+        atomic(legacy, contents);
+        atomic(file, text + '\n', mode);
+        fs.rmSync(this.managedFile, {force: true});
+        throw error;
+      }
+      return;
+    }
     if (!fs.existsSync(this.managedFile)) atomic(this.managedFile, '');
+    if (!text.split('\n').includes('Include ' + this.managedFile))
+      atomic(file, 'Include ' + this.managedFile + '\n' + text + '\n', mode);
   }
   set(key, value) {
     const text = read(this.managedFile)
@@ -123,6 +151,7 @@ export class SSH {
   clearPorts() {
     for (const file of [
       this.sshDirectory + '/sshd_config',
+      this.managedFile,
       ...fs
         .readdirSync(path.dirname(this.managedFile))
         .filter((f) => f.endsWith('.conf'))
@@ -231,6 +260,45 @@ export class SSH {
     this.guard = null;
   }
 }
+export async function migrateManagedSSH(ui, options = {}) {
+  const ssh = new SSH(ui, options);
+  if (!fs.existsSync(ssh.sshDirectory + '/sshd_config.d/00-nexus404.conf')) return false;
+  const user = read(ssh.base + '/sudo_user');
+  if (!/^[a-z_][a-z0-9_-]{0,31}$/.test(user))
+    throw new Error('Не найден сохранённый пользователь SSH');
+  const addresses = [
+    ...new Set(['127.0.0.1', process.env.SSH_CONNECTION?.split(' ')[0]].filter(Boolean))
+  ];
+  const contexts = ['root', user].flatMap((name) => addresses.map((address) => [name, address]));
+  const normalize = (data) =>
+    JSON.stringify(
+      Object.entries(data)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, values]) => [
+          key,
+          ['port', 'listenaddress', 'allowusers'].includes(key)
+            ? [...new Set(values)].sort()
+            : values
+        ])
+    );
+  const before = contexts.map(([name, address]) => normalize(ssh.config(name, address)));
+  await ssh.begin();
+  try {
+    ssh.managed();
+    await ssh.run('sshd', ['-t'], {log: ui.log});
+    for (let i = 0; i < contexts.length; i++) {
+      const [name, address] = contexts[i];
+      if (normalize(ssh.config(name, address)) !== before[i])
+        throw new Error('Перенос изменил политику SSH; выполняется откат');
+    }
+    await ssh.commit();
+    ui.line('[✓] Устранено двойное подключение SSH; политика доступа сохранена');
+    return true;
+  } catch (error) {
+    await ssh.abort();
+    throw error;
+  }
+}
 export async function rollback(
   folder,
   {
@@ -249,11 +317,13 @@ export async function rollback(
     const {service, socketPorts = []} = json(folder + '/state.json');
     if (!['ssh.service', 'sshd.service'].includes(service)) throw new Error('Некорректная служба');
     fs.rmSync(sshDirectory + '/sshd_config.d/00-nexus404.conf', {force: true});
+    fs.rmSync(sshDirectory + '/sshd_config.d/nexus404.inc', {force: true});
     await run('cp', ['-a', folder + '/ssh/.', sshDirectory + '/']);
     if (socketPorts.length) {
       if (!socketPorts.every((p) => Number.isInteger(p) && p > 0 && p <= 65535))
         throw new Error('Некорректные порты копии SSH');
-      const managed = sshDirectory + '/sshd_config.d/00-nexus404.conf',
+      new SSH({line() {}}, {base, sshDirectory, runtimeDirectory, run, inspect}).managed();
+      const managed = sshDirectory + '/sshd_config.d/nexus404.inc',
         config = sshDirectory + '/sshd_config';
       atomic(
         managed,
