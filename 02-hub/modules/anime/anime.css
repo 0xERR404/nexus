@@ -3,3 +3,5 @@
 .anime-card{content-visibility:auto;contain-intrinsic-size:auto 108px}
 
 .anime-card{contain-intrinsic-size:auto 104px}.anime-details h2{min-height:0;-webkit-line-clamp:2}.anime-details{gap:10px}
+
+.anime-cover{width:48px;height:68px;flex:none;background:#172230;border-radius:4px;position:relative;overflow:hidden;display:grid;place-items:center;color:#526478}.anime-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.anime-card{padding:8px;gap:8px;contain-intrinsic-size:auto 86px}.anime-details{gap:6px}.anime-details h2{font-size:12px}.anime-status{margin-bottom:6px;min-height:0}.anime-status:empty{display:none}

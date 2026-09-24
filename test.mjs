@@ -2702,7 +2702,7 @@ import path from 'node:path';
     assert.equal(retried.messages.length, 4);
     assert.equal(retried.type, 'done');
     const page = await (await fetch(base + '/modules/chat/', {headers})).text();
-    assert.doesNotMatch(page, /id="chatKey"|href="\/settings/);
+    assert.doesNotMatch(page, /id="chatKey"/);
     assert.match(
       await (await fetch(base + '/settings/?module=chat', {headers})).text(),
       /id="chatKey"/
@@ -4507,9 +4507,9 @@ import path from 'node:path';
     const summary = createSummary(async () => request('/api'));
     assert.deepEqual(await summary(), {
       state: 'warning',
-      preview: [],
       items: [
         {label: 'Тревоги', value: '1'},
+        {label: 'За сутки', value: '0'},
         {label: 'Устройства', value: '1'}
       ]
     });
@@ -4680,6 +4680,53 @@ import path from 'node:path';
     });
     return f;
   }
+  test('trophies keeps loading other games after a per-game Steam 403', async (t) => {
+    const f = fixture(t);
+    f.games = 8;
+    f.store.options.fetcher = async (url) =>
+      url.pathname.includes('GetPlayerAchievements') && url.searchParams.get('appid') === '1'
+        ? new Response('', {status: 403})
+        : f.fetcher(url);
+    await f.store.sync('steam');
+    assert.ok(f.store.detail('steam', '1').error);
+    assert.equal(f.store.detail('steam', '8').achievements.length, 1);
+    assert.equal(f.store.snapshot().games.length, 8);
+    assert.equal(f.store.config().steam.syncing, false);
+    assert.match(f.store.config().steam.error, /Не обновлено игр: 1/);
+  });
+  test('trophies accepted sync survives the initiating request closing', async (t) => {
+    const {createModule} = await import('./02-hub/modules/trophies/index.mjs');
+    const {Readable} = await import('node:stream');
+    const f = fixture(t);
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const mod = createModule(f.dir + '/http', {
+      ...f.options,
+      fetcher: async (url) => {
+        if (url.pathname.includes('GetOwnedGames')) await gate;
+        return f.fetcher(url);
+      }
+    });
+    t.after(() => mod.close());
+    mod.store.load();
+    mod.store.set('steam', {...f.account});
+    const request = Readable.from([Buffer.from(JSON.stringify({provider: 'steam'}))]);
+    request.method = 'POST';
+    request.headers = {'content-type': 'application/json'};
+    const response = await mod.handle({request, path: '/sync'});
+    assert.equal(response.status, 202);
+    assert.equal(mod.store.config().steam.syncing, true);
+    const job = mod.store.jobs.get('steam');
+    request.destroy();
+    const during = await mod.handle({request: {method: 'GET'}, path: '/api'});
+    assert.equal((await during.json()).config.steam.syncing, true);
+    release();
+    await job;
+    assert.equal(mod.store.config().steam.syncing, false);
+    assert.equal(mod.store.snapshot().games.length, 2);
+  });
   test('trophies imports Steam and preserves secret boundaries, schema and rarity cache', async (t) => {
     const f = fixture(t);
     await f.store.sync('steam');

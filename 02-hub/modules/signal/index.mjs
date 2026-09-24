@@ -205,9 +205,12 @@ export function createSummary(handler) {
     const data = await response.json();
     return {
       state: data.stale ? 'stale' : data.active.length ? 'warning' : 'ok',
-      preview: data.events.slice(0, 2).map((e) => ({title: e.title, time: e.time})),
       items: [
         {label: 'Тревоги', value: String(data.active.length)},
+        {
+          label: 'За сутки',
+          value: String(data.events.filter((e) => e.time >= Date.now() - 86400000).length)
+        },
         {label: 'Устройства', value: String(data.devices.filter((d) => !d.expired).length)}
       ]
     };

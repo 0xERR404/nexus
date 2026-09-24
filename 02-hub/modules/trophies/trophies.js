@@ -18,7 +18,8 @@
       method: data ? 'POST' : 'GET',
       headers: data ? {'Content-Type': 'application/json'} : {},
       body: data ? JSON.stringify(data) : undefined,
-      cache: 'no-store'
+      cache: 'no-store',
+      keepalive: route === '/sync'
     });
     if (r.status === 401) {
       location.href = '/login';
@@ -44,12 +45,14 @@
       if (a.dataset.trophyProvider === selected()) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
-    $('trophyMode').hidden = selected() === 'steam';
-    $('trophyModeHelp').hidden = selected() === 'steam';
+
     $('trophyAwardsSection').hidden = selected() === 'steam';
   }
   function accountText(name, a) {
-    return `${name}: ${a.connected ? a.name + (a.mode === 'qr' ? ' · QR-сессия' : '') : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` + (a.progress.metadataTotal ? ` · магазин ${a.progress.metadata}/${a.progress.metadataTotal}` : '') : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
+    if (!a.connected) return settings ? name + ': не подключён' : name + ' · не подключён';
+    if (a.syncing)
+      return `${name} · достижения ${a.progress ? `${a.progress.done}/${a.progress.total}` : '…'}${a.progress?.metadataTotal ? ` · магазин ${a.progress.metadata}/${a.progress.metadataTotal}` : ''}`;
+    return `${name} · ${a.error || 'обновлено ' + date(a.lastSync)}`;
   }
   function refreshButton() {
     if (!page || !snapshot) return;
@@ -96,11 +99,11 @@
     renderTabs();
     $('trophyAccounts').replaceChildren(
       ...Object.entries(snapshot.config)
-        .filter(([k]) => !selected() || k === selected())
+        .filter(([k, a]) => (selected() ? k === selected() : a.connected))
         .map(([k, a]) => el('div', accountText(k === 'steam' ? 'Steam' : 'RetroAchievements', a)))
     );
     const search = $('trophySearch').value.toLocaleLowerCase(),
-      filter = $('trophyFilter').value;
+      filter = '';
     const games = snapshot.games
       .filter((g) => {
         const n = g.provider === 'ra' && mode() === 'hard' ? g.hard : g.soft;
@@ -115,7 +118,7 @@
         );
       })
       .sort((a, b) => {
-        const sort = $('trophySort').value;
+        const sort = 'name';
         const value = (g) =>
           sort === 'hours'
             ? (g.minutes ?? -1)
@@ -340,7 +343,7 @@
     }
   }
   if (page) {
-    for (const id of ['trophySearch', 'trophyFilter', 'trophyMode', 'trophySort'])
+    for (const id of ['trophySearch'])
       $(id).addEventListener(id === 'trophySearch' ? 'input' : 'change', () => {
         render();
         if (id === 'trophyMode') void activity();
@@ -376,18 +379,23 @@
     const synchronize = async (mode) => {
       $('trophySync').disabled = true;
       status();
-      for (const [k, a] of Object.entries(snapshot.config))
-        if (
+      $('trophyFullSync').disabled = true;
+      const targets = Object.entries(snapshot.config).filter(
+        ([k, a]) =>
           (!selected() || selected() === k) &&
           a.connected &&
           !a.syncing &&
           Date.now() >= a.nextAttempt
-        )
+      );
+      await Promise.all(
+        targets.map(async ([provider]) => {
           try {
-            await api('/sync', {provider: k, mode});
+            await api('/sync', {provider, mode});
           } catch (e) {
             status(e.message);
           }
+        })
+      );
       await load();
     };
     $('trophySync').onclick = () => synchronize('quick');

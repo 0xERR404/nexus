@@ -398,6 +398,7 @@ export class TrophiesStore {
   async run(kind, account, mode) {
     const client = this.provider(kind, account);
     this.clients.set(kind, client);
+    account.error = null;
     account.attemptedAt = this.now();
     account.nextAttempt = this.now() + 60000;
     this.set(kind, account);

@@ -79,8 +79,7 @@
     return result;
   }
   let insightBusy = false,
-    ratesLoaded = false,
-    aiState;
+    ratesLoaded = false;
   const number = (v, digits = 2) =>
     new Intl.NumberFormat('ru-RU', {maximumFractionDigits: digits}).format(v);
   const stamp = (v) =>
@@ -112,41 +111,6 @@
       (data.date ? ' · ' + data.date : data.sourceAt ? ' · ' + stamp(data.sourceAt) : '') +
       (data.stale ? ' · нет свежих данных' : '');
   }
-  function renderAI() {
-    const box = $('balanceAI');
-    box.replaceChildren();
-    if (!aiState?.available) {
-      box.append(make('p', 'Учёт появится после обновления и запуска чата.', 'balance-help'));
-      return;
-    }
-    const period = aiState.periods.find((p) => p.id === $('balanceAIPeriod').value);
-    for (const [provider, title] of [
-      ['deepseek', 'DeepSeek'],
-      ['flowmusic', 'FlowMusic']
-    ]) {
-      const row = period?.providers.find((p) => p.provider === provider);
-      const line = make('div', undefined, 'balance-ai-line');
-      const header = make('div', undefined, 'balance-quote');
-      const cost = row?.priced ? '≈ $' + number(row.low, 6) + '–' + number(row.high, 6) : '—';
-      header.append(make('span', title), make('strong', cost));
-      line.append(header);
-      const details = !row
-        ? 'Нет обращений'
-        : provider === 'flowmusic'
-          ? number(row.requests) + ' обращ. · стоимость не передаётся'
-          : number(row.tokens) +
-            ' ток. · ' +
-            number(row.requests) +
-            ' обращ.' +
-            (row.requests > row.priced ? ' · без оценки: ' + (row.requests - row.priced) : '');
-      line.append(make('p', details, 'balance-source'));
-      box.append(line);
-    }
-    $('balanceTariffDate').textContent =
-      'Диапазон по тарифам ' +
-      aiState.tariffDate +
-      ': время запроса и кэш. Оценка сохраняется с запросом.';
-  }
   async function loadInsights() {
     if (settings || insightBusy || document.hidden) return;
     insightBusy = true;
@@ -165,31 +129,38 @@
           for (const id of ['balanceFiatDate', 'balanceCryptoDate'])
             $(id).textContent = 'Нет соединения · данные не обновлены';
         }),
-      api('/ai')
+      fetch('/modules/chat/flow/credits', {cache: 'no-store', signal: AbortSignal.timeout(25000)})
+        .then(async (response) => {
+          if (!response.ok) throw Error();
+          return response.json();
+        })
         .then((data) => {
-          aiState = data;
-          renderAI();
+          $('balanceFlowCredit').textContent =
+            data.remaining == null ? '—' : number(data.remaining, 2) + ' кр.';
+          $('balanceFlowCredit').dataset.stale = String(data.stale);
+          $('balanceFlowCredit').title =
+            data.error || (data.updatedAt ? 'Проверено: ' + stamp(data.updatedAt) : 'Нет данных');
         })
         .catch(() => {
-          $('balanceAI').replaceChildren(make('p', 'Учёт временно недоступен', 'balance-help'));
+          $('balanceFlowCredit').dataset.stale = 'true';
+          $('balanceFlowCredit').title = 'Данные не обновлены';
         }),
       api('/credit')
         .then((data) => {
-          $('balanceCredit').textContent =
+          $('balanceCredit').textContent = data.balances?.length
+            ? data.balances.map((b) => number(Number(b.amount), 2) + ' ' + b.currency).join(' · ')
+            : '—';
+          $('balanceCredit').dataset.stale = String(data.state !== 'ok');
+          $('balanceCredit').title =
             data.state === 'unconfigured'
-              ? 'DeepSeek: ключ не задан'
-              : data.balances?.length
-                ? 'Остаток API: ' +
-                  data.balances
-                    .map((b) => number(Number(b.amount), 4) + ' ' + b.currency)
-                    .join(' · ') +
-                  ' · ' +
-                  stamp(data.updatedAt) +
-                  (data.state === 'error' ? ' · не обновлён' : '')
-                : 'Остаток API временно недоступен';
+              ? 'Ключ не задан'
+              : data.state === 'error'
+                ? 'Данные не обновлены'
+                : 'Проверено: ' + stamp(data.updatedAt);
         })
         .catch(() => {
-          $('balanceCredit').textContent = 'Остаток API не обновлён';
+          $('balanceCredit').dataset.stale = 'true';
+          $('balanceCredit').title = 'Данные не обновлены';
         })
     ]);
     insightBusy = false;
@@ -627,7 +598,6 @@
       marketConfig({key: '', removeKey: true})
     );
   } else {
-    $('balanceAIPeriod').addEventListener('change', renderAI);
     loadInsights();
     setInterval(loadInsights, 60000);
     addEventListener('online', loadInsights);

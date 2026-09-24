@@ -82,7 +82,7 @@ export class Provider {
         response = await this.fetcher(url, {
           redirect: 'error',
           signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(20000)]),
-          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.14.0'}
+          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.14.1'}
         });
       } catch {
         throw fail('Сервис не отвечает. Сохранённые данные оставлены.');
@@ -112,9 +112,11 @@ export class Provider {
           response.status === 401 || response.status === 403
             ? useToken
               ? 'Сессия Steam не даёт доступа к этому запросу. Повтори вход по QR.'
-              : 'Проверь ключ API и доступность профиля.'
+              : stats
+                ? 'Steam не открыл статистику этой игры. Проверь ключ и приватность игры.'
+                : 'Проверь ключ API и доступность профиля.'
             : 'API отклонил запрос. Данные оставлены.',
-          [401, 403].includes(response.status) ? (useToken ? 401 : 409) : 502
+          [401, 403].includes(response.status) ? (useToken ? 401 : stats ? 502 : 409) : 502
         );
       }
       try {

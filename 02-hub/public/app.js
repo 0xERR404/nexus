@@ -139,35 +139,10 @@ function renderSummary(node, data) {
         dot.append(element('span', 'Подключён', 'sr-only'));
         itemNode.append(dot);
       } else itemNode.append(element('span', item.value, 'provider-note'));
-    } else if (
-      node.dataset.summary === 'signal' &&
-      item.label === 'Тревоги' &&
-      item.value === '0'
-    ) {
-      itemNode.classList.add('signal-clear');
-      itemNode.replaceChildren(
-        element('span', '●', 'signal-clear-dot'),
-        element('strong', 'Всё спокойно')
-      );
     } else itemNode.append(element('strong', item.value));
     stats.append(itemNode);
   }
   node.replaceChildren(stats);
-  if (node.dataset.summary === 'signal' && data.preview?.length) {
-    const preview = element('div', '', 'signal-preview');
-    for (const event of data.preview.slice(0, 2)) {
-      const row = element('div', '', 'signal-preview-row');
-      row.append(
-        element(
-          'time',
-          new Date(event.time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
-        ),
-        element('span', event.title)
-      );
-      preview.append(row);
-    }
-    node.append(preview);
-  }
   if (node.dataset.summary === 'anime' && data.covers?.length) {
     const covers = element('div', '', 'module-covers');
     for (const id of data.covers) {

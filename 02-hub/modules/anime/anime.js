@@ -65,6 +65,19 @@
     const fragment = document.createDocumentFragment();
     for (const item of items) {
       const card = node('article', undefined, 'anime-card');
+      const cover = node('div', undefined, 'anime-cover');
+      cover.setAttribute('aria-hidden', 'true');
+      cover.append(node('span', '◇'));
+      if (item.cover) {
+        const img = node('img');
+        img.src = item.cover;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.width = 60;
+        img.height = 84;
+        img.addEventListener('error', () => img.remove(), {once: true});
+        cover.append(img);
+      }
       const details = node('div', undefined, 'anime-details'),
         heading = node('h2');
       const link = node('a', item.title);
@@ -90,7 +103,7 @@
       bar.setAttribute('aria-label', 'Просмотрено серий');
       progress.append(bar, node('span', item.watched + ' / ' + (item.episodes || '?')));
       details.append(progress);
-      card.append(details);
+      card.append(cover, details);
       fragment.append(card);
     }
     if (!items.length)
