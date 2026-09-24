@@ -27,7 +27,8 @@ export const modules = [
   {id: 'pulse', title: 'Пульс'},
   {id: 'signal', title: 'Сигнал'},
   {id: 'chat', title: 'Чат · DeepSeek и FlowMusic'},
-  {id: 'balance', title: 'Баланс'}
+  {id: 'balance', title: 'Баланс'},
+  {id: 'anime', title: 'Кадр · Shikimori'}
 ];
 export async function installModules(
   ui,

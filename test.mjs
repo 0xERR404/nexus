@@ -4,6 +4,404 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// tests/anime
+{
+  const {AnimeStore, save, normalize, posterURL} = await import('./02-hub/modules/anime/store.mjs');
+  const credentials = {
+    appName: 'NEXUS404',
+    clientId: 'client-id-1234567890',
+    clientSecret: 'secret-12345678901234567890'
+  };
+  const tokens = (n) => ({
+    access_token: 'access-1234567890-' + n,
+    refresh_token: 'refresh-1234567890-' + n,
+    expires_in: 86400
+  });
+  const rate = (id) => ({
+    score: 8,
+    status: 'watching',
+    episodes: 6,
+    anime: {
+      id,
+      name: 'Anime ' + id,
+      russian: 'Аниме ' + id,
+      episodes: 12,
+      image: {preview: '/uploads/' + id + '.jpg'}
+    }
+  });
+  function fixture(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-anime-'));
+    let clock = Date.now();
+    const f = {
+      dir,
+      calls: [],
+      waits: [],
+      pages: [[rate(1)], []],
+      userId: 7,
+      serial: 0,
+      intercept: null
+    };
+    f.options = {
+      now: () => clock,
+      wait: async (ms) => {
+        f.waits.push(ms);
+        clock += ms;
+      },
+      fetcher: async (url, init) => {
+        f.calls.push({url, init, at: clock});
+        const intercepted = await f.intercept?.(url, init);
+        if (intercepted) return intercepted;
+        if (url.endsWith('/oauth/token')) return Response.json(tokens(++f.serial));
+        if (url.endsWith('/whoami')) return Response.json({id: f.userId, nickname: 'Viewer'});
+        if (url.includes('/anime_rates'))
+          return Response.json(f.pages[Number(new URL(url).searchParams.get('page')) - 1] ?? []);
+        if (url.endsWith('/api/graphql')) {
+          const ids = JSON.parse(init.body)
+            .query.match(/ids: "([\d,]+)"/)[1]
+            .split(',');
+          return Response.json({
+            data: {
+              animes: ids.map((id) => ({
+                id,
+                poster: {mainUrl: 'https://shikimori.io/uploads/' + id + '.webp'}
+              }))
+            }
+          });
+        }
+        throw new Error('unexpected request');
+      }
+    };
+    f.store = new AnimeStore(dir, f.options);
+    f.connect = async () => {
+      f.store.setup(credentials);
+      await f.store.connect('code-1234567890123456');
+    };
+    f.advance = (ms) => {
+      clock += ms;
+    };
+    t.after(() => {
+      f.store.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    return f;
+  }
+  test('anime connects via OAuth, redacts secrets and persists private credentials', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    assert.equal(f.store.config().user.id, 7);
+    const output = JSON.stringify(f.store.snapshot());
+    for (const secret of [
+      credentials.clientSecret,
+      tokens(1).access_token,
+      tokens(1).refresh_token
+    ])
+      assert.ok(!output.includes(secret));
+    assert.equal(fs.statSync(f.store.file).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(f.dir).mode & 0o077, 0);
+    assert.equal(f.calls[0].init.headers.Authorization, undefined);
+    assert.equal(f.calls[1].init.headers.Authorization, 'Bearer ' + tokens(1).access_token);
+    assert.equal(f.calls[1].init.redirect, 'error');
+  });
+  test('anime imports every page including a short intermediate page, and batches posters', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    f.pages = [Array.from({length: 100}, (_, i) => rate(i + 1)), [rate(101)], [rate(102)], []];
+    assert.equal(await f.store.sync(), true);
+    const d = f.store.snapshot();
+    assert.equal(d.items.length, 102);
+    assert.equal(d.items[101].cover, '/modules/anime/cover/102');
+    assert.equal(d.stale, false);
+    assert.ok(d.syncedAt);
+    assert.equal(f.calls.filter((x) => x.url.endsWith('/api/graphql')).length, 3);
+    assert.equal(f.calls.filter((x) => x.url.includes('/anime_rates')).length, 4);
+    for (let i = 1; i < f.calls.length; i++) assert.ok(f.calls[i].at - f.calls[i - 1].at >= 1100);
+    assert.equal(new AnimeStore(f.dir, f.options).snapshot().items.length, 102);
+  });
+  test('anime preserves last complete snapshot and timestamp after failure on a later page', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    const before = f.store.snapshot();
+    f.advance(3600000);
+    f.pages = [[rate(2)], [{broken: true}]];
+    assert.equal(await f.store.sync(), false);
+    const after = new AnimeStore(f.dir, f.options).snapshot();
+    assert.deepEqual(after.items, before.items);
+    assert.equal(after.syncedAt, before.syncedAt);
+    assert.equal(after.stale, true);
+    assert.match(after.error, /формат/);
+  });
+  test('anime rejects repeated pages and GraphQL partial failures without replacing the list', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    const before = f.store.snapshot().items;
+    f.advance(3600000);
+    f.pages = [[rate(2)], [rate(2)]];
+    assert.equal(await f.store.sync(), false);
+    assert.deepEqual(f.store.snapshot().items, before);
+    f.advance(3600000);
+    f.pages = [[rate(3)], []];
+    f.intercept = (url) =>
+      url.endsWith('/api/graphql')
+        ? Response.json({data: {animes: []}, errors: [{message: 'error'}]})
+        : null;
+    assert.equal(await f.store.sync(), false);
+    assert.deepEqual(f.store.snapshot().items, before);
+  });
+  test('anime handles valid empty lists and unknown episode totals', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    f.advance(3600000);
+    f.pages = [[]];
+    assert.equal(await f.store.sync(), true);
+    assert.deepEqual(f.store.snapshot().items, []);
+    const unknown = rate(2);
+    unknown.anime.episodes = 0;
+    unknown.score = 0;
+    assert.equal(normalize(unknown).episodes, 0);
+    assert.equal(normalize(unknown).score, 0);
+  });
+  test('anime honors Retry-After and bounds retries', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    let calls = 0;
+    f.intercept = (url) =>
+      url.includes('/anime_rates') && ++calls <= 2
+        ? new Response(null, {status: 429, headers: {'Retry-After': '5'}})
+        : null;
+    assert.equal(await f.store.sync(), true);
+    assert.equal(f.waits.filter((ms) => ms === 5000).length, 2);
+    f.advance(3600000);
+    calls = 0;
+    f.intercept = (url) =>
+      url.includes('/anime_rates') ? (++calls, new Response(null, {status: 503})) : null;
+    assert.equal(await f.store.sync(), false);
+    assert.equal(calls, 3);
+    assert.equal(f.store.snapshot().items.length, 1);
+  });
+  test('anime persists a long rate-limit cooldown rather than waiting inside an HTTP request', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    f.intercept = (url) =>
+      url.includes('/anime_rates')
+        ? new Response(null, {status: 429, headers: {'Retry-After': '3600'}})
+        : null;
+    assert.equal(await f.store.sync(), false);
+    assert.ok(f.store.snapshot().nextAttempt >= f.options.now() + 3600000);
+    assert.throws(
+      () => new AnimeStore(f.dir, f.options).sync(),
+      (e) => e.status === 429
+    );
+  });
+  test('anime rotates both tokens before expiry and saves before the next API call', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    f.advance(86400000);
+    f.intercept = (url) => {
+      if (url.includes('/anime_rates'))
+        assert.equal(
+          JSON.parse(fs.readFileSync(f.store.file)).connection.refresh_token,
+          tokens(2).refresh_token
+        );
+      return null;
+    };
+    assert.equal(await f.store.sync(), true);
+    assert.equal(f.serial, 2);
+    assert.equal(f.store.data.connection.access_token, tokens(2).access_token);
+  });
+  test('anime retries a 401 once and never loops on invalid authorization', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    let attempts = 0;
+    f.intercept = (url) =>
+      url.includes('/anime_rates') ? (++attempts, new Response(null, {status: 401})) : null;
+    assert.equal(await f.store.sync(), false);
+    assert.equal(attempts, 2);
+    assert.equal(f.serial, 2);
+  });
+  test('anime refuses to reuse a refresh token after an interrupted rotation', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    f.advance(86400000);
+    f.intercept = (url) => {
+      if (url.endsWith('/oauth/token')) throw new Error('network with secret');
+    };
+    assert.equal(await f.store.sync(), false);
+    const next = new AnimeStore(f.dir, f.options);
+    assert.equal(next.config().needsReconnect, true);
+    assert.equal(next.snapshot().items.length, 1);
+    assert.ok(!next.snapshot().error.includes('secret'));
+    f.advance(3600000);
+    const before = f.calls.length;
+    await next.sync();
+    assert.equal(f.calls.length, before);
+  });
+  test('anime sync is single-flight and account replacement cannot race it', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    let release;
+    const gate = new Promise((r) => (release = r));
+    f.intercept = async (url) => {
+      if (url.includes('/anime_rates')) await gate;
+    };
+    const job = f.store.sync();
+    assert.equal(f.store.sync(), job);
+    assert.throws(
+      () => f.store.disconnect(),
+      (e) => e.status === 409
+    );
+    assert.throws(
+      () => f.store.setup(credentials),
+      (e) => e.status === 409
+    );
+    release();
+    await job;
+    f.userId = 8;
+    await f.connect();
+    assert.equal(f.store.snapshot().syncedAt, null);
+    assert.equal(f.store.snapshot().items.length, 0);
+    f.store.disconnect();
+    assert.equal(new AnimeStore(f.dir, f.options).config().connected, false);
+  });
+  test('anime failed reconnection keeps the existing account and cache', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    f.store.setup(credentials);
+    f.intercept = (url) => (url.endsWith('/whoami') ? Response.json({error: 'bad'}) : null);
+    await assert.rejects(f.store.connect('another-code-1234567890'));
+    assert.equal(f.store.config().user.id, 7);
+    assert.equal(f.store.snapshot().items.length, 1);
+  });
+  test('anime failed disk write cannot publish a partially updated snapshot', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    f.advance(3600000);
+    const before = fs.readFileSync(f.store.file, 'utf8');
+    f.store.write = () => {
+      throw new Error('disk');
+    };
+    assert.equal(await f.store.sync(), false);
+    assert.equal(fs.readFileSync(f.store.file, 'utf8'), before);
+    assert.equal(f.store.snapshot().items.length, 1);
+    assert.equal(f.store.snapshot().stale, true);
+  });
+  test('anime background scheduler refreshes hourly, retries errors and resumes after restart', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.tick();
+    const before = f.calls.length;
+    await f.store.tick();
+    assert.equal(f.calls.length, before);
+    f.advance(3600000);
+    f.pages = [[rate(2)], []];
+    await f.store.tick();
+    assert.equal(f.store.snapshot().items[0].id, 2);
+    f.advance(3600000);
+    f.pages = [[{broken: true}]];
+    await f.store.tick();
+    const failed = f.calls.length;
+    f.advance(60000);
+    await f.store.tick();
+    assert.equal(f.calls.length, failed);
+    f.advance(300000);
+    f.pages = [[rate(3)], []];
+    const restarted = new AnimeStore(f.dir, f.options);
+    await restarted.tick();
+    assert.equal(restarted.snapshot().items[0].id, 3);
+  });
+  test('anime cover proxy restricts hosts, size and content type and never sends tokens', async (t) => {
+    const f = fixture(t);
+    await f.connect();
+    await f.store.sync();
+    for (const url of [
+      'http://127.0.0.1/a',
+      'https://shikimori.io.evil/a',
+      'https://user:password@shikimori.io/a',
+      'https://shikimori.io:444/a',
+      'file:///etc/passwd'
+    ])
+      assert.equal(posterURL(url), '');
+    let calls = 0;
+    f.intercept = (url, init) => {
+      if (url.includes('/uploads/')) {
+        calls++;
+        assert.equal(init.headers.Authorization, undefined);
+        return new Response('small-image', {headers: {'Content-Type': 'image/webp'}});
+      }
+    };
+    assert.equal((await f.store.cover(1)).type, 'image/webp');
+    await f.store.cover(1);
+    assert.equal(calls, 1);
+    assert.equal(await f.store.cover(999), null);
+    f.store.images.clear();
+    f.intercept = (url) =>
+      url.includes('/uploads/')
+        ? new Response('<svg/>', {headers: {'Content-Type': 'image/svg+xml'}})
+        : null;
+    assert.equal(await f.store.cover(1), null);
+    f.intercept = (url) =>
+      url.includes('/uploads/')
+        ? new Response(Buffer.alloc(524289), {headers: {'Content-Type': 'image/png'}})
+        : null;
+    assert.equal(await f.store.cover(1), null);
+  });
+  test('anime endpoints require login and same-origin mutations; settings stay outside the module', async (t) => {
+    const f = fixture(t);
+    const {createModule, settings} = await import('./02-hub/modules/anime/index.mjs');
+    const {createApp} = await import('./02-hub/src/server.mjs');
+    const {passwordHash} = await import('./02-hub/src/auth.mjs');
+    const mod = createModule(f.dir, f.options),
+      config = {
+        username: 'admin',
+        origin: 'https://hub.example.com',
+        ...(await passwordHash('test-password-123'))
+      };
+    const app = createApp({
+      config,
+      modules: new Map([['anime', {id: 'anime', title: 'Кадр', description: '', ...mod, settings}]])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      mod.close();
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+    });
+    const base = 'http://127.0.0.1:' + app.address().port;
+    assert.equal((await fetch(base + '/modules/anime/api', {redirect: 'manual'})).status, 303);
+    const login = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=test-password-123'
+    });
+    const Cookie = login.headers.get('set-cookie').split(';')[0];
+    const post = (route, payload, Origin = config.origin) =>
+      fetch(base + '/modules/anime' + route, {
+        method: 'POST',
+        headers: {Cookie, Origin, 'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+    assert.equal((await post('/setup', credentials, 'https://evil.example')).status, 403);
+    assert.equal((await post('/setup', credentials)).status, 200);
+    assert.equal((await post('/connect', {code: 'test-code-1234567890'})).status, 200);
+    await mod.store.job;
+    const list = await fetch(base + '/modules/anime/api', {headers: {Cookie}});
+    assert.equal(list.headers.get('cache-control'), 'no-store');
+    assert.ok(!(await list.text()).includes(credentials.clientSecret));
+    const html = await (await fetch(base + '/modules/anime/', {headers: {Cookie}})).text();
+    assert.ok(!html.includes('animeSetupForm'));
+    const settingsHTML = await (
+      await fetch(base + '/settings/?module=anime', {headers: {Cookie}})
+    ).text();
+    assert.ok(settingsHTML.includes('animeSetupForm'));
+  });
+}
+
 // tests/bootstrap
 {
   const {spawnSync} = await import('node:child_process');
@@ -601,7 +999,7 @@ import path from 'node:path';
       },
       maintenance: async () => events.push('maintenance')
     });
-    assert.deepEqual(events, ['pulse', 'signal', 'chat', 'balance', 'maintenance']);
+    assert.deepEqual(events, ['pulse', 'signal', 'chat', 'balance', 'anime', 'maintenance']);
   });
   test('individual selection runs only the requested module; invalid ID runs nothing', async () => {
     const calls = [],
