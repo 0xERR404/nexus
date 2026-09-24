@@ -1,0 +1,3892 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// tests/bootstrap
+{
+  const {spawnSync} = await import('node:child_process');
+  const {options, syncRepository, launchMenu, projectFiles} = await import('./bootstrap.mjs');
+  function git(...args) {
+    const r = spawnSync('git', args, {encoding: 'utf8'});
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  }
+  function fixture(t, complete = true) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-bootstrap-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const source = root + '/source',
+      directory = root + '/install';
+    fs.mkdirSync(source);
+    git('init', '--initial-branch=main', source);
+    git('-C', source, 'config', 'user.name', 'Test');
+    git('-C', source, 'config', 'user.email', 'test@example.invalid');
+    for (const file of projectFiles.filter((file) => complete || file !== '02-hub/package.json')) {
+      fs.mkdirSync(path.dirname(source + '/' + file), {recursive: true});
+      fs.writeFileSync(
+        source + '/' + file,
+        file === 'menu.mjs' ? 'process.exitCode = Number(process.argv[2] ?? 0);\n' : '{}\n'
+      );
+    }
+    git('-C', source, 'add', '.');
+    git('-C', source, 'commit', '-m', 'first');
+    return {source, directory, root, url: 'file://' + source, branch: 'main'};
+  }
+  test('bootstrap parses repository and branch without accepting URLs or shell syntax', () => {
+    assert.equal(options([]).url, 'https://github.com/0xERR404/nexus.git');
+    const selected = options([
+      '--repo',
+      'owner/project',
+      '--branch',
+      'feature/install',
+      '--directory',
+      '/opt/my-nexus',
+      '--',
+      '--task',
+      '7'
+    ]);
+    assert.deepEqual(selected.menu, ['--task', '7']);
+    assert.equal(selected.branch, 'feature/install');
+    for (const args of [
+      ['--repo', 'https://github.com/a/b'],
+      ['--repo', 'a/b;reboot'],
+      ['--repo', 'a/..'],
+      ['--branch', '../main'],
+      ['--branch', '-main'],
+      ['--directory', '/'],
+      ['--directory', 'relative'],
+      ['--unknown'],
+      ['--branch']
+    ])
+      assert.throws(() => options(args));
+  });
+  test('bootstrap clones the whole selected branch with Git metadata', (t) => {
+    const f = fixture(t);
+    assert.equal(syncRepository(f), 'cloned');
+    assert.ok(fs.existsSync(f.directory + '/host/common.mjs'));
+    assert.equal(git('-C', f.directory, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', f.directory, 'remote', 'get-url', 'origin'), f.url);
+    assert.equal(git('-C', f.directory, 'rev-parse', '--is-shallow-repository'), 'true');
+  });
+  test('repeated bootstrap fast-forwards the existing installation', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    fs.writeFileSync(f.source + '/new-module.mjs', 'export const ready = true;\n');
+    git('-C', f.source, 'add', '.');
+    git('-C', f.source, 'commit', '-m', 'next');
+    assert.equal(syncRepository(f), 'updated');
+    assert.equal(
+      fs.readFileSync(f.directory + '/new-module.mjs', 'utf8'),
+      'export const ready = true;\n'
+    );
+  });
+  test('bootstrap preserves local changes and rejects another origin or branch', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    fs.writeFileSync(f.directory + '/menu.mjs', 'local edit');
+    assert.throws(() => syncRepository(f), /локальные изменения/);
+    assert.equal(fs.readFileSync(f.directory + '/menu.mjs', 'utf8'), 'local edit');
+    git('-C', f.directory, 'restore', 'menu.mjs');
+    assert.throws(
+      () => syncRepository({...f, url: 'https://github.com/other/project.git'}),
+      /другой origin/
+    );
+    assert.throws(() => syncRepository({...f, branch: 'develop'}), /другая ветка/);
+  });
+  test('bootstrap refuses divergent histories without resetting local commits', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    git('-C', f.directory, 'config', 'user.name', 'Test');
+    git('-C', f.directory, 'config', 'user.email', 'test@example.invalid');
+    fs.writeFileSync(f.directory + '/local.txt', 'local');
+    git('-C', f.directory, 'add', '.');
+    git('-C', f.directory, 'commit', '-m', 'local');
+    const before = git('-C', f.directory, 'rev-parse', 'HEAD');
+    fs.writeFileSync(f.source + '/remote.txt', 'remote');
+    git('-C', f.source, 'add', '.');
+    git('-C', f.source, 'commit', '-m', 'remote');
+    assert.throws(() => syncRepository(f));
+    assert.equal(git('-C', f.directory, 'rev-parse', 'HEAD'), before);
+  });
+  test('failed or incomplete clone leaves no half-installed target', (t) => {
+    const f = fixture(t, false);
+    assert.throws(() => syncRepository(f), /Неполный проект/);
+    assert.equal(fs.existsSync(f.directory), false);
+    assert.deepEqual(fs.readdirSync(f.root), ['source']);
+    assert.throws(() => syncRepository({...f, branch: 'missing'}));
+    assert.equal(fs.existsSync(f.directory), false);
+    assert.deepEqual(fs.readdirSync(f.root), ['source']);
+  });
+  test('bootstrap does not overwrite another folder or symlink', (t) => {
+    const f = fixture(t);
+    fs.mkdirSync(f.directory);
+    fs.writeFileSync(f.directory + '/keep', 'keep');
+    assert.throws(() => syncRepository(f), /Каталог занят/);
+    assert.equal(fs.readFileSync(f.directory + '/keep', 'utf8'), 'keep');
+    const link = f.root + '/link';
+    fs.symlinkSync(f.source, link);
+    assert.throws(() => syncRepository({...f, directory: link}), /Каталог занят/);
+  });
+  test('menu launcher passes arguments and preserves failure status', async (t) => {
+    const f = fixture(t);
+    assert.equal(await launchMenu(f.source, ['7']), 7);
+    assert.equal(await launchMenu(f.source), 0);
+  });
+
+  test('incomplete remote update never replaces the working checkout', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    const before = git('-C', f.directory, 'rev-parse', 'HEAD');
+    git('-C', f.source, 'rm', 'host/common.mjs');
+    git('-C', f.source, 'commit', '-m', 'incomplete');
+    assert.throws(() => syncRepository(f));
+    assert.equal(git('-C', f.directory, 'rev-parse', 'HEAD'), before);
+    assert.ok(fs.existsSync(f.directory + '/host/common.mjs'));
+  });
+
+  test('missing hub build or browser files prevents an update before merge', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    const head = git('-C', f.directory, 'rev-parse', 'HEAD');
+    git('-C', f.source, 'rm', '02-hub/Dockerfile', '02-hub/public/app.js');
+    git('-C', f.source, 'commit', '-m', 'broken build');
+    assert.throws(() => syncRepository(f), /Неполное обновление/);
+    assert.equal(git('-C', f.directory, 'rev-parse', 'HEAD'), head);
+  });
+  test('a symlink cannot replace an install payload file', (t) => {
+    const f = fixture(t);
+    syncRepository(f);
+    const head = git('-C', f.directory, 'rev-parse', 'HEAD');
+    const file = f.source + '/host/ssh.mjs';
+    fs.unlinkSync(file);
+    fs.symlinkSync('common.mjs', file);
+    git('-C', f.source, 'add', '.');
+    git('-C', f.source, 'commit', '-m', 'linked file');
+    assert.throws(() => syncRepository(f), /Неполное обновление/);
+    assert.equal(git('-C', f.directory, 'rev-parse', 'HEAD'), head);
+    assert.throws(() => syncRepository({...f, directory: f.root + '/other'}), /Неполный проект/);
+  });
+  test('release contains the full required install payload', async () => {
+    const {checkProject} = await import('./bootstrap.mjs');
+    checkProject(new URL('./', import.meta.url).pathname);
+  });
+}
+
+// tests/host
+{
+  const {validPort, validUser, validTime, withLock, atomic} = await import('./host/common.mjs');
+  const {
+    cpuCounters,
+    cpuUsage,
+    memoryUsage,
+    networkCounters,
+    networkUsage,
+    mountpoints,
+    diskUsage,
+    Collector
+  } = await import('./host/metrics.mjs');
+  const {clearPorts, parseSSH} = await import('./host/ssh.mjs');
+  const {validDomain, validUpstream, renderCaddy, preflight} = await import('./host/platform.mjs');
+  const {warnSchedule} = await import('./host/maintenance.mjs');
+  const {sshEvent} = await import('./host/events.mjs');
+  const {portFindings, loopback} = await import('./host/security.mjs');
+  const temporary = (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-'));
+    t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+    return dir;
+  };
+  test('validation rejects unsafe users, ports and times', () => {
+    for (const v of ['root', 'a b', '*', '-x', 'a;reboot']) assert.equal(validUser(v), false);
+    assert.ok(validUser('deploy'));
+    for (const v of ['22', '65536', '1e4', '-1234', '3000;']) assert.equal(validPort(v), false);
+    assert.ok(validPort('2222'));
+    assert.ok(validTime('00:00'));
+    assert.equal(validTime('24:01'), false);
+  });
+  test('CPU excludes guest duplication and handles reset', () => {
+    const old = cpuCounters('cpu 100 0 20 800 30 0 0 50 40 0\ncpu0 0\ncpu1 0');
+    const current = cpuCounters('cpu 120 0 30 850 40 0 0 60 60 0');
+    assert.equal(old.cores, 2);
+    assert.deepEqual(cpuUsage(old.values, current.values), {
+      percent: 40,
+      iowait_percent: 10,
+      steal_percent: 10
+    });
+    assert.equal(cpuUsage(null, current.values).percent, null);
+    assert.equal(cpuUsage(current.values, old.values).percent, null);
+  });
+  test('memory uses available cache and preserves disabled swap', () => {
+    const m = memoryUsage(
+      'MemTotal: 1000 kB\nMemFree: 100 kB\nMemAvailable: 400 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB'
+    );
+    assert.equal(m.memory.percent, 60);
+    assert.equal(m.memory.used, 614400);
+    assert.equal(m.swap.percent, null);
+  });
+  test('network rates use elapsed time and counter reset is unknown', () => {
+    const c = networkCounters(
+      'eth0: 1500 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0\nveth1: 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0'
+    );
+    assert.deepEqual(Object.keys(c), ['eth0']);
+    const r = networkUsage({eth0: [1000, 1000]}, c, 2.5)[0];
+    assert.equal(r.rx_per_second, 200);
+    assert.equal(r.tx_per_second, 400);
+    assert.equal(networkUsage(c, {eth0: [0, 0]}, 5)[0].rx_per_second, null);
+  });
+  test('disk mount deduplication, escaped names, inode and reserve accounting', () => {
+    const table =
+      '1 0 8:1 / / rw - ext4 /dev/sda rw\n2 1 8:1 /home /home rw - ext4 /dev/sda rw\n3 1 8:2 / /data\\040store rw - xfs /dev/sdb rw\n4 1 0:2 / /mnt/nfs rw - nfs a:/x rw';
+    assert.deepEqual(
+      mountpoints(table).map((d) => d.mount),
+      ['/', '/data store']
+    );
+    const {disks, failed} = diskUsage(table, (p) => {
+      if (p !== '/') throw new Error();
+      return {blocks: 100, bfree: 40, bavail: 30, bsize: 1024, files: 1000, ffree: 100};
+    });
+    assert.equal(disks[0].reserved, 10240);
+    assert.equal(disks[0].inodes_percent, 90);
+    assert.deepEqual(failed, ['/data store']);
+  });
+  test('missing metrics are null with warnings', (t) => {
+    const data = new Collector(temporary(t)).sample();
+    assert.equal(data.cpu, null);
+    assert.equal(data.memory, null);
+    assert.equal(data.uptime_seconds, null);
+    assert.ok(data.warnings.includes('cpu'));
+  });
+  test('SSH removes global ports but preserves Match blocks', () => {
+    assert.equal(
+      clearPorts('Port 22\n# x\nMatch User deploy\n Port 2222\n'),
+      '# x\nMatch User deploy\n Port 2222\n'
+    );
+    assert.deepEqual(parseSSH('port 22\nport 2222\nallowusers admin deploy').port, ['22', '2222']);
+  });
+  test('Caddy validates upstreams and rejects config injection', () => {
+    for (const v of [
+      'https://user:pass@x:443',
+      'http://x/path',
+      'http://x/',
+      'http://x:0',
+      'http://x:65536',
+      'http://x\nrespond 200',
+      'ftp://x'
+    ])
+      assert.equal(validUpstream(v), false, v);
+    for (const v of [
+      '',
+      'http://container:3000',
+      'http://host.docker.internal:8080',
+      'http://[::1]:8080'
+    ])
+      assert.ok(validUpstream(v), v);
+    assert.ok(validDomain('server.example.com'));
+    assert.equal(validDomain('x\n{}'), false);
+    assert.throws(() => renderCaddy('x {}', ''));
+    assert.match(renderCaddy('server.example.com', ''), /Caddy ready/);
+  });
+  test('Caddy preflight rejects other container on ports', () => {
+    const run = (cmd, args) =>
+      cmd === 'docker' && args[0] === 'ps'
+        ? {ok: true, text: 'id'}
+        : cmd === 'docker'
+          ? {
+              ok: true,
+              text: JSON.stringify([
+                {Config: {Labels: {}}, NetworkSettings: {Ports: {'8080/tcp': [{HostPort: '443'}]}}}
+              ])
+            }
+          : {ok: true, text: ''};
+    assert.throws(() => preflight('server.example.com', run), /занят/);
+  });
+  test('firewall audit recognises mapped loopback and unexpected Docker ports', () => {
+    assert.ok(loopback('[::ffff:127.0.0.1]'));
+    assert.equal(loopback('0.0.0.0'), false);
+    const run = (cmd, args) =>
+      cmd === 'docker' && args[0] === 'ps'
+        ? {ok: true, text: 'a'}
+        : cmd === 'docker'
+          ? {
+              ok: true,
+              text: JSON.stringify([
+                {
+                  Name: '/app',
+                  NetworkSettings: {Ports: {'3000/tcp': [{HostIp: '0.0.0.0', HostPort: '3000'}]}},
+                  HostConfig: {LogConfig: {Type: 'local'}}
+                }
+              ])
+            }
+          : cmd === 'ufw'
+            ? {ok: true, text: 'Status: active'}
+            : {ok: true, text: ''};
+    assert.ok(
+      portFindings(run, () => '2222', true).some(
+        (r) => r.key.includes('docker.port.app.3000') && r.level === 'warning'
+      )
+    );
+  });
+  test('pre-reboot notice crosses midnight and week correctly', () => {
+    assert.equal(warnSchedule('00:02', 0), '57 23 * * 6');
+    assert.equal(warnSchedule('03:00', 2), '55 2 * * 2');
+  });
+  test('SSH events contain only user, IP and method', () => {
+    const e = sshEvent('Accepted publickey for deploy from 192.0.2.1 port 4567 ssh2: key-extra');
+    assert.equal(e.type, 'security.ssh.login_succeeded');
+    assert.equal(e.details, 'user=deploy ip=192.0.2.1 method=publickey');
+    assert.equal(sshEvent('some other log'), null);
+  });
+  test('file lock rejects overlapping setup and releases after error', async (t) => {
+    const dir = temporary(t),
+      file = dir + '/lock';
+    await withLock(file, async () => {
+      await assert.rejects(withLock(file, async () => {}, true));
+    });
+    await assert.rejects(
+      withLock(file, async () => {
+        throw new Error('expected');
+      })
+    );
+    await withLock(file, async () => {});
+  });
+  test('atomic configuration is private and leaves no partial file', (t) => {
+    const dir = temporary(t),
+      file = dir + '/config';
+    atomic(file, 'first');
+    atomic(file, 'second');
+    assert.equal(fs.readFileSync(file, 'utf8'), 'second');
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.deepEqual(fs.readdirSync(dir), ['config']);
+  });
+
+  test('public atomic files remain readable with restrictive service umask', (t) => {
+    const dir = temporary(t),
+      old = process.umask(0o077);
+    try {
+      atomic(dir + '/feed.json', '{}', 0o644);
+      assert.equal(fs.statSync(dir + '/feed.json').mode & 0o777, 0o644);
+    } finally {
+      process.umask(old);
+    }
+  });
+  test('runtime manifest selects exact architecture and refuses foreign major', async () => {
+    const {runtimeRelease} = await import('./host/runtime.mjs');
+    const text =
+      'a'.repeat(64) +
+      '  node-v24.10.0-linux-x64.tar.xz\n' +
+      'b'.repeat(64) +
+      '  node-v24.10.0-linux-arm64.tar.xz';
+    assert.equal(runtimeRelease(text, 'arm64').hash, 'b'.repeat(64));
+    assert.equal(runtimeRelease(text, 'x64').version, 'v24.10.0');
+    assert.throws(() => runtimeRelease(text.replaceAll('v24.', 'v26.')));
+    assert.throws(() => runtimeRelease(text, 'ia32'));
+  });
+}
+
+// tests/maintenance
+{
+  const {job, installSchedules, warnSchedule} = await import('./host/maintenance.mjs');
+  function fixture(t) {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'maintenance-'));
+    t.after(() => fs.rmSync(base, {recursive: true, force: true}));
+    const calls = [],
+      events = [];
+    const bootFile = base + '/boot',
+      requiredFile = base + '/required';
+    fs.writeFileSync(bootFile, 'boot-a');
+    fs.writeFileSync(base + '/installed.flag', 'yes');
+    let released = 0;
+    const options = {
+      base,
+      bootFile,
+      requiredFile,
+      acquire: async () => async () => {
+        released++;
+      },
+      run: async (...args) => calls.push(args),
+      emit: (...args) => events.push(args),
+      inspect: () => ({ok: true, text: 'inactive'}),
+      check: () => 0
+    };
+    return {base, calls, events, options, released: () => released};
+  }
+  test('maintenance skips every task while setup holds its lock', async (t) => {
+    const f = fixture(t);
+    f.options.acquire = async () => {
+      throw Object.assign(new Error('busy'), {code: 'ELOCKED'});
+    };
+    for (const name of ['health', 'pre-reboot', 'reboot', 'cleanup', 'security-reboot'])
+      await job(name, f.options);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.events.length, 0);
+    f.options.acquire = async () => {
+      throw new Error('broken flock');
+    };
+    await assert.rejects(job('reboot', f.options), /broken flock/);
+  });
+  test('maintenance never reboots or checks an incomplete setup', async (t) => {
+    const f = fixture(t);
+    fs.unlinkSync(f.base + '/installed.flag');
+    f.options.check = () => {
+      throw new Error('must not run');
+    };
+    await job('health', f.options);
+    await job('reboot', f.options);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.released(), 2);
+  });
+  test('security restart requires the OS reboot marker and avoids duplicate shutdown', async (t) => {
+    const f = fixture(t);
+    await job('pre-security-reboot', f.options);
+    await job('security-reboot', f.options);
+    assert.equal(f.events.length, 0);
+    fs.writeFileSync(f.options.requiredFile, 'yes');
+    await job('pre-security-reboot', f.options);
+    await job('security-reboot', f.options);
+    await job('reboot', f.options);
+    assert.equal(f.events[0][0], 'system.reboot.scheduled');
+    assert.equal(f.calls.filter(([cmd]) => cmd === '/sbin/shutdown').length, 1);
+    assert.equal(fs.readFileSync(f.base + '/cleanup-after-reboot', 'utf8').trim(), 'boot-a');
+  });
+  test('cleanup waits for a new boot and retries after an apt failure', async (t) => {
+    const f = fixture(t);
+    await job('reboot', f.options);
+    await job('cleanup', f.options);
+    assert.equal(f.calls.length, 1);
+    fs.writeFileSync(f.options.bootFile, 'boot-b');
+    f.options.run = async () => {
+      throw new Error('apt busy');
+    };
+    await assert.rejects(job('cleanup', f.options));
+    assert.ok(fs.existsSync(f.base + '/cleanup-after-reboot'));
+    f.options.run = async (...args) => f.calls.push(args);
+    await job('cleanup', f.options);
+    assert.equal(fs.existsSync(f.base + '/cleanup-after-reboot'), false);
+    assert.equal(f.calls.filter(([cmd]) => cmd === 'apt-get').length, 2);
+    assert.ok(f.events.some(([type]) => type === 'system.cleanup.completed'));
+  });
+  test('failed shutdown restores a pending cleanup from an earlier boot', async (t) => {
+    const f = fixture(t);
+    fs.writeFileSync(f.base + '/cleanup-after-reboot', 'older-boot');
+    f.options.run = async () => {
+      throw new Error('shutdown failed');
+    };
+    await assert.rejects(job('reboot', f.options));
+    assert.equal(fs.readFileSync(f.base + '/cleanup-after-reboot', 'utf8').trim(), 'older-boot');
+  });
+  test('schedules disable unguarded APT restart and use guarded daily jobs', () => {
+    const files = new Map();
+    const io = {write: (file, value) => files.set(file, value), remove() {}};
+    assert.throws(() => installSchedules('25:00', 1, '05:00', io));
+    assert.equal(files.size, 0);
+    installSchedules('03:00', 0, '06:00', io);
+    assert.match(files.get('/etc/apt/apt.conf.d/99-nexus404-reboot'), /Automatic-Reboot "false"/);
+    assert.match(
+      files.get('/etc/cron.d/nexus404_security_reboot'),
+      /55 1 \* \* \* root .*pre-security-reboot/
+    );
+    assert.match(
+      files.get('/etc/cron.d/nexus404_security_reboot'),
+      /0 2 \* \* \* root .* security-reboot/
+    );
+    assert.equal(warnSchedule('00:02', '*'), '57 23 * * *');
+  });
+
+  test('restart waits while automatic updates run and rejects unknown service state', async (t) => {
+    const f = fixture(t);
+    f.options.inspect = () => ({ok: true, text: 'activating'});
+    await job('reboot', f.options);
+    assert.equal(f.calls.length, 0);
+    assert.equal(fs.existsSync(f.base + '/cleanup-after-reboot'), false);
+    f.options.inspect = () => ({ok: false, text: ''});
+    await assert.rejects(job('reboot', f.options), /проверить службу/);
+  });
+
+  test('SSH jail may become ready after systemctl has returned', async () => {
+    const {waitForSSHJail} = await import('./host/maintenance.mjs');
+    let now = 0,
+      attempts = 0;
+    const ui = {task: async (_label, fn) => fn()};
+    await waitForSSHJail(ui, {
+      now: () => now,
+      pause: async (ms) => {
+        now += ms;
+      },
+      inspect: (command, args) => {
+        assert.equal(command, 'fail2ban-client');
+        assert.deepEqual(args, ['status', 'sshd']);
+        return ++attempts === 3
+          ? {ok: true, text: 'Status for the jail: sshd'}
+          : {ok: false, error: 'Socket not ready'};
+      }
+    });
+    assert.equal(attempts, 3);
+    assert.equal(now, 2000);
+  });
+  test('SSH jail readiness has a deadline and logs service diagnostics on failure', async (t) => {
+    const {waitForSSHJail} = await import('./host/maintenance.mjs');
+    const f = fixture(t);
+    let now = 0,
+      attempts = 0;
+    const log = f.base + '/setup.log',
+      ui = {log, task: async (_label, fn) => fn()};
+    await assert.rejects(
+      waitForSSHJail(ui, {
+        now: () => now,
+        pause: async (ms) => {
+          now += ms;
+        },
+        inspect: (command) => {
+          if (command === 'journalctl')
+            return {ok: true, text: 'Jail startup failed: backend error'};
+          attempts++;
+          return {ok: false, error: 'Jail sshd does not exist'};
+        }
+      }),
+      /SSH jail не готов за 30 с.*Jail sshd does not exist/
+    );
+    assert.equal(now, 30000);
+    assert.ok(attempts <= 31);
+    assert.match(fs.readFileSync(log, 'utf8'), /backend error/);
+  });
+  test('SSH jail readiness does not hide a cancelled check', async () => {
+    const {waitForSSHJail} = await import('./host/maintenance.mjs');
+    const interrupted = Object.assign(new Error('interrupted'), {code: 'ECANCELLED'});
+    await assert.rejects(
+      waitForSSHJail(
+        {task: async (_label, fn) => fn()},
+        {
+          inspect: () => {
+            throw interrupted;
+          },
+          pause: async () => {
+            assert.fail('must not retry');
+          }
+        }
+      ),
+      {code: 'ECANCELLED'}
+    );
+  });
+}
+
+// tests/menu
+{
+  const {installModules, modulesMenu, modules} = await import('./menu.mjs');
+  const ui = () => ({
+    lines: [],
+    section(text) {
+      this.lines.push(text);
+    },
+    line(text = '') {
+      this.lines.push(text);
+    }
+  });
+  test('install all modules runs sequentially with one maintenance pass', async () => {
+    const events = [],
+      screen = ui();
+    let running = false;
+    await installModules(screen, 'all', {
+      install: async (u, id, maintenance) => {
+        assert.equal(running, false);
+        running = true;
+        assert.equal(maintenance, false);
+        await Promise.resolve();
+        events.push(id);
+        running = false;
+      },
+      maintenance: async () => events.push('maintenance')
+    });
+    assert.deepEqual(events, ['pulse', 'signal', 'chat', 'balance', 'maintenance']);
+  });
+  test('individual selection runs only the requested module; invalid ID runs nothing', async () => {
+    const calls = [],
+      deps = {
+        install: async (u, id) => calls.push(id),
+        maintenance: async () => calls.push('maintenance')
+      };
+    await installModules(ui(), 'chat', deps);
+    assert.deepEqual(calls, ['chat', 'maintenance']);
+    await assert.rejects(installModules(ui(), 'invalid', deps), /Неизвестный/);
+    assert.deepEqual(calls, ['chat', 'maintenance']);
+  });
+  test('failure stops the batch and completes maintenance for already installed modules', async () => {
+    const screen = ui(),
+      events = [];
+    await assert.rejects(
+      installModules(screen, 'all', {
+        install: async (u, id) => {
+          events.push(id);
+          if (id === 'signal') throw new Error('service failed');
+        },
+        maintenance: async () => events.push('maintenance')
+      }),
+      /service failed/
+    );
+    assert.deepEqual(events, ['pulse', 'signal', 'maintenance']);
+    assert.ok(screen.lines.some((t) => t.includes('Готово: Пульс')));
+    assert.equal(
+      screen.lines.some((t) => t.includes('Все модули установлены')),
+      false
+    );
+  });
+  test('missing prerequisites or failure in the first module do not run maintenance', async () => {
+    let maintenance = false;
+    await assert.rejects(
+      installModules(ui(), 'all', {
+        install: async () => {
+          throw new Error('Сначала установи хаб через пункт 5');
+        },
+        maintenance: async () => {
+          maintenance = true;
+        }
+      }),
+      /Сначала установи хаб/
+    );
+    assert.equal(maintenance, false);
+  });
+  test('submenu handles invalid input, locks only installation and returns without recursion', async () => {
+    const screen = ui(),
+      choices = ['bad', '1', '', '0'],
+      calls = [];
+    let locked = false;
+    screen.prompt = async () => {
+      assert.equal(locked, false);
+      assert.ok(choices.length);
+      return choices.shift();
+    };
+    await modulesMenu(screen, {
+      lock: async (fn) => {
+        calls.push('lock');
+        locked = true;
+        try {
+          await fn();
+        } finally {
+          locked = false;
+        }
+      },
+      install: async (u, id) => {
+        assert.equal(locked, true);
+        calls.push(id);
+      },
+      report: () => assert.fail('Unexpected error')
+    });
+    assert.deepEqual(calls, ['lock', 'all']);
+    assert.equal(choices.length, 0);
+  });
+  test('every individual submenu entry maps to its module; errors return to submenu', async () => {
+    const screen = ui(),
+      choices = modules.flatMap((m, i) => [String(i + 2), '']).concat('0'),
+      calls = [],
+      reports = [];
+    screen.prompt = async () => {
+      assert.ok(choices.length);
+      return choices.shift();
+    };
+    await modulesMenu(screen, {
+      lock: async (fn) => fn(),
+      install: async (u, id) => {
+        calls.push(id);
+        if (id === 'signal') throw new Error('test failure');
+      },
+      report: (m) => reports.push(m)
+    });
+    assert.deepEqual(
+      calls,
+      modules.map((m) => m.id)
+    );
+    assert.deepEqual(reports, ['test failure']);
+  });
+}
+
+// tests/module-files
+{
+  const {moduleFiles} = await import('./host/platform.mjs');
+
+  function fixture(t, installed = true) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-module-'));
+    t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+    const hub = root + '/hub',
+      state = root + '/state',
+      source = root + '/02-hub/modules/balance',
+      target = hub + '/modules/balance',
+      marker = state + '/balance-installed';
+    fs.mkdirSync(source, {recursive: true});
+    fs.mkdirSync(state);
+    const manifest = {apiVersion: 1, title: 'Баланс', description: '', enabled: true};
+    fs.writeFileSync(source + '/manifest.json', JSON.stringify(manifest));
+    fs.writeFileSync(source + '/index.mjs', 'new code');
+    fs.writeFileSync(source + '/balance.js', 'new UI');
+    if (installed) {
+      fs.mkdirSync(target, {recursive: true});
+      fs.writeFileSync(target + '/index.mjs', 'old code');
+      fs.writeFileSync(target + '/obsolete.js', 'old UI');
+      fs.writeFileSync(target + '/manifest.json', JSON.stringify({...manifest, enabled: false}));
+      fs.writeFileSync(marker, 'old marker');
+    }
+    return {root, hub, state, source, target, marker};
+  }
+  function unchanged(f) {
+    assert.equal(fs.readFileSync(f.target + '/index.mjs', 'utf8'), 'old code');
+    assert.equal(fs.readFileSync(f.target + '/obsolete.js', 'utf8'), 'old UI');
+    assert.equal(fs.existsSync(f.target + '/balance.js'), false);
+    assert.deepEqual(fs.readdirSync(f.hub + '/modules'), ['balance']);
+  }
+  test('module update replaces complete code and preserves disabled manifest and data', (t) => {
+    const f = fixture(t);
+    fs.mkdirSync(f.hub + '/data');
+    fs.writeFileSync(f.hub + '/data/ledger.sqlite', 'private data');
+    moduleFiles('balance', f);
+    assert.equal(fs.readFileSync(f.target + '/index.mjs', 'utf8'), 'new code');
+    assert.equal(fs.existsSync(f.target + '/obsolete.js'), false);
+    assert.equal(JSON.parse(fs.readFileSync(f.target + '/manifest.json')).enabled, false);
+    assert.equal(fs.readFileSync(f.hub + '/data/ledger.sqlite', 'utf8'), 'private data');
+    assert.equal(fs.statSync(f.target + '/index.mjs').mode & 0o777, 0o644);
+    assert.deepEqual(fs.readdirSync(f.hub + '/modules'), ['balance']);
+  });
+  test('copy failure leaves installed code and marker unchanged', (t) => {
+    const f = fixture(t);
+    let copies = 0;
+    assert.throws(
+      () =>
+        moduleFiles('balance', {
+          ...f,
+          copy: (from, to) => {
+            if (++copies === 2) throw new Error('disk full');
+            fs.copyFileSync(from, to);
+          }
+        }),
+      /disk full/
+    );
+    unchanged(f);
+    assert.equal(fs.readFileSync(f.marker, 'utf8'), 'old marker');
+  });
+  test('failed first copy leaves no installed marker or partial module', (t) => {
+    const f = fixture(t, false);
+    assert.throws(() =>
+      moduleFiles('balance', {
+        ...f,
+        copy: () => {
+          throw new Error('disk full');
+        }
+      })
+    );
+    assert.equal(fs.existsSync(f.marker), false);
+    assert.deepEqual(fs.readdirSync(f.hub + '/modules'), []);
+  });
+  test('marker write failure restores previous module or removes a new installation', (t) => {
+    for (const installed of [true, false]) {
+      const f = fixture(t, installed);
+      if (installed) fs.rmSync(f.marker);
+      fs.mkdirSync(f.marker);
+      assert.throws(() => moduleFiles('balance', f));
+      if (installed) unchanged(f);
+      else assert.deepEqual(fs.readdirSync(f.hub + '/modules'), []);
+    }
+  });
+  test('module update rejects unknown IDs, unmanaged directories and source links', (t) => {
+    const f = fixture(t);
+    assert.throws(() => moduleFiles('../chat', f), /Неизвестный/);
+    fs.symlinkSync(f.source + '/index.mjs', f.source + '/link.mjs');
+    assert.throws(() => moduleFiles('balance', f), /Ожидался файл/);
+    unchanged(f);
+    fs.rmSync(f.marker);
+    assert.throws(() => moduleFiles('balance', f), /Каталог модуля занят/);
+    unchanged(f);
+  });
+}
+
+// tests/runtime
+{
+  const {pathToFileURL} = await import('node:url');
+  const {exec, apt, installHost, saveJSON} = await import('./host/common.mjs');
+  const {updateHubOrigin} = await import('./host/platform.mjs');
+  const temporary = (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-'));
+    t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+    return dir;
+  };
+  test('commands propagate failures and remove cancellation handlers', async () => {
+    const listeners = process.listenerCount('SIGINT');
+    await assert.rejects(exec('nexus-command-that-does-not-exist'), {code: 'ENOENT'});
+    await assert.rejects(exec(process.execPath, ['-e', 'process.exit(7)']), /код 7/);
+    await assert.rejects(
+      exec(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {timeout: 100}),
+      {
+        code: 'ECANCELLED'
+      }
+    );
+    assert.equal(process.listenerCount('SIGINT'), listeners);
+  });
+  test('interrupted apt is not retried', async () => {
+    let calls = 0;
+    await assert.rejects(
+      apt(
+        {
+          run: async () => {
+            calls++;
+            throw Object.assign(new Error('interrupted'), {code: 'ECANCELLED'});
+          }
+        },
+        'packages',
+        'update'
+      ),
+      {code: 'ECANCELLED'}
+    );
+    assert.equal(calls, 1);
+  });
+  test('installed runtime imports its shared dependencies with restrictive umask', async (t) => {
+    const dir = temporary(t),
+      old = process.umask(0o077);
+    try {
+      installHost(dir);
+    } finally {
+      process.umask(old);
+    }
+    for (const name of ['signal', 'maintenance', 'metrics', 'platform'])
+      await import(pathToFileURL(dir + '/host/' + name + '.mjs'));
+    assert.equal(fs.statSync(dir + '/02-hub/src/webpush.mjs').mode & 0o777, 0o644);
+    assert.equal(fs.statSync(dir + '/host').mode & 0o777, 0o755);
+  });
+  test('Caddy domain change keeps credentials and refreshes hub origin once', async (t) => {
+    const dir = temporary(t),
+      file = dir + '/config/auth.json',
+      state = dir + '/state';
+    const auth = {
+      username: 'admin',
+      salt: 'a'.repeat(32),
+      hash: 'b'.repeat(64),
+      origin: 'https://old.example.com'
+    };
+    saveJSON(file, auth);
+    let restarts = 0;
+    const options = {
+      hub: dir,
+      state,
+      write: saveJSON,
+      restart: async () => {
+        restarts++;
+      }
+    };
+    await updateHubOrigin({}, 'new.example.com', options);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)), {
+      ...auth,
+      origin: 'https://new.example.com'
+    });
+    assert.equal(fs.readFileSync(state + '/domain', 'utf8').trim(), 'new.example.com');
+    await updateHubOrigin({}, 'new.example.com', options);
+    assert.equal(restarts, 1);
+    await assert.rejects(updateHubOrigin({}, 'bad domain', options));
+    assert.equal(restarts, 1);
+  });
+
+  test('failed hub restart remains retryable after an origin change', async (t) => {
+    const dir = temporary(t),
+      state = dir + '/state';
+    saveJSON(dir + '/config/auth.json', {origin: 'https://old.example.com'});
+    const options = {
+      hub: dir,
+      state,
+      write: saveJSON,
+      restart: async () => {
+        throw new Error('not ready');
+      }
+    };
+    await assert.rejects(updateHubOrigin({}, 'new.example.com', options), /not ready/);
+    assert.equal(fs.existsSync(state + '/domain'), false);
+    let restarted = false;
+    options.restart = async () => {
+      restarted = true;
+    };
+    await updateHubOrigin({}, 'new.example.com', options);
+    assert.ok(restarted);
+    assert.equal(fs.readFileSync(state + '/domain', 'utf8').trim(), 'new.example.com');
+  });
+}
+
+// tests/signal
+{
+  const {Rules, defaultSettings} = await import('./host/signal-rules.mjs');
+  const {Signal, readEvents, readSettings} = await import('./host/signal.mjs');
+  const {vapidKeys, subscriptionId} = await import('./host/webpush.mjs');
+  const {saveJSON} = await import('./host/common.mjs');
+  const sub = {
+    endpoint: 'https://fcm.googleapis.com/wp/test',
+    keys: {
+      p256dh:
+        'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4',
+      auth: 'BTBZMqHH6r4Tts7J_aSIgg'
+    }
+  };
+  const temp = (t) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'signal-'));
+    t.after(() => fs.rmSync(d, {recursive: true, force: true}));
+    return d;
+  };
+  test('sustained CPU warning waits five minutes and recovers once', () => {
+    let now = 0;
+    const state = {},
+      r = new Rules(state, () => now),
+      data = {generated_at: 0, cpu: {percent: 95}, disks: [], warnings: []};
+    r.metrics(data);
+    assert.equal(r.take().length, 0);
+    now = 299999;
+    data.generated_at = now;
+    r.metrics(data);
+    assert.equal(r.take().length, 0);
+    now = 300000;
+    data.generated_at = now;
+    r.metrics(data);
+    assert.equal(r.take()[0].key, 'resources.cpu');
+    now += 5000;
+    data.generated_at = now;
+    r.metrics(data);
+    assert.equal(r.take().length, 0);
+    data.cpu.percent = 20;
+    r.metrics(data);
+    now += 60000;
+    data.generated_at = now;
+    r.metrics(data);
+    assert.equal(r.take()[0].category, 'recovery');
+    assert.equal(r.take().length, 0);
+  });
+  test('disk critical is immediate and restart preserves deduplication', () => {
+    let now = 100000;
+    const state = {},
+      d = {
+        generated_at: now,
+        cpu: {percent: 10},
+        disks: [{mount: '/', percent: 96, inodes_percent: 10}],
+        warnings: []
+      };
+    const r = new Rules(state, () => now);
+    r.metrics(d);
+    assert.equal(r.take()[0].level, 'critical');
+    const restarted = new Rules(JSON.parse(JSON.stringify(state)), () => now);
+    restarted.metrics(d);
+    assert.equal(restarted.take().length, 0);
+  });
+  test('login failures and bans are grouped, cleanup recovers', () => {
+    let now = 10000;
+    const r = new Rules({}, () => now);
+    for (let i = 0; i < 9; i++)
+      r.event({type: 'security.hub.login_failed', details: 'ip=192.0.2.1'});
+    assert.equal(r.take().length, 0);
+    r.event({type: 'security.hub.login_failed'});
+    assert.equal(r.take().length, 1);
+    for (let i = 0; i < 3; i++) r.event({type: 'security.fail2ban.ban'});
+    assert.equal(r.take().length, 1);
+    now += 600001;
+    r.flushGroups();
+    assert.equal(r.take().length, 1);
+    r.event({type: 'system.cleanup.failed', details: 'apt failed'});
+    assert.equal(r.take()[0].level, 'critical');
+    r.event({type: 'system.cleanup.completed'});
+    assert.equal(r.take()[0].category, 'recovery');
+  });
+  test('daily summary once per local day', () => {
+    let now = new Date(2026, 8, 22, 10, 0).getTime();
+    const state = {},
+      r = new Rules(state, () => now);
+    r.daily('09:00', true, 'summary');
+    assert.equal(r.take().length, 1);
+    new Rules(state, () => now).daily('09:00', true, 'summary');
+    assert.equal(r.take().length, 0);
+    now += 86400000;
+    r.daily('09:00', true, 'summary');
+    assert.equal(r.take().length, 1);
+  });
+  test('journal cursor follows append and rotation without replay', (t) => {
+    const dir = temp(t),
+      file = dir + '/events',
+      cursor = {};
+    const event = {type: 'system.reboot.completed', time: new Date().toISOString()};
+    fs.writeFileSync(file, JSON.stringify(event) + '\n');
+    assert.equal(readEvents(file, cursor).length, 1);
+    assert.equal(readEvents(file, cursor).length, 0);
+    fs.renameSync(file, file + '.old');
+    fs.writeFileSync(file, JSON.stringify(event) + '\n');
+    assert.equal(readEvents(file, cursor).length, 1);
+  });
+  function fixture(t, sender) {
+    const directory = temp(t);
+    fs.mkdirSync(directory + '/public');
+    saveJSON(directory + '/keys.json', vapidKeys());
+    const device = {
+      id: subscriptionId(sub),
+      name: 'Phone',
+      subscription: sub,
+      updatedAt: 1,
+      testAt: 0
+    };
+    const settings = {
+      ...defaultSettings,
+      categories: {...defaultSettings.categories},
+      devices: [device]
+    };
+    const signal = new Signal({directory, sender, settings: () => settings, now: () => 1000000});
+    return {signal, settings, device, directory};
+  }
+  test('queue survives restart, retries and records acceptance rather than delivery', async (t) => {
+    let calls = 0;
+    const f = fixture(t, async () => {
+      calls++;
+      return calls === 1 ? {ok: false, status: 503, retryAfter: 60} : {ok: true};
+    });
+    f.signal.enqueue(
+      {
+        id: 'event',
+        time: 1000000,
+        title: 'Test',
+        body: 'detail',
+        category: 'services',
+        level: 'warning'
+      },
+      f.settings
+    );
+    f.signal.save();
+    await f.signal.drain();
+    assert.equal(f.signal.state.queue.length, 1);
+    assert.equal(f.signal.state.queue[0].attempts, 1);
+    const restarted = new Signal({
+      directory: f.directory,
+      settings: () => f.settings,
+      sender: async () => ({ok: true}),
+      now: () => 1200000
+    });
+    await restarted.drain();
+    assert.equal(restarted.state.queue.length, 0);
+    assert.equal(restarted.state.devices[f.device.id].acceptedAt, 1200000);
+  });
+  test('expired devices stop retries and revoked devices lose queued events', async (t) => {
+    const f = fixture(t, async () => ({ok: false, status: 410, gone: true}));
+    f.signal.enqueue(
+      {id: 'event', time: 1000000, title: 'Test', body: 'detail', category: 'services'},
+      f.settings
+    );
+    await f.signal.drain();
+    assert.equal(f.signal.state.queue.length, 0);
+    assert.equal(f.signal.state.devices[f.device.id].expiredAt, 1);
+    f.signal.state.queue.push({
+      id: f.device.id,
+      event: {time: 1000000, category: 'services'},
+      next: 1000000
+    });
+    f.settings.devices = [];
+    await f.signal.drain();
+    assert.equal(f.signal.state.queue.length, 0);
+  });
+  test('disabled category stays in inbox but is not pushed', (t) => {
+    const f = fixture(t, async () => ({ok: true}));
+    f.settings.categories.security = false;
+    f.signal.enqueue({id: 'e', time: 1000000, category: 'security'}, f.settings);
+    assert.equal(f.signal.state.events.length, 1);
+    assert.equal(f.signal.state.queue.length, 0);
+  });
+  test('credential change invalidates old device subscriptions', (t) => {
+    const dir = temp(t);
+    saveJSON(dir + '/auth', {username: 'admin', salt: 'new', hash: 'new'});
+    saveJSON(dir + '/settings', {identity: 'old', devices: [{subscription: sub}]});
+    assert.equal(readSettings(dir + '/settings', dir + '/auth').devices.length, 0);
+  });
+
+  test('closed port recovers only after a complete successful inspection', (t) => {
+    const f = fixture(t, async () => ({ok: true}));
+    let now = 1000000;
+    f.signal.rules.now = () => now;
+    const finding = {key: 'port.tcp.0.0.0.0.9000', title: 'Port 9000', level: 'warning'};
+    f.signal.securityFindings([finding]);
+    now += 60000;
+    f.signal.securityFindings([finding]);
+    assert.equal(f.signal.rules.take()[0].key, finding.key);
+    now += 60000;
+    f.signal.securityFindings([{key: 'ports.read.4', level: 'warning', title: 'Cannot inspect'}]);
+    assert.ok(f.signal.state.conditions[finding.key]);
+    f.signal.securityFindings([]);
+    now += 60000;
+    f.signal.securityFindings([]);
+    assert.ok(f.signal.rules.take().some((e) => e.key === finding.key + '.recovered'));
+    assert.equal(f.signal.state.conditions[finding.key], undefined);
+  });
+  test('expired queued event is never sent after downtime', async (t) => {
+    let sent = 0;
+    const f = fixture(t, async () => {
+      sent++;
+      return {ok: true};
+    });
+    f.signal.state.queue.push({
+      id: f.device.id,
+      event: {time: -86400000, category: 'services'},
+      next: 0
+    });
+    await f.signal.drain();
+    assert.equal(sent, 0);
+    assert.equal(f.signal.state.queue.length, 0);
+  });
+
+  test('brief normal readings reset an unannounced sustained warning', () => {
+    let now = 0;
+    const r = new Rules({}, () => now);
+    const check = (active) => r.condition('cpu', active, {title: 'CPU', delay: 300000});
+    check(true);
+    now = 295000;
+    check(false);
+    now = 300000;
+    check(true);
+    now = 305000;
+    check(true);
+    assert.deepEqual(r.take(), []);
+    now = 600000;
+    check(true);
+    assert.equal(r.take().length, 1);
+  });
+  test('missing samples cannot complete a sustained warning', () => {
+    let now = 0;
+    const r = new Rules({}, () => now);
+    r.condition('cpu', true, {title: 'CPU', delay: 300000});
+    now = 299000;
+    r.condition('cpu', null, {title: 'CPU'});
+    now = 301000;
+    r.condition('cpu', true, {title: 'CPU', delay: 300000});
+    assert.deepEqual(r.take(), []);
+  });
+  test('healthcheck recovery is emitted on the first successful daily report', () => {
+    const r = new Rules({}, () => 100000);
+    r.event({type: 'system.healthcheck.completed', details: 'status=warning'});
+    r.take();
+    r.event({type: 'system.healthcheck.completed', details: 'status=ok'});
+    assert.equal(r.take()[0].category, 'recovery');
+  });
+  test('ban summary survives a new event at the interval boundary', () => {
+    let now = 10000;
+    const r = new Rules({}, () => now);
+    r.event({type: 'security.fail2ban.ban'});
+    r.event({type: 'security.fail2ban.ban'});
+    r.take();
+    now += 600001;
+    r.event({type: 'security.fail2ban.ban'});
+    const events = r.take();
+    assert.equal(events.length, 2);
+    assert.match(events[0].body, /Дополнительно заблокировано: 1/);
+  });
+  test('push delivery cannot make a failed monitor appear fresh', async (t) => {
+    const f = fixture(t, async () => ({ok: true}));
+    f.signal.state.checkedAt = 900000;
+    f.signal.enqueue(
+      {id: 'e', time: 1000000, title: 'Test', body: 'test', category: 'services'},
+      f.settings
+    );
+    await f.signal.drain();
+    const feed = JSON.parse(fs.readFileSync(f.directory + '/public/feed.json'));
+    assert.equal(feed.updatedAt, 900000);
+  });
+  test('failed system checks still deliver a diagnostic and retain stale status', async (t) => {
+    const f = fixture(t, async () => ({ok: true}));
+    f.signal.checks = async () => {
+      throw new Error('probe failed');
+    };
+    await f.signal.tick();
+    assert.ok(f.signal.state.events.some((e) => e.key === 'monitor.checks'));
+    assert.equal(f.signal.state.checkedAt, undefined);
+  });
+  test('a device receives one ordered request at a time', async (t) => {
+    let calls = 0;
+    const f = fixture(t, async () => {
+      calls++;
+      return {ok: true};
+    });
+    for (let i = 0; i < 2; i++)
+      f.signal.enqueue(
+        {id: 'e' + i, time: 1000000, title: 'Test', body: 'test', category: 'services'},
+        f.settings
+      );
+    await f.signal.drain();
+    assert.equal(calls, 1);
+    assert.equal(f.signal.state.queue.length, 1);
+    await f.signal.drain();
+    assert.equal(calls, 2);
+  });
+  test('oversized event text is bounded before persistent queuing', (t) => {
+    const f = fixture(t, async () => ({ok: true}));
+    f.signal.enqueue(
+      {
+        id: 'e',
+        key: 'x'.repeat(5000),
+        time: 1000000,
+        title: 'x'.repeat(5000),
+        body: 'x'.repeat(50000),
+        category: 'services'
+      },
+      f.settings
+    );
+    assert.equal(f.signal.state.events[0].body.length, 500);
+    assert.equal(f.signal.state.queue[0].event.title.length, 160);
+  });
+
+  test('later events cannot overtake an earlier retry for the same device', async (t) => {
+    const sent = [];
+    let now = 1000000;
+    const f = fixture(t, async (_device, payload) => {
+      sent.push(payload.id);
+      return sent.length === 1 ? {ok: false, status: 503, retryAfter: 60} : {ok: true};
+    });
+    f.signal.now = () => now;
+    for (const id of ['first', 'second'])
+      f.signal.enqueue({id, time: now, title: id, body: '', category: 'services'}, f.settings);
+    await f.signal.drain();
+    await f.signal.drain();
+    assert.deepEqual(sent, ['first']);
+    now += 61000;
+    await f.signal.drain();
+    await f.signal.drain();
+    assert.deepEqual(sent, ['first', 'first', 'second']);
+  });
+  test('missing disk samples break a pending sustained warning', () => {
+    for (const missing of [[], [{mount: '/', percent: null}]]) {
+      let now = 1000000;
+      const state = {},
+        rules = new Rules(state, () => now);
+      const sample = (disks) => rules.metrics({generated_at: now, disks, warnings: []});
+      const full = [{mount: '/', percent: 90}];
+      sample(full);
+      now += 30000;
+      sample(missing);
+      now += 40000;
+      sample(full);
+      assert.equal(rules.take().filter((e) => e.key.startsWith('resources.percent')).length, 0);
+      now += 60000;
+      sample(full);
+      assert.equal(rules.take().filter((e) => e.key.startsWith('resources.percent')).length, 1);
+    }
+  });
+}
+
+// tests/ssh
+{
+  const {SSH, rollback} = await import('./host/ssh.mjs');
+  const {exec, read} = await import('./host/common.mjs');
+  function fixture(t) {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-guard-')),
+      sshDirectory = base + '/etc-ssh',
+      calls = [];
+    fs.mkdirSync(sshDirectory + '/sshd_config.d', {recursive: true});
+    fs.writeFileSync(sshDirectory + '/sshd_config', 'Port 22\nPermitRootLogin yes\n');
+    fs.writeFileSync(sshDirectory + '/sshd_config.d/original.conf', 'PasswordAuthentication yes\n');
+    t.after(() => fs.rmSync(base, {recursive: true, force: true}));
+    const options = {
+      base,
+      sshDirectory,
+      run: async (command, args) => {
+        calls.push([command, args]);
+        if (command === 'cp') await exec(command, args);
+      },
+      inspect: (command, args) => {
+        calls.push([command, args]);
+        return {ok: true, text: ''};
+      }
+    };
+    const ui = {line() {}, confirm: async () => true};
+    return {base, sshDirectory, calls, options, ui, ssh: new SSH(ui, options)};
+  }
+  test('SSH rejected confirmation restores original files and stops timer', async (t) => {
+    const f = fixture(t);
+    await f.ssh.begin();
+    f.ssh.managed();
+    f.ssh.set('Port', '2222');
+    f.ui.confirm = async () => false;
+    await assert.rejects(f.ssh.confirm('Confirm'), /не подтверждён/);
+    await f.ssh.abort();
+    assert.equal(read(f.sshDirectory + '/sshd_config'), 'Port 22\nPermitRootLogin yes');
+    assert.equal(fs.existsSync(f.ssh.managedFile), false);
+    assert.ok(
+      f.calls.some(([cmd, args]) => cmd === 'systemd-run' && args.includes('--on-active=10m'))
+    );
+    assert.ok(f.calls.some(([cmd, args]) => cmd === 'systemctl' && args[0] === 'stop'));
+  });
+  test('SSH timer rollback while prompt is open prevents late confirmation', async (t) => {
+    const f = fixture(t);
+    await f.ssh.begin();
+    f.ssh.managed();
+    f.ssh.set('Port', '2222');
+    const folder = f.ssh.guard.folder;
+    f.ui.confirm = async () => {
+      await rollback(folder, f.options);
+      return true;
+    };
+    await assert.rejects(f.ssh.confirm('Confirm'), /Таймер уже/);
+    await f.ssh.abort();
+    assert.equal(read(f.sshDirectory + '/sshd_config'), 'Port 22\nPermitRootLogin yes');
+    assert.equal(fs.existsSync(folder + '/committed'), false);
+  });
+  test('committed SSH change cannot be reverted by a delayed timer', async (t) => {
+    const f = fixture(t);
+    await f.ssh.begin();
+    f.ssh.managed();
+    f.ssh.set('Port', '2222');
+    const folder = f.ssh.guard.folder;
+    await f.ssh.confirm('Confirm');
+    await f.ssh.commit();
+    const count = f.calls.length;
+    await rollback(folder, f.options);
+    assert.equal(f.calls.length, count);
+    assert.equal(read(f.ssh.managedFile), 'Port 2222');
+    assert.ok(fs.existsSync(folder + '/committed'));
+  });
+  test('SSH refuses socket restart that would terminate current connections', async (t) => {
+    const f = fixture(t);
+    f.ssh.inspect = () => ({ok: true, text: 'control-group'});
+    await assert.rejects(f.ssh.reload(), /KillMode/);
+    assert.ok(f.calls.some(([cmd, args]) => cmd === 'sshd' && args[0] === '-t'));
+    assert.equal(
+      f.calls.some(
+        ([cmd, args]) => cmd === 'systemctl' && ['restart', 'disable'].includes(args[0])
+      ),
+      false
+    );
+  });
+
+  test('SSH rollback preserves ports originally supplied by socket activation', async (t) => {
+    const f = fixture(t);
+    f.ssh.previousPorts = () => [2222];
+    await f.ssh.begin();
+    f.ssh.managed();
+    f.ssh.set('Port', '3333');
+    await f.ssh.abort();
+    assert.match(read(f.ssh.managedFile), /Port 2222/);
+    assert.doesNotMatch(read(f.ssh.managedFile), /3333/);
+    assert.match(read(f.sshDirectory + '/sshd_config'), /^Include /);
+    assert.ok(
+      f.calls.some(
+        ([cmd, args]) => cmd === 'systemctl' && args[0] === 'enable' && args[1] === 'ssh.service'
+      )
+    );
+  });
+}
+
+// tests/webpush
+{
+  const {createPublicKey, verify} = await import('node:crypto');
+  const {encrypt, authorization, vapidKeys, validateSubscription, sendPush} = await import(
+    './host/webpush.mjs'
+  );
+  const client =
+    'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
+  const sub = {
+    endpoint: 'https://fcm.googleapis.com/wp/test',
+    keys: {p256dh: client, auth: 'BTBZMqHH6r4Tts7J_aSIgg'}
+  };
+  test('Web Push encryption matches RFC 8291 byte-for-byte', () => {
+    const output = encrypt('When I grow up, I want to be a watermelon', sub, {
+      salt: Buffer.from('DGv6ra1nlYgDCS1FRnbzlw', 'base64url'),
+      privateKey: Buffer.from('yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw', 'base64url')
+    });
+    assert.equal(
+      output.toString('base64url'),
+      'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN'
+    );
+  });
+  test('VAPID signature and audience validate', () => {
+    const keys = vapidKeys(),
+      header = authorization(sub.endpoint, keys, 'https://hub.example.com', 1000000),
+      token = /t=([^,]+)/.exec(header)[1],
+      [h, p, s] = token.split('.');
+    assert.equal(JSON.parse(Buffer.from(p, 'base64url')).aud, 'https://fcm.googleapis.com');
+    assert.equal(JSON.parse(Buffer.from(p, 'base64url')).exp, 4600);
+    assert.ok(
+      verify(
+        'sha256',
+        Buffer.from(h + '.' + p),
+        {key: createPublicKey(keys.privateKey), dsaEncoding: 'ieee-p1363'},
+        Buffer.from(s, 'base64url')
+      )
+    );
+  });
+  test('Push blocks SSRF, credentials, malformed keys and large payload', () => {
+    for (const endpoint of [
+      'http://127.0.0.1/',
+      'https://127.0.0.1/',
+      'https://fcm.googleapis.com.evil.test/',
+      'https://fcm.googleapis.com:444/',
+      'https://name:pass@fcm.googleapis.com/'
+    ])
+      assert.throws(() => validateSubscription({...sub, endpoint}));
+    assert.throws(() =>
+      validateSubscription({
+        ...sub,
+        keys: {...sub.keys, p256dh: Buffer.alloc(65).toString('base64url')}
+      })
+    );
+    assert.throws(() => encrypt('x'.repeat(4000), sub));
+    assert.deepEqual(validateSubscription(sub), sub);
+  });
+  test('Push uses encrypted body, rejects redirects and recognises expired subscription', async () => {
+    let request;
+    const result = await sendPush(sub, {title: 'Test'}, vapidKeys(), 'https://hub.example.com', {
+      fetcher: async (url, options) => {
+        request = {url, ...options};
+        return new Response('', {status: 410});
+      }
+    });
+    assert.equal(request.redirect, 'error');
+    assert.equal(request.headers['Content-Encoding'], 'aes128gcm');
+    assert.equal(result.gone, true);
+    assert.equal(result.ok, false);
+    assert.ok(!request.body.includes('Test'));
+  });
+}
+
+// 02-hub/tests/balance-ui
+{
+  const {readFileSync} = await import('node:fs');
+  const {runInNewContext} = await import('node:vm');
+  const {setImmediate} = await import('node:timers/promises');
+
+  test('quote cards leave loading state after failure, recover and retain last prices', async () => {
+    const nodes = new Map();
+    const element = () => ({
+      textContent: 'Загрузка…',
+      value: '',
+      children: [],
+      classList: {toggle() {}},
+      addEventListener() {},
+      querySelectorAll: () => [],
+      append(...children) {
+        this.children.push(...children);
+      },
+      replaceChildren(...children) {
+        this.children = children;
+        this.textContent = '';
+      }
+    });
+    const get = (id) => {
+      if (id === 'balanceSettings') return null;
+      if (!nodes.has(id)) nodes.set(id, element());
+      return nodes.get(id);
+    };
+    let failed = true,
+      refresh;
+    runInNewContext(
+      readFileSync(new URL('./02-hub/modules/balance/balance.js', import.meta.url), 'utf8'),
+      {
+        document: {
+          getElementById: get,
+          createElement: element,
+          addEventListener() {},
+          hidden: false
+        },
+        addEventListener() {},
+        setInterval: (callback) => {
+          refresh = callback;
+        },
+        AbortSignal,
+        URLSearchParams,
+        fetch: async (url) => {
+          if (url.endsWith('/rates'))
+            return failed
+              ? Response.json({error: 'offline'}, {status: 503})
+              : Response.json({
+                  fiat: {prices: {USD: 90, EUR: 100, KZT: 0.2, CNY: 12}},
+                  crypto: {prices: {BTC: 90000, ETH: 3000, XMR: 200, TON: 3}}
+                });
+          if (url.endsWith('/ai')) return Response.json({available: false});
+          if (url.endsWith('/credit')) return Response.json({state: 'unconfigured'});
+          return Response.json({error: 'offline'}, {status: 503});
+        }
+      }
+    );
+    await setImmediate();
+    const values = (id) => get(id).children.map((row) => row.children[1].textContent);
+    for (const id of ['balanceFiat', 'balanceCrypto']) {
+      assert.deepEqual(values(id), ['—', '—', '—', '—']);
+      assert.equal(get(id).textContent.includes('Загрузка'), false);
+      assert.match(get(id + 'Date').textContent, /Нет соединения/);
+    }
+    failed = false;
+    await refresh();
+    const prices = values('balanceFiat');
+    assert.equal(prices[0], '90');
+    assert.doesNotMatch(get('balanceFiatDate').textContent, /Нет соединения/);
+    failed = true;
+    await refresh();
+    assert.deepEqual(values('balanceFiat'), prices);
+    assert.match(get('balanceFiatDate').textContent, /Нет соединения/);
+  });
+}
+
+// 02-hub/tests/balance
+{
+  const {randomUUID} = await import('node:crypto');
+  const {Worker} = await import('node:worker_threads');
+  const {Ledger, money} = await import('./02-hub/modules/balance/store.mjs');
+  const {createModule, settings} = await import('./02-hub/modules/balance/index.mjs');
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {passwordHash} = await import('./02-hub/src/auth.mjs');
+  const month = new URLSearchParams({month: '2026-09'});
+  function fixture(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'balance-')),
+      file = dir + '/ledger.sqlite',
+      ledger = new Ledger(file);
+    t.after(() => {
+      try {
+        ledger.close();
+      } catch {}
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const s = ledger.snapshot(month),
+      [card, savings] = s.accounts,
+      income = s.categories.find((c) => c.kind === 'income'),
+      expense = s.categories.find((c) => c.kind === 'expense');
+    const send = (action, data, requestId = randomUUID()) =>
+      ledger.mutate({action, data, requestId});
+    const transaction = (extra = {}) => ({
+      kind: 'income',
+      date: '2026-09-12',
+      account: card.id,
+      amount: '10.00',
+      category: income.id,
+      note: '',
+      ...extra
+    });
+    return {dir, file, ledger, card, savings, income, expense, send, transaction};
+  }
+  test('money is exact cents, not implicit rounding', () => {
+    assert.equal(money('0,10') + money('0.20'), 30);
+    assert.equal(money('-12.34', true), -1234);
+    for (const v of ['0', '-1', '1.001', '1e3', 'NaN', 'Infinity', '10000000000', 0.3, ''])
+      assert.throws(() => money(v));
+  });
+  test('income, expense and transfer preserve totals and monthly cash flow', (t) => {
+    const f = fixture(t);
+    f.send('transaction.save', f.transaction({amount: '0.10'}));
+    f.send('transaction.save', f.transaction({amount: '0.20'}));
+    f.send(
+      'transaction.save',
+      f.transaction({kind: 'expense', amount: '0.05', category: f.expense.id})
+    );
+    f.send(
+      'transaction.save',
+      f.transaction({kind: 'transfer', amount: '0.15', target: f.savings.id})
+    );
+    const s = f.ledger.snapshot(month);
+    assert.deepEqual(
+      s.accounts.map((a) => a.balance),
+      [10, 15]
+    );
+    assert.equal(s.totals[0].amount, 25);
+    assert.equal(s.period.find((p) => p.kind === 'income').amount, 30);
+    assert.equal(s.period.find((p) => p.kind === 'expense').amount, 5);
+  });
+  test('editing and deleting a transfer recomputes both sides without drift', (t) => {
+    const f = fixture(t);
+    f.send('transaction.save', f.transaction({amount: '100'}));
+    const transfer = f.transaction({kind: 'transfer', amount: '30', target: f.savings.id}),
+      {id} = f.send('transaction.save', transfer);
+    f.send('transaction.save', {...transfer, id, version: 1, amount: '40'});
+    assert.deepEqual(
+      f.ledger.snapshot(month).accounts.map((a) => a.balance),
+      [6000, 4000]
+    );
+    assert.throws(
+      () => f.send('transaction.delete', {id, version: 1}),
+      (e) => e.status === 409
+    );
+    f.send('transaction.delete', {id, version: 2});
+    assert.deepEqual(
+      f.ledger.snapshot(month).accounts.map((a) => a.balance),
+      [10000, 0]
+    );
+  });
+  test('FX transfers use received amounts and keep currency totals separate', (t) => {
+    const f = fixture(t),
+      {id} = f.send('account.save', {name: 'USD', kind: 'cash', currency: 'USD', opening: '0'});
+    f.send('transaction.save', f.transaction({amount: '2000'}));
+    f.send(
+      'transaction.save',
+      f.transaction({kind: 'transfer', target: id, amount: '1800', received: '20.15'})
+    );
+    const s = f.ledger.snapshot(month);
+    assert.deepEqual(
+      s.totals.map((x) => [x.currency, x.amount]),
+      [
+        ['RUB', 20000],
+        ['USD', 2015]
+      ]
+    );
+    assert.equal(s.period.length, 1);
+    assert.throws(() =>
+      f.send('transaction.save', f.transaction({kind: 'transfer', target: id, received: '0'}))
+    );
+  });
+  test('idempotency survives restart and never resurrects a deleted entry', (t) => {
+    const f = fixture(t),
+      requestId = randomUUID(),
+      data = f.transaction(),
+      first = f.send('transaction.save', data, requestId);
+    assert.deepEqual(f.send('transaction.save', data, requestId), first);
+    assert.throws(
+      () => f.send('transaction.save', {...data, amount: '20'}, requestId),
+      (e) => e.status === 409
+    );
+    f.send('transaction.delete', {id: first.id, version: 1});
+    f.ledger.close();
+    const reopened = new Ledger(f.file);
+    try {
+      assert.deepEqual(reopened.mutate({requestId, action: 'transaction.save', data}), first);
+      assert.equal(reopened.snapshot(month).total, 0);
+    } finally {
+      reopened.close();
+    }
+  });
+  test('failed write rolls back balances, history, revision and retry token', (t) => {
+    const f = fixture(t);
+    f.send('account.save', {...f.card, opening: '9999999999.99'});
+    const before = f.ledger.snapshot(month),
+      requestId = randomUUID();
+    assert.throws(
+      () => f.send('transaction.save', f.transaction({amount: '0.01'}), requestId),
+      /диапазон/
+    );
+    assert.deepEqual(f.ledger.snapshot(month), before);
+    f.send(
+      'transaction.save',
+      f.transaction({kind: 'expense', category: f.expense.id, amount: '0.01'}),
+      requestId
+    );
+    assert.equal(f.ledger.snapshot(month).total, 1);
+  });
+  test('four independent writers preserve all one hundred operations', async (t) => {
+    const f = fixture(t),
+      moduleURL = new URL('./02-hub/modules/balance/store.mjs', import.meta.url).href;
+    await Promise.all(
+      Array.from(
+        {length: 4},
+        () =>
+          new Promise((resolve, reject) => {
+            const worker = new Worker(
+              `const {workerData}=require('node:worker_threads');(async()=>{const {Ledger}=await import(workerData.moduleURL);const ledger=new Ledger(workerData.file);for(let i=0;i<25;i++)ledger.mutate({requestId:crypto.randomUUID(),action:'transaction.save',data:workerData.data});ledger.close();})().catch(e=>{console.error(e);process.exit(1)});`,
+              {
+                eval: true,
+                workerData: {file: f.file, moduleURL, data: f.transaction({amount: '0.01'})}
+              }
+            );
+            worker.on('error', reject);
+            worker.on('exit', (code) =>
+              code ? reject(new Error('writer exit ' + code)) : resolve()
+            );
+          })
+      )
+    );
+    const s = f.ledger.snapshot(month);
+    assert.equal(s.total, 100);
+    assert.equal(s.accounts[0].balance, 100);
+    assert.equal(s.revision, 100);
+  });
+  test('archiving preserves history and cannot hide a nonzero balance', (t) => {
+    const f = fixture(t),
+      {id} = f.send('transaction.save', f.transaction());
+    assert.throws(
+      () => f.send('account.archive', {id: f.card.id, version: 1, archived: true}),
+      /остаток/
+    );
+    f.send('transaction.save', f.transaction({kind: 'expense', category: f.expense.id}));
+    f.send('account.archive', {id: f.card.id, version: 1, archived: true});
+    assert.equal(f.ledger.snapshot(month).total, 2);
+    assert.throws(() => f.send('transaction.delete', {id, version: 1}), /восстанови/);
+    f.send('account.archive', {id: f.card.id, version: 2, archived: false});
+    f.send('transaction.delete', {id, version: 1});
+    assert.equal(f.ledger.snapshot(month).accounts[0].balance, -1000);
+  });
+  test('used accounts retain currency and opening amount; concurrent edits conflict', (t) => {
+    const f = fixture(t);
+    f.send('transaction.save', f.transaction());
+    assert.throws(
+      () => f.send('account.save', {...f.card, currency: 'USD', opening: '0'}),
+      /не изменяются/
+    );
+    assert.throws(() => f.send('account.save', {...f.card, opening: '5'}), /не изменяются/);
+    f.send('account.save', {...f.card, name: 'Новая карта', opening: '0'});
+    assert.throws(
+      () => f.send('account.save', {...f.card, name: 'Устаревшая правка', opening: '0'}),
+      (e) => e.status === 409
+    );
+  });
+  test('invalid dates, references and categories leave no entries', (t) => {
+    const f = fixture(t);
+    for (const extra of [
+      {date: '2026-02-30'},
+      {date: '2026-13-01'},
+      {account: 'missing'},
+      {kind: 'transfer', target: f.card.id},
+      {kind: 'expense', category: f.income.id},
+      {amount: '0.001'}
+    ])
+      assert.throws(() => f.send('transaction.save', f.transaction(extra)));
+    f.send('category.archive', {id: f.income.id, version: 1, archived: true});
+    assert.throws(() => f.send('transaction.save', f.transaction()), /категорию/);
+    assert.equal(f.ledger.snapshot(month).total, 0);
+  });
+  test('history pagination and month/account filters preserve all entries', (t) => {
+    const f = fixture(t);
+    for (let i = 0; i < 35; i++) f.send('transaction.save', f.transaction({note: String(i)}));
+    f.send('transaction.save', f.transaction({date: '2026-08-31'}));
+    assert.equal(f.ledger.snapshot(month).transactions.length, 30);
+    assert.equal(
+      f.ledger.snapshot(new URLSearchParams({month: '2026-09', offset: '30'})).transactions.length,
+      5
+    );
+    f.send('transaction.save', f.transaction({kind: 'transfer', target: f.savings.id}));
+    assert.equal(
+      f.ledger.snapshot(new URLSearchParams({month: '2026-09', account: f.savings.id})).total,
+      1
+    );
+    assert.throws(() => f.ledger.snapshot(new URLSearchParams({month: '2026-99'})));
+    assert.throws(() => f.ledger.snapshot(new URLSearchParams({month: '2026-09', offset: '-1'})));
+  });
+  test('corrupt and future database versions are not reset', (t) => {
+    const f = fixture(t);
+    f.ledger.db.exec('PRAGMA user_version=99');
+    f.ledger.close();
+    assert.throws(() => new Ledger(f.file), /новая версия/);
+    const corrupt = f.dir + '/corrupt.sqlite';
+    fs.writeFileSync(corrupt, 'existing unreadable data');
+    assert.throws(() => new Ledger(corrupt));
+    assert.equal(fs.readFileSync(corrupt, 'utf8'), 'existing unreadable data');
+  });
+  test('HTTP finance writes enforce auth, CSRF, limits and exactly-once retries', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'balance-http-')),
+      module = createModule(dir + '/ledger.sqlite'),
+      config = {
+        username: 'admin',
+        origin: 'https://hub.example.com',
+        ...(await passwordHash('password-for-tests-123'))
+      };
+    const app = createApp({
+      config,
+      modules: new Map([
+        ['balance', {id: 'balance', title: 'Баланс', description: '', ...module, settings}]
+      ])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+      module.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const base = 'http://127.0.0.1:' + app.address().port,
+      login = await fetch(base + '/api/auth/login', {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'username=admin&password=password-for-tests-123'
+      }),
+      cookie = login.headers.get('set-cookie').split(';')[0],
+      headers = {Cookie: cookie, Origin: config.origin, 'Content-Type': 'application/json'};
+    assert.equal((await fetch(base + '/modules/balance/api', {redirect: 'manual'})).status, 303);
+    const data = await (await fetch(base + '/modules/balance/api?month=2026-09', {headers})).json(),
+      payload = {
+        requestId: randomUUID(),
+        action: 'transaction.save',
+        data: {
+          kind: 'income',
+          date: '2026-09-12',
+          amount: '12.34',
+          account: data.accounts[0].id,
+          category: data.categories.find((c) => c.kind === 'income').id,
+          note: '<img src=x onerror=alert(1)>'
+        }
+      };
+    const post = (body, h = headers) =>
+      fetch(base + '/modules/balance/mutate', {
+        method: 'POST',
+        headers: h,
+        body,
+        redirect: 'manual'
+      });
+    assert.equal(
+      (await post(JSON.stringify(payload), {...headers, Origin: 'https://evil.example'})).status,
+      403
+    );
+    assert.equal((await post(JSON.stringify(payload), {...headers, Cookie: ''})).status, 401);
+    assert.equal((await post('{')).status, 400);
+    assert.equal((await post('x'.repeat(9000))).status, 413);
+    const responses = await Promise.all(
+      Array.from({length: 10}, () => post(JSON.stringify(payload)))
+    );
+    assert.ok(responses.every((r) => r.status === 200));
+    const response = await fetch(base + '/modules/balance/api?month=2026-09', {headers});
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const saved = await response.json();
+    assert.equal(saved.total, 1);
+    assert.equal(saved.accounts[0].balance, 1234);
+    const page = await (await fetch(base + '/settings/?module=balance', {headers})).text();
+    assert.match(page, /id="balanceManageAccounts"/);
+    assert.doesNotMatch(page, /<img src=x/);
+    const summary = await (await fetch(base + '/api/modules', {headers})).json();
+    assert.equal(summary.modules[0].summary.items[0].label, 'RUB');
+    assert.doesNotMatch(JSON.stringify(summary), /onerror|password|ledger.sqlite/);
+    assert.equal(fs.statSync(dir + '/ledger.sqlite').mode & 0o777, 0o600);
+  });
+}
+
+// 02-hub/tests/chat
+{
+  const {randomUUID} = await import('node:crypto');
+  const {ChatStore, models} = await import('./02-hub/modules/chat/store.mjs');
+  const {complete} = await import('./02-hub/modules/chat/deepseek.mjs');
+  const {createModule, settings} = await import('./02-hub/modules/chat/index.mjs');
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {passwordHash} = await import('./02-hub/src/auth.mjs');
+  const key = 'sk-test-only-not-a-real-key';
+  const config = {key, model: models[0], maxTokens: 8192, thinking: false};
+  function fixture(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-test-')),
+      store = new ChatStore(dir);
+    t.after(() => {
+      store.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    return {store, dir};
+  }
+  const topic = (store) => store.change({action: 'create', id: randomUUID(), title: 'Тема'});
+  const input = (t) => ({
+    topic: t.id,
+    version: t.version,
+    requestId: randomUUID(),
+    text: 'Привет',
+    model: models[0]
+  });
+  function wire(text = 'Привет!') {
+    return (
+      'data: ' +
+      JSON.stringify({choices: [{delta: {content: text}, finish_reason: null}]}) +
+      '\r\n\r\ndata: ' +
+      JSON.stringify({
+        choices: [{delta: {}, finish_reason: 'stop'}],
+        usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+      }) +
+      '\n\ndata: [DONE]\n\n'
+    );
+  }
+  test('chat keys are write-only, retained on blank save and removable without history loss', (t) => {
+    const {store, dir} = fixture(t);
+    const x = topic(store);
+    store.saveConfig(config);
+    assert.equal(store.publicConfig().configured, true);
+    assert.ok(!JSON.stringify(store.publicConfig()).includes(key));
+    store.saveConfig({...config, key: ''});
+    assert.equal(store.config().key, key);
+    assert.equal(fs.statSync(dir + '/deepseek.json').mode & 0o777, 0o600);
+    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+    store.saveConfig({...config, removeKey: true});
+    assert.equal(store.config().key, '');
+    assert.equal(store.topic(x.id).title, 'Тема');
+    assert.throws(() => store.saveConfig({...config, key: 'bad\nkey'}));
+  });
+  test('chat retries reuse the saved request and reject changed payload or stale topic', (t) => {
+    const {store, dir} = fixture(t),
+      x = topic(store),
+      data = input(x),
+      job = store.begin(data);
+    assert.equal(store.begin(data).replay, true);
+    assert.equal(store.history(x.id).messages.length, 2);
+    assert.throws(() => store.begin({...data, text: 'changed'}), /использован/);
+    assert.throws(() => store.begin({...data, requestId: randomUUID()}), /изменилась/);
+    store.finish(job, {content: 'Ответ', usage: {total_tokens: 3}});
+    assert.equal(store.begin(data).replay, true);
+    assert.equal(store.history(x.id).messages[1].content, 'Ответ');
+    const other = new ChatStore(dir);
+    assert.equal(other.begin(data).replay, true);
+    other.close();
+  });
+  test('chat topic locks prevent concurrent paid requests and deleting a running reply', (t) => {
+    const {store} = fixture(t),
+      x = topic(store),
+      job = store.begin(input(x));
+    assert.throws(() => store.begin(input(store.topic(x.id))), /уже создаётся/);
+    assert.throws(
+      () => store.change({action: 'delete', id: x.id, version: store.topic(x.id).version}),
+      /останови/
+    );
+    store.finish(job, {content: 'Часть', status: 'error', notice: 'Остановлен'});
+    const retry = store.begin({requestId: job.id, version: store.topic(x.id).version}, true);
+    assert.equal(retry.assistant, job.assistant);
+    assert.equal(store.history(x.id).messages.length, 2);
+    store.finish(retry, {content: 'Полный ответ'});
+    store.change({action: 'delete', id: x.id, version: store.topic(x.id).version});
+    assert.equal(store.requests(x.id).length, 0);
+  });
+  test('chat recovers interrupted replies and paginates without deleting history', (t) => {
+    const {store} = fixture(t),
+      x = topic(store);
+    store.begin(input(x));
+    store.recover();
+    assert.equal(store.history(x.id).messages[1].status, 'error');
+    for (let i = 0; i < 30; i++) {
+      const job = store.begin(input(store.topic(x.id)));
+      store.finish(job, {content: 'Ответ ' + i});
+    }
+    const page = store.history(x.id);
+    assert.equal(page.messages.length, 50);
+    assert.equal(page.more, true);
+    assert.equal(store.history(x.id, page.messages[0].id).messages.length, 12);
+    assert.throws(() => store.history('../outside'), /не найдена/);
+  });
+  test('chat bounds context and keeps old conversations intact', (t) => {
+    const {store} = fixture(t),
+      x = topic(store);
+    for (let i = 0; i < 4; i++) {
+      const job = store.begin({...input(store.topic(x.id)), text: 'x'.repeat(30000)});
+      store.finish(job, {content: 'y'.repeat(30000)});
+    }
+    const job = store.begin(input(store.topic(x.id))),
+      context = store.context(job);
+    assert.equal(context.limited, true);
+    assert.equal(context.messages[0].role, 'user');
+    assert.ok(context.messages.reduce((n, m) => n + m.content.length, 0) <= 96000);
+    assert.equal(store.history(x.id).messages.length, 10);
+  });
+  test('DeepSeek SSE handles split UTF-8, CRLF, usage and never forwards unsafe endpoints', async () => {
+    const bytes = new TextEncoder().encode(': keepalive\n' + wire('Привет 🌍'));
+    let received;
+    const fetcher = async (url, options) => {
+      received = {url, ...options};
+      return new Response(
+        new ReadableStream({
+          start(c) {
+            for (let i = 0; i < bytes.length; i += 3) c.enqueue(bytes.slice(i, i + 3));
+            c.close();
+          }
+        })
+      );
+    };
+    let text = '';
+    const result = await complete({
+      ...config,
+      messages: [{role: 'user', content: 'Hi'}],
+      signal: new AbortController().signal,
+      onDelta: (c) => (text += c),
+      fetcher
+    });
+    assert.equal(text, 'Привет 🌍');
+    assert.equal(result.content, text);
+    assert.equal(result.usage.total_tokens, 15);
+    assert.equal(received.url, 'https://api.deepseek.com/chat/completions');
+    assert.equal(received.redirect, 'error');
+    assert.equal(JSON.parse(received.body).thinking.type, 'disabled');
+  });
+  test('DeepSeek rejects truncated streams and redacts provider error bodies', async () => {
+    const args = {...config, messages: [], onDelta: () => {}, signal: new AbortController().signal};
+    await assert.rejects(
+      complete({...args, fetcher: async () => new Response(wire().replace('data: [DONE]', ''))}),
+      /оборвалось/
+    );
+    await assert.rejects(
+      complete({...args, fetcher: async () => new Response('secret: ' + key, {status: 401})}),
+      (error) => !error.message.includes(key) && error.message.includes('отклонил ключ')
+    );
+  });
+  test('HTTP chat enforces auth/CSRF, preserves streaming results, hides keys, and retries only once', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-http-'));
+    let calls = 0,
+      mode = 'ok';
+    const fetcher = async () => {
+      calls++;
+      return mode === 'ok'
+        ? new Response(wire('Ответ'))
+        : new Response('secret ' + key, {status: 402});
+    };
+    const module = createModule(dir, {fetcher}),
+      auth = {
+        username: 'admin',
+        origin: 'https://hub.example.com',
+        ...(await passwordHash('chat-password-123'))
+      };
+    const app = createApp({
+      config: auth,
+      modules: new Map([['chat', {id: 'chat', title: 'Чат', ...module, settings}]])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+      module.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const base = 'http://127.0.0.1:' + app.address().port;
+    const login = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {Origin: auth.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=chat-password-123'
+    });
+    const headers = {
+      Cookie: login.headers.get('set-cookie').split(';')[0],
+      Origin: auth.origin,
+      'Content-Type': 'application/json'
+    };
+    const post = (route, data, h = headers) =>
+      fetch(base + '/modules/chat' + route, {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(data),
+        redirect: 'manual'
+      });
+    assert.equal((await post('/config', config, {...headers, Cookie: ''})).status, 401);
+    assert.equal(
+      (await post('/config', config, {...headers, Origin: 'https://evil.example'})).status,
+      403
+    );
+    assert.equal((await post('/config', config)).status, 200);
+    assert.ok(
+      !(await (await fetch(base + '/modules/chat/config', {headers})).text()).includes(key)
+    );
+    const x = await (
+        await post('/topic', {action: 'create', id: randomUUID(), title: 'Тест'})
+      ).json(),
+      data = input(x);
+    const result = await post('/send', data);
+    assert.equal(result.headers.get('cache-control'), 'no-store');
+    const events = (await result.text()).trim().split('\n').map(JSON.parse);
+    assert.equal(events.at(-1).type, 'done');
+    assert.equal(calls, 1);
+    assert.equal((await (await post('/send', data)).json()).saved, true);
+    assert.equal(calls, 1);
+    const end = events.at(-1);
+    mode = 'error';
+    const second = {...input(end.topic), text: 'Второй запрос'};
+    const failed = (await (await post('/send', second)).text())
+      .trim()
+      .split('\n')
+      .map(JSON.parse)
+      .at(-1);
+    assert.equal(failed.type, 'error');
+    assert.ok(!JSON.stringify(failed).includes(key));
+    mode = 'ok';
+    const retried = (
+      await (
+        await post('/retry', {requestId: second.requestId, version: failed.topic.version})
+      ).text()
+    )
+      .trim()
+      .split('\n')
+      .map(JSON.parse)
+      .at(-1);
+    assert.equal(retried.messages.length, 4);
+    assert.equal(retried.type, 'done');
+    const page = await (await fetch(base + '/modules/chat/', {headers})).text();
+    assert.doesNotMatch(page, /id="chatKey"|href="\/settings/);
+    assert.match(
+      await (await fetch(base + '/settings/?module=chat', {headers})).text(),
+      /id="chatKey"/
+    );
+  });
+  test('chat cancellation persists partial output and releases the topic for explicit retry', async (t) => {
+    const {Readable} = await import('node:stream');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-abort-'));
+    const module = createModule(dir, {
+      fetcher: async (url, {signal}) =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(
+                new TextEncoder().encode(
+                  'data: ' +
+                    JSON.stringify({choices: [{delta: {content: 'Сохранённая часть'}}]}) +
+                    '\n\n'
+                )
+              );
+              signal.addEventListener(
+                'abort',
+                () => c.error(new DOMException('Aborted', 'AbortError')),
+                {once: true}
+              );
+            }
+          })
+        )
+    });
+    t.after(() => {
+      module.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const request = (route, data, signal) => {
+      const request = Readable.from([Buffer.from(JSON.stringify(data))]);
+      request.method = 'POST';
+      request.headers = {'content-type': 'application/json'};
+      return module.handle({request, path: route, user: {username: 'admin'}, signal});
+    };
+    await request('/config', config);
+    const x = await (
+      await request('/topic', {action: 'create', id: randomUUID(), title: 'Прерванный'})
+    ).json();
+    const controller = new AbortController(),
+      data = input(x),
+      response = await request('/send', data, controller.signal),
+      reader = response.body.getReader(),
+      decoder = new TextDecoder();
+    let output = '';
+    while (!output.includes('Сохранённая часть'))
+      output += decoder.decode((await reader.read()).value);
+    controller.abort();
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      output += decoder.decode(part.value);
+    }
+    const last = output.trim().split('\n').map(JSON.parse).at(-1);
+    assert.equal(last.type, 'error');
+    assert.equal(last.messages[1].content, 'Сохранённая часть');
+    assert.equal(last.messages[1].status, 'error');
+    assert.equal(last.requests[0].status, 'error');
+  });
+}
+
+// 02-hub/tests/flowmusic
+{
+  const {randomUUID} = await import('node:crypto');
+  const {DatabaseSync} = await import('node:sqlite');
+  const {Readable} = await import('node:stream');
+  const {FlowSession} = await import('./02-hub/modules/chat/flow-session.mjs');
+  const {FlowAudio, audioURL} = await import('./02-hub/modules/chat/flow-audio.mjs');
+  const {generate, readEvents, clipIDs} = await import('./02-hub/modules/chat/flowmusic.mjs');
+  const {ChatStore, models} = await import('./02-hub/modules/chat/store.mjs');
+  const {checkKey} = await import('./02-hub/modules/chat/deepseek.mjs');
+  const {createModule} = await import('./02-hub/modules/chat/index.mjs');
+  const credentials = {
+    refreshToken: 'test-refresh-only-not-real',
+    anonKey: 'test-anon-only-not-real'
+  };
+  const tokens = (n = 1) => ({
+    access_token: 'test-access-' + n,
+    refresh_token: 'test-refresh-' + n,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    expires_in: 3600
+  });
+  function directory(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-test-'));
+    t.after(() => fs.rmSync(dir, {force: true, recursive: true}));
+    return dir;
+  }
+  const event = (name, data, id) =>
+    (id ? 'id: ' + id + '\n' : '') + 'event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n';
+  const sse = (text) => new Response(text, {headers: {'Content-Type': 'text/event-stream'}});
+  const payload = (topic) => ({
+    topic: topic.id,
+    version: topic.version,
+    requestId: randomUUID(),
+    text: 'Спокойная музыка',
+    model: 'producer:standard'
+  });
+  function setup(t, fetcher) {
+    const dir = directory(t),
+      store = new ChatStore(dir),
+      session = new FlowSession(dir, {fetcher}),
+      audio = new FlowAudio(dir, fetcher);
+    t.after(() => {
+      session.close();
+      store.close();
+    });
+    session.save(credentials);
+    const topic = store.change({
+      action: 'create',
+      id: randomUUID(),
+      title: 'Музыка',
+      provider: 'flowmusic'
+    });
+    return {dir, store, session, audio, topic};
+  }
+  test('FlowMusic rotation is single-flight, durable, private and uses the latest refresh token', async (t) => {
+    const dir = directory(t);
+    let count = 0,
+      release;
+    const barrier = new Promise((r) => (release = r)),
+      sent = [];
+    const session = new FlowSession(dir, {
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://sb.flowmusic.app/auth/v1/token?grant_type=refresh_token');
+        assert.equal(options.redirect, 'error');
+        assert.equal(options.headers.apikey, credentials.anonKey);
+        sent.push(JSON.parse(options.body).refresh_token);
+        count++;
+        await barrier;
+        return Response.json(tokens(count));
+      }
+    });
+    t.after(() => session.close());
+    session.save(credentials);
+    const pending = [session.token(), session.token(), session.refresh()];
+    release();
+    assert.deepEqual(await Promise.all(pending), Array(3).fill('test-access-1'));
+    assert.equal(count, 1);
+    const disk = JSON.parse(fs.readFileSync(dir + '/flowmusic.json'));
+    assert.equal(disk.access_token, 'test-access-1');
+    assert.equal(disk.refresh_token, 'test-refresh-1');
+    assert.equal(fs.statSync(dir + '/flowmusic.json').mode & 0o777, 0o600);
+    assert.doesNotMatch(
+      JSON.stringify(session.publicConfig()),
+      /test-|anon_key|access_token|refresh_token/
+    );
+    await session.refresh();
+    assert.deepEqual(sent, [credentials.refreshToken, 'test-refresh-1']);
+    assert.equal(fs.readdirSync(dir).length, 1);
+  });
+  test('FlowMusic 401 refreshes once across concurrent requests and retries each HTTP request only once', async (t) => {
+    const dir = directory(t);
+    let refresh = 0,
+      requests = 0,
+      force401 = false;
+    const session = new FlowSession(dir, {
+      fetcher: async (url, options) => {
+        if (url.includes('/auth/')) return Response.json(tokens(++refresh));
+        requests++;
+        if (force401 || options.headers.Authorization === 'Bearer test-access-1')
+          return new Response('sensitive provider error', {status: 401});
+        return Response.json({ok: true});
+      }
+    });
+    t.after(() => session.close());
+    session.save(credentials);
+    await session.token();
+    const responses = await Promise.all([
+      session.request('/clips', {body: {clip_ids: []}}),
+      session.request('/clips', {body: {clip_ids: []}})
+    ]);
+    assert.equal(
+      responses.every((r) => r.ok),
+      true
+    );
+    assert.equal(refresh, 2);
+    assert.equal(requests, 4);
+    force401 = true;
+    requests = 0;
+    await assert.rejects(session.request('/clips', {body: {clip_ids: []}}), /отклонена/);
+    assert.equal(requests, 2);
+    assert.equal(refresh, 3);
+  });
+  test('FlowMusic replacement/removal cannot be overwritten by an in-flight refresh', async (t) => {
+    const dir = directory(t);
+    let release;
+    const session = new FlowSession(dir, {
+      fetcher: async () => {
+        await new Promise((r) => (release = r));
+        return Response.json(tokens());
+      }
+    });
+    t.after(() => session.close());
+    session.save(credentials);
+    const pending = session.refresh();
+    session.save({remove: true});
+    release();
+    await assert.rejects(pending, /изменена/);
+    assert.equal(session.publicConfig().configured, false);
+    assert.deepEqual(JSON.parse(fs.readFileSync(dir + '/flowmusic.json')), {});
+  });
+  test('FlowMusic ambiguous refresh failures require a fresh session and redact provider bodies', async (t) => {
+    const dir = directory(t);
+    let calls = 0;
+    const session = new FlowSession(dir, {
+      fetcher: async () => {
+        calls++;
+        return new Response('SECRET', {status: 400});
+      }
+    });
+    session.save(credentials);
+    t.after(() => session.close());
+    await assert.rejects(session.refresh(), (e) => !e.message.includes('SECRET'));
+    assert.equal(session.publicConfig().needsLogin, true);
+    await assert.rejects(session.token(), /новая сессия/);
+    assert.equal(calls, 1);
+    const restored = new FlowSession(dir);
+    assert.equal(restored.publicConfig().needsLogin, true);
+    restored.close();
+  });
+  test('FlowMusic proactive refresh runs before expiry without a generation', async (t) => {
+    t.mock.timers.enable({apis: ['setTimeout']});
+    const dir = directory(t);
+    let calls = 0;
+    const session = new FlowSession(dir, {fetcher: async () => Response.json(tokens(++calls))});
+    t.after(() => session.close());
+    session.save(credentials);
+    session.start();
+    t.mock.timers.tick(1000);
+    await session.pending;
+    assert.equal(calls, 1);
+    t.mock.timers.tick(3480000);
+    await session.pending;
+    assert.equal(calls, 2);
+  });
+  test('FlowMusic parses SSE split UTF-8, IDs, tool clip variants and error frames', async () => {
+    const text =
+      event(
+        'part',
+        {index: 0, status: 'start', part: {part_kind: 'text', content: 'Привет 🎵'}},
+        '1'
+      ) + event('complete', {}, '2');
+    const bytes = new TextEncoder().encode(text.replaceAll('\n', '\r\n')),
+      events = [];
+    await readEvents(
+      new Response(
+        new ReadableStream({
+          start(c) {
+            for (let i = 0; i < bytes.length; i += 2) c.enqueue(bytes.slice(i, i + 2));
+            c.close();
+          }
+        }),
+        {headers: {'Content-Type': 'text/event-stream'}}
+      ),
+      (e) => {
+        events.push(e);
+      }
+    );
+    assert.equal(events[0].data.part.content, 'Привет 🎵');
+    assert.equal(events[1].id, '2');
+    assert.deepEqual(
+      clipIDs({
+        part_kind: 'tool-return',
+        content: {clip_id: 'a', clip_id_b: 'b', stems: [{clip_id: 'c'}]}
+      }),
+      ['a', 'b', 'c']
+    );
+    assert.deepEqual(clipIDs({part_kind: 'tool-call', content: {clip_id: 'a'}}), []);
+    await assert.rejects(
+      readEvents(sse('event: part\ndata: bad\n\n'), () => {}),
+      /Повреждённое/
+    );
+    await assert.rejects(
+      readEvents(new Response('<html>'), () => {}),
+      /формат/
+    );
+  });
+  test('FlowMusic conversation → job stream → clips map → local audio, without leaking provider URLs', async (t) => {
+    let launches = 0,
+      polls = 0;
+    const received = [];
+    const clip = {
+      title: 'Музыка',
+      audio_url: 'https://storage.googleapis.com/producer-app-public/audio/track.mp3?private=secret'
+    };
+    const fetcher = async (url, options) => {
+      received.push({url, options});
+      if (url.includes('/auth/')) return Response.json(tokens());
+      if (url.endsWith('/conversation')) {
+        launches++;
+        return Response.json({job_id: 'job-123'});
+      }
+      if (url.includes('/messages/')) {
+        assert.match(url, /\/messages\/job-123\/stream\?last_id=0$/);
+        return sse(
+          event('conversation_id', {id: 'conversation-456'}, '1') +
+            event(
+              'part',
+              {index: 0, status: 'start', part: {part_kind: 'text', content: 'Готово 🎵'}},
+              '2'
+            ) +
+            event(
+              'part',
+              {
+                index: 1,
+                status: 'final',
+                part: {part_kind: 'tool-return', content: {clip_id: 'clip-1', clip_id_b: 'clip-2'}}
+              },
+              '3'
+            ) +
+            event('complete', {}, '4')
+        );
+      }
+      if (url.endsWith('/clips')) {
+        polls++;
+        return Response.json({
+          clips: polls === 1 ? {'clip-1': {status: 'pending'}} : {'clip-1': clip, 'clip-2': clip}
+        });
+      }
+      assert.equal(options.headers, undefined);
+      assert.equal(options.redirect, 'error');
+      return new Response('AUDIO-BYTES', {headers: {'Content-Type': 'audio/mpeg'}});
+    };
+    const f = setup(t, fetcher),
+      job = f.store.begin(payload(f.topic)),
+      progress = [];
+    const result = await generate({
+      ...f,
+      job,
+      signal: AbortSignal.timeout(5000),
+      onDelta: () => {},
+      onProgress: (s) => progress.push(s),
+      poll: 1
+    });
+    f.store.finish(job, result);
+    assert.equal(launches, 1);
+    assert.equal(polls, 2);
+    assert.equal(result.audio.length, 2);
+    assert.equal(f.store.remote(f.topic.id), 'conversation-456');
+    assert.doesNotMatch(
+      JSON.stringify(f.store.history(f.topic.id)),
+      /private=|test-access|conversation-456/
+    );
+    const audio = result.audio[0];
+    const response = f.audio.serve(audio.id, {method: 'GET', headers: {range: 'bytes=2-6'}}, false);
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get('content-range'), 'bytes 2-6/11');
+    assert.equal(await response.text(), 'DIO-B');
+    assert.equal(
+      progress.some((s) => s.includes('Сохраняем')),
+      true
+    );
+    const followup = f.store.begin(payload(f.store.topic(f.topic.id)));
+    await generate({
+      ...f,
+      job: followup,
+      signal: AbortSignal.timeout(5000),
+      onDelta: () => {},
+      onProgress: () => {},
+      poll: 1
+    });
+    const next = JSON.parse(
+      received.filter((r) => r.url.endsWith('/conversation'))[1].options.body
+    );
+    assert.equal(next.conversation_id, 'conversation-456');
+    assert.equal(next.client_context.current_song_id, 'clip-1');
+  });
+  test('FlowMusic interrupted jobs resume by last event ID without a second paid launch', async (t) => {
+    let launches = 0,
+      phase = 0,
+      resumed;
+    const f = setup(t, async (url) => {
+      if (url.includes('/auth/')) return Response.json(tokens());
+      if (url.endsWith('/conversation')) {
+        launches++;
+        return Response.json({job_id: 'saved-job'});
+      }
+      if (phase === 0) {
+        phase++;
+        return sse(
+          event(
+            'part',
+            {index: 0, status: 'start', part: {part_kind: 'text', content: 'Часть'}},
+            'one'
+          )
+        );
+      }
+      if (phase === 1) throw new Error('network');
+      resumed = url;
+      return sse(
+        event(
+          'part',
+          {index: 0, status: 'delta', part: {part_kind: 'text'}, delta: ' ответа'},
+          'two'
+        ) + event('complete', {}, 'three')
+      );
+    });
+    const job = f.store.begin(payload(f.topic));
+    const run = (job) =>
+      generate({
+        ...f,
+        job,
+        signal: AbortSignal.timeout(5000),
+        onDelta: () => {},
+        onProgress: () => {},
+        poll: 1
+      });
+    await assert.rejects(run(job), /network/);
+    f.store.recover();
+    phase = 2;
+    const retried = f.store.begin(
+      {requestId: job.id, version: f.store.topic(f.topic.id).version},
+      true
+    );
+    assert.equal((await run(retried)).content, 'Часть ответа');
+    assert.equal(launches, 1);
+    assert.match(resumed, /last_id=one$/);
+  });
+  test('FlowMusic never resends an ambiguous conversation POST', async (t) => {
+    let launches = 0;
+    const f = setup(t, async (url) => {
+      if (url.includes('/auth/')) return Response.json(tokens());
+      launches++;
+      throw new Error('timeout after upload');
+    });
+    const job = f.store.begin(payload(f.topic));
+    const run = (job) =>
+      generate({
+        ...f,
+        job,
+        signal: AbortSignal.timeout(5000),
+        onDelta: () => {},
+        onProgress: () => {}
+      });
+    await assert.rejects(run(job));
+    f.store.recover();
+    const retry = f.store.begin(
+      {requestId: job.id, version: f.store.topic(f.topic.id).version},
+      true
+    );
+    await assert.rejects(run(retry), /мог быть принят/);
+    assert.equal(launches, 1);
+  });
+  test('FlowMusic audio rejects unsafe origins, redirects, HTML and malformed ranges', async (t) => {
+    for (const url of [
+      'http://127.0.0.1/a',
+      'https://169.254.169.254/a',
+      'https://storage.googleapis.com.evil.test/a',
+      'https://evil@storage.googleapis.com/producer-app-public/a',
+      'https://storage.googleapis.com:444/producer-app-public/a'
+    ])
+      assert.throws(() => audioURL(url));
+    const audio = new FlowAudio(
+      directory(t),
+      async () => new Response('<html>', {headers: {'Content-Type': 'text/html'}})
+    );
+    await assert.rejects(
+      audio.save(
+        {audio_url: 'https://storage.googleapis.com/producer-app-public/a'},
+        randomUUID(),
+        AbortSignal.timeout(1000)
+      ),
+      /аудиофайл/
+    );
+    assert.throws(
+      () => audio.serve('../private', {headers: {}, method: 'GET'}, false),
+      /не найден/
+    );
+  });
+  test('DeepSeek discovers the account model list instead of forcing two choices', async (t) => {
+    const result = await checkKey('test-deepseek-key', async () =>
+      Response.json({data: [{id: 'deepseek-flash'}]})
+    );
+    const store = new ChatStore(directory(t));
+    t.after(() => store.close());
+    store.saveConfig({
+      key: 'test-deepseek-key',
+      model: models[1],
+      maxTokens: 8192,
+      thinking: false
+    });
+    const config = store.saveModels('test-deepseek-key', result.models);
+    assert.deepEqual(config.models, ['deepseek-flash']);
+    assert.equal(config.model, 'deepseek-flash');
+    store.saveConfig({key: 'new-deepseek-key', model: models[0], maxTokens: 8192, thinking: false});
+    assert.throws(
+      () => store.saveModels('test-deepseek-key', ['deepseek-flash']),
+      /Ключ изменился/
+    );
+    assert.equal(store.publicConfig().models.length, 2);
+  });
+  test('chat v1 migrates existing DeepSeek history and isolates FlowMusic topics', (t) => {
+    const dir = directory(t),
+      db = new DatabaseSync(dir + '/chat.sqlite'),
+      id = randomUUID();
+    db.exec(`CREATE TABLE topics(id TEXT PRIMARY KEY,title TEXT NOT NULL,updated INTEGER NOT NULL,version INTEGER NOT NULL DEFAULT 0) STRICT;
+    CREATE TABLE messages(id INTEGER PRIMARY KEY,topic TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,role TEXT NOT NULL,content TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'done',created INTEGER NOT NULL,usage TEXT,notice TEXT NOT NULL DEFAULT '') STRICT;
+    CREATE TABLE requests(id TEXT PRIMARY KEY,hash TEXT NOT NULL,topic TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,assistant INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,model TEXT NOT NULL,status TEXT NOT NULL) STRICT; PRAGMA user_version=1;`);
+    db.prepare('INSERT INTO topics(id,title,updated) VALUES(?,?,?)').run(
+      id,
+      'Старая тема',
+      Date.now()
+    );
+    db.prepare(
+      "INSERT INTO messages(topic,role,content,created) VALUES(?,'user','Старый текст',?)"
+    ).run(id, Date.now());
+    db.close();
+    const store = new ChatStore(dir);
+    t.after(() => store.close());
+    assert.equal(store.history(id).messages[0].content, 'Старый текст');
+    assert.equal(store.topic(id).provider, 'deepseek');
+    const f = store.change({
+      action: 'create',
+      id: randomUUID(),
+      title: 'Flow',
+      provider: 'flowmusic'
+    });
+    assert.throws(() => store.begin({...payload(f), model: models[0]}), /модель/);
+    assert.throws(() => store.begin({...payload(store.topic(id))}), /модель/);
+  });
+  test('chat routes expose only FlowMusic status and reuse saved completed requests', async (t) => {
+    const dir = directory(t);
+    let calls = 0;
+    const module = createModule(dir, {
+      flowPoll: 1,
+      fetcher: async (url) => {
+        if (url.includes('/auth/')) return Response.json(tokens());
+        if (url.endsWith('/conversation')) {
+          calls++;
+          return Response.json({job_id: 'http-job'});
+        }
+        return sse(
+          event(
+            'part',
+            {index: 0, status: 'start', part: {part_kind: 'text', content: 'Какой жанр?'}},
+            '1'
+          ) + event('complete', {}, '2')
+        );
+      }
+    });
+    t.after(() => module.close());
+    const post = (route, data) => {
+      const request = Readable.from([Buffer.from(JSON.stringify(data))]);
+      request.method = 'POST';
+      request.headers = {'content-type': 'application/json'};
+      return module.handle({request, path: route, user: {username: 'test'}});
+    };
+    assert.equal((await post('/flow/config', credentials)).status, 200);
+    const topic = await (
+      await post('/topic', {
+        action: 'create',
+        id: randomUUID(),
+        title: 'Музыка',
+        provider: 'flowmusic'
+      })
+    ).json();
+    const data = payload(topic),
+      output = await (await post('/send', data)).text();
+    assert.doesNotMatch(output, /test-access|test-refresh|test-anon/);
+    assert.equal(output.trim().split('\n').map(JSON.parse).at(-1).type, 'done');
+    assert.equal((await (await post('/send', data)).json()).saved, true);
+    assert.equal(calls, 1);
+    const response = await module.handle({
+      request: {method: 'GET', headers: {}},
+      path: '/config',
+      user: {username: 'test'}
+    });
+    const publicConfig = await response.text();
+    assert.doesNotMatch(publicConfig, /test-access|test-refresh|test-anon/);
+  });
+
+  test('FlowMusic incomplete rotation and interrupted persistence never reuse an old session', async (t) => {
+    const dir = directory(t);
+    const session = new FlowSession(dir, {
+      fetcher: async () => Response.json({...tokens(), refresh_token: undefined})
+    });
+    t.after(() => session.close());
+    session.save(credentials);
+    await assert.rejects(session.refresh(), /неполную сессию/);
+    assert.equal(session.publicConfig().needsLogin, true);
+    assert.notEqual(
+      JSON.parse(fs.readFileSync(dir + '/flowmusic.json')).access_token,
+      'test-access-1'
+    );
+    fs.writeFileSync(
+      dir + '/flowmusic.json',
+      JSON.stringify({...tokens(), anon_key: credentials.anonKey, refreshing: true})
+    );
+    const restarted = new FlowSession(dir, {
+      fetcher: async () => assert.fail('Must not reuse ambiguous session')
+    });
+    assert.equal(restarted.publicConfig().needsLogin, true);
+    await assert.rejects(restarted.token(), /новая сессия/);
+    restarted.close();
+  });
+  test('HTTP protects FlowMusic settings and audio, serves ranges, and deletes files with the topic', async (t) => {
+    const {createApp} = await import('./02-hub/src/server.mjs');
+    const {passwordHash} = await import('./02-hub/src/auth.mjs');
+    const dir = directory(t),
+      id = randomUUID();
+    const audio = new FlowAudio(
+      dir,
+      async () => new Response('AUDIO-BYTES', {headers: {'Content-Type': 'audio/mpeg'}})
+    );
+    await audio.save(
+      {audio_url: 'https://storage.googleapis.com/producer-app-public/a', title: 'Трек'},
+      id,
+      AbortSignal.timeout(1000)
+    );
+    const module = createModule(dir);
+    const config = {
+      username: 'admin',
+      origin: 'https://hub.example.com',
+      ...(await passwordHash('test-password-123'))
+    };
+    const app = createApp({
+      config,
+      modules: new Map([['chat', {id: 'chat', title: 'Чат', ...module}]])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+      module.close();
+    });
+    const base = 'http://127.0.0.1:' + app.address().port;
+    const get = (route, headers = {}) =>
+      fetch(base + '/modules/chat' + route, {headers, redirect: 'manual'});
+    assert.equal((await get('/audio/' + id)).headers.get('location'), '/login');
+    const login = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=test-password-123'
+    });
+    const headers = {
+      Cookie: login.headers.get('set-cookie').split(';')[0],
+      Origin: config.origin,
+      'Content-Type': 'application/json'
+    };
+    const post = (route, data, h = headers) =>
+      fetch(base + '/modules/chat' + route, {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(data),
+        redirect: 'manual'
+      });
+    assert.equal((await post('/flow/config', credentials, {...headers, Cookie: ''})).status, 401);
+    assert.equal(
+      (await post('/flow/config', credentials, {...headers, Origin: 'https://evil.example'}))
+        .status,
+      403
+    );
+    const media = await get('/audio/' + id + '?download=1', {...headers, Range: 'bytes=0-4'});
+    assert.equal(media.status, 206);
+    assert.equal(media.headers.get('cache-control'), 'no-store');
+    assert.match(media.headers.get('content-disposition'), /attachment/);
+    assert.equal(await media.text(), 'AUDIO');
+    assert.equal((await get('/audio/' + id, {...headers, Range: 'bytes=100-'})).status, 416);
+    const topic = await (
+      await post('/topic', {
+        action: 'create',
+        id: randomUUID(),
+        title: 'Музыка',
+        provider: 'flowmusic'
+      })
+    ).json();
+    const store = new ChatStore(dir),
+      job = store.begin(payload(topic));
+    store.checkpoint(job, {audioIds: {clip: id}});
+    store.finish(job, {audio: [audio.public(id)]});
+    const version = store.topic(topic.id).version;
+    store.close();
+    assert.equal((await post('/topic', {action: 'delete', id: topic.id, version})).status, 200);
+    assert.equal((await get('/audio/' + id, headers)).status, 404);
+  });
+
+  test('FlowMusic explicit payment rejection permits retry, ambiguous errors still do not', async (t) => {
+    let launches = 0;
+    const f = setup(t, async (url) => {
+      if (url.includes('/auth/')) return Response.json(tokens());
+      if (url.endsWith('/conversation'))
+        return ++launches === 1
+          ? new Response('private', {status: 402})
+          : Response.json({job_id: 'paid-job'});
+      return sse(
+        event(
+          'part',
+          {index: 0, status: 'start', part: {part_kind: 'text', content: 'Ответ'}},
+          '1'
+        ) + event('complete', {}, '2')
+      );
+    });
+    const job = f.store.begin(payload(f.topic));
+    const run = (job) =>
+      generate({
+        ...f,
+        job,
+        signal: AbortSignal.timeout(5000),
+        onDelta: () => {},
+        onProgress: () => {}
+      });
+    await assert.rejects(run(job), /Недостаточно средств/);
+    f.store.recover();
+    const retry = f.store.begin(
+      {requestId: job.id, version: f.store.topic(f.topic.id).version},
+      true
+    );
+    assert.equal((await run(retry)).content, 'Ответ');
+    assert.equal(launches, 2);
+  });
+}
+
+// 02-hub/tests/insights
+{
+  const {randomUUID} = await import('node:crypto');
+  const {Market, parseFiat, parseCrypto, readRemote} = await import(
+    './02-hub/modules/balance/market.mjs'
+  );
+  const {ChatStore} = await import('./02-hub/modules/chat/store.mjs');
+  const {complete} = await import('./02-hub/modules/chat/deepseek.mjs');
+  const {estimate, normalizeUsage, usageSnapshot} = await import('./02-hub/src/ai-usage.mjs');
+  const {createModule} = await import('./02-hub/modules/balance/index.mjs');
+  const xml =
+    '<ValCurs Date="23.09.2026">' +
+    [
+      ['USD', 1, 90],
+      ['EUR', 1, 100],
+      ['KZT', 100, 20],
+      ['CNY', 1, 12]
+    ]
+      .map(
+        ([c, n, v]) =>
+          `<Valute ID="${c}"><CharCode>${c}</CharCode><Nominal>${n}</Nominal><Value>${v},0000</Value></Valute>`
+      )
+      .join('') +
+    '</ValCurs>';
+  const crypto = (now) =>
+    Object.fromEntries(
+      ['bitcoin', 'ethereum', 'monero', 'the-open-network'].map((id, i) => [
+        id,
+        {usd: 100 / (i + 1), last_updated_at: now / 1000}
+      ])
+    );
+  function directory(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-insights-'));
+    t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+    return dir;
+  }
+  const usage = {
+    prompt_tokens: 1000000,
+    completion_tokens: 1000000,
+    total_tokens: 2000000,
+    prompt_cache_hit_tokens: 500000
+  };
+  function newJob(store, provider = 'deepseek') {
+    const topic = store.change({action: 'create', id: randomUUID(), title: 'Test', provider});
+    return store.begin({
+      topic: topic.id,
+      version: topic.version,
+      text: 'test',
+      model: provider === 'deepseek' ? 'deepseek-flash' : 'producer:standard',
+      requestId: randomUUID()
+    });
+  }
+  test('quotes normalize nominal units and reject incomplete or invalid upstream data', () => {
+    assert.equal(parseFiat(xml).prices.KZT, 0.2);
+    assert.throws(() => parseFiat(xml.replace('<CharCode>CNY', '<CharCode>ABC')));
+    assert.throws(() => parseFiat('<!DOCTYPE x>' + xml));
+    assert.throws(() => parseFiat(xml.replace('<Nominal>100', '<Nominal>0')));
+    assert.throws(() => parseCrypto({bitcoin: {usd: 1}}, Date.now()));
+    assert.throws(() => parseCrypto(crypto(Date.now() + 3600000), Date.now()));
+  });
+  test('rates singleflight, independent caches and stale source timestamps survive restart', async (t) => {
+    const dir = directory(t);
+    let now = 1800000000000,
+      calls = 0,
+      failCrypto = false;
+    const fetcher = async (url) => {
+      calls++;
+      await new Promise((r) => setTimeout(r, 5));
+      return url.includes('cbr.ru')
+        ? new Response(xml)
+        : failCrypto
+          ? new Response('', {status: 429})
+          : Response.json(crypto(now));
+    };
+    const market = new Market(dir, {fetcher, now: () => now});
+    const [a, b] = await Promise.all([market.rates(), market.rates()]);
+    assert.deepEqual(a, b);
+    assert.equal(calls, 2);
+    assert.equal(a.crypto.stale, false);
+    await market.rates();
+    assert.equal(calls, 2);
+    now += 3600001;
+    failCrypto = true;
+    const c = await market.rates();
+    assert.equal(c.fiat.stale, false);
+    assert.equal(c.crypto.stale, true);
+    assert.equal(c.crypto.fetchedAt, a.crypto.fetchedAt);
+    assert.deepEqual(c.crypto.prices, a.crypto.prices);
+    const restart = new Market(dir, {
+      fetcher: async () => {
+        throw new Error('offline');
+      },
+      now: () => now
+    });
+    const d = await restart.rates();
+    assert.deepEqual(d.crypto.prices, a.crypto.prices);
+    assert.equal(d.crypto.stale, true);
+    assert.equal(fs.statSync(path.join(dir, 'rates.json')).mode & 0o777, 0o600);
+  });
+  test('upstream bodies are bounded and redirects are forbidden', async () => {
+    await assert.rejects(
+      readRemote('https://example.test', async (url, options) => {
+        assert.equal(options.redirect, 'error');
+        return new Response('x'.repeat(262145));
+      })
+    );
+  });
+  test('CoinGecko key is private, optional, retained on empty save and removable', async (t) => {
+    const dir = directory(t);
+    let headers;
+    const market = new Market(dir, {
+      fetcher: async (url, options) => {
+        if (url.includes('coingecko')) headers = options.headers;
+        return url.includes('cbr.ru') ? new Response(xml) : Response.json(crypto(Date.now()));
+      }
+    });
+    assert.deepEqual(market.saveConfig({key: 'test-only-demo-key'}), {configured: true});
+    market.saveConfig({key: ''});
+    await market.rates();
+    assert.equal(headers['x-cg-demo-api-key'], 'test-only-demo-key');
+    assert.equal(JSON.stringify(await market.rates()).includes('test-only-demo-key'), false);
+    assert.equal(fs.statSync(path.join(dir, 'market.json')).mode & 0o777, 0o600);
+    assert.throws(() => market.saveConfig({key: 'x\nsecret'}));
+    assert.deepEqual(market.saveConfig({key: '', removeKey: true}), {configured: false});
+  });
+  test('DeepSeek credit cache follows the key and does not leak credentials or stale account data', async (t) => {
+    const dir = directory(t);
+    let calls = 0,
+      now = 1800000000000;
+    const file = path.join(dir, 'deepseek.json');
+    const market = new Market(dir, {
+      now: () => now,
+      fetcher: async (url, options) => {
+        calls++;
+        assert.equal(url, 'https://api.deepseek.com/user/balance');
+        if (options.headers.Authorization === 'Bearer different-key')
+          return new Response('', {status: 401});
+        return Response.json({
+          balance_infos: [{currency: 'USD', total_balance: '12.3456', secret: 'not-public'}]
+        });
+      }
+    });
+    assert.equal((await market.credit(dir)).state, 'unconfigured');
+    fs.writeFileSync(file, JSON.stringify({key: 'test-only-key'}));
+    const [a, b] = await Promise.all([market.credit(dir), market.credit(dir)]);
+    assert.equal(calls, 1);
+    assert.deepEqual(a, b);
+    assert.equal(a.balances[0].amount, '12.3456');
+    assert.equal(JSON.stringify(a).includes('secret'), false);
+    fs.writeFileSync(file, JSON.stringify({key: 'different-key'}));
+    assert.deepEqual(await market.credit(dir), {state: 'error'});
+    assert.equal(calls, 2);
+    fs.writeFileSync(file, '{}');
+    assert.deepEqual(await market.credit(dir), {state: 'unconfigured'});
+  });
+  test('cost range includes cache and peak variation; missing or invalid usage is never zero-filled', () => {
+    assert.deepEqual(estimate('deepseek-flash', usage), {low: 0.6765, high: 1.353});
+    const noCache = {...usage};
+    delete noCache.prompt_cache_hit_tokens;
+    assert.deepEqual(estimate('deepseek-flash', noCache), {low: 0.603, high: 1.5});
+    assert.equal(estimate('unknown-model', usage), null);
+    assert.equal(normalizeUsage({total_tokens: 2}), null);
+    assert.equal(normalizeUsage({...usage, prompt_tokens: -1}), null);
+    assert.equal(
+      normalizeUsage({...usage, prompt_cache_hit_tokens: 2000000}).prompt_cache_hit_tokens,
+      undefined
+    );
+  });
+  test('in-flight credit responses cannot expose a removed or replaced account', async (t) => {
+    const dir = directory(t),
+      file = path.join(dir, 'deepseek.json');
+    let release;
+    const market = new Market(dir, {
+      fetcher: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    });
+    const reply = () =>
+      release(Response.json({balance_infos: [{currency: 'USD', total_balance: '12'}]}));
+    for (const replacement of ['', 'new-key']) {
+      fs.writeFileSync(file, JSON.stringify({key: 'old-key'}));
+      market.creditCache = undefined;
+      const first = market.credit(dir),
+        second = market.credit(dir);
+      fs.writeFileSync(file, JSON.stringify({key: replacement}));
+      reply();
+      for (const result of await Promise.all([first, second]))
+        assert.deepEqual(result, {state: replacement ? 'error' : 'unconfigured'});
+    }
+  });
+  test('usage persists through explicit retries, topic deletion and restart; replays add no expense', (t) => {
+    const dir = directory(t),
+      store = new ChatStore(dir),
+      file = path.join(dir, 'chat.sqlite');
+    let job = newJob(store);
+    store.recordUsage(job, usage);
+    store.finish(job, {status: 'error', content: 'partial'});
+    const requestId = job.id;
+    const replay = store.begin({
+      topic: job.topic,
+      version: 0,
+      text: 'test',
+      model: 'deepseek-flash',
+      requestId
+    });
+    assert.equal(replay.replay, true);
+    job = store.begin({requestId, version: store.topic(job.topic).version}, true);
+    store.finish(job, {content: 'done', usage});
+    let all = usageSnapshot(file).periods.find((p) => p.id === 'all').providers[0];
+    assert.equal(all.requests, 2);
+    assert.equal(all.measured, 2);
+    assert.equal(all.tokens, 4000000);
+    assert.equal(all.low, 1.353);
+    store.change({action: 'delete', id: job.topic, version: store.topic(job.topic).version});
+    store.close();
+    const again = new ChatStore(dir);
+    again.recover();
+    again.close();
+    all = usageSnapshot(file).periods.find((p) => p.id === 'all').providers[0];
+    assert.equal(all.requests, 2);
+  });
+  test('FlowMusic resume counts one logical request and never invents monetary charges', (t) => {
+    const dir = directory(t),
+      store = new ChatStore(dir);
+    let job = newJob(store, 'flowmusic');
+    store.finish(job, {status: 'error'});
+    job = store.begin({requestId: job.id, version: store.topic(job.topic).version}, true);
+    store.finish(job, {content: 'done'});
+    const all = usageSnapshot(path.join(dir, 'chat.sqlite')).periods.at(-1).providers[0];
+    assert.equal(all.requests, 1);
+    assert.equal(all.priced, 0);
+    assert.equal(all.measured, 0);
+    store.close();
+  });
+  test('pre-upgrade usage migrates once without applying present prices to the past', (t) => {
+    const dir = directory(t);
+    let store = new ChatStore(dir);
+    const job = newJob(store);
+    store.finish(job, {content: 'old', usage});
+    store.db.exec('DROP TABLE ai_usage');
+    store.close();
+    store = new ChatStore(dir);
+    store.close();
+    store = new ChatStore(dir);
+    store.close();
+    const all = usageSnapshot(path.join(dir, 'chat.sqlite')).periods.at(-1).providers[0];
+    assert.equal(all.requests, 1);
+    assert.equal(all.tokens, 2000000);
+    assert.equal(all.priced, 0);
+  });
+  test('reported usage is saved even when DeepSeek stream truncates after it', async () => {
+    let received;
+    await assert.rejects(
+      complete({
+        key: 'test',
+        model: 'deepseek-flash',
+        maxTokens: 4096,
+        messages: [],
+        onDelta: () => {},
+        onUsage: (u) => (received = u),
+        fetcher: async () => new Response('data: ' + JSON.stringify({usage}) + '\n\n')
+      })
+    );
+    assert.deepEqual(received, usage);
+  });
+  test('Balance insights work without the optional Chat module or any account mutations', async (t) => {
+    const dir = directory(t),
+      file = path.join(dir, 'balance', 'ledger.sqlite');
+    const mod = createModule(file, {
+      chatDirectory: path.join(dir, 'chat'),
+      fetcher: async (url) =>
+        url.includes('cbr.ru') ? new Response(xml) : Response.json(crypto(Date.now()))
+    });
+    t.after(() => mod.close());
+    const get = async (route) =>
+      (await mod.handle({request: {method: 'GET'}, path: route, user: {username: 'test'}})).json();
+    assert.equal((await get('/ai')).available, false);
+    assert.equal((await get('/credit')).state, 'unconfigured');
+    assert.equal((await get('/rates')).fiat.prices.KZT, 0.2);
+    assert.equal(fs.existsSync(file), false);
+    assert.equal(fs.existsSync(path.join(dir, 'chat')), false);
+  });
+  test('rolling periods exclude old/future requests and interrupted calls remain visibly unmeasured', (t) => {
+    const dir = directory(t),
+      store = new ChatStore(dir),
+      now = Date.now();
+    const old = newJob(store);
+    store.finish(old, {content: 'old', usage});
+    store.db
+      .prepare('UPDATE ai_usage SET created=? WHERE id=?')
+      .run(now - 2 * 86400000, old.usageId);
+    const current = newJob(store);
+    store.recover();
+    const future = newJob(store);
+    store.finish(future, {content: 'future', usage});
+    store.db.prepare('UPDATE ai_usage SET created=? WHERE id=?').run(now + 100000, future.usageId);
+    const data = usageSnapshot(path.join(dir, 'chat.sqlite'), now + 1000);
+    const day = data.periods.find((p) => p.id === 'day').providers[0],
+      month = data.periods.find((p) => p.id === 'month').providers[0];
+    assert.equal(day.requests, 1);
+    assert.equal(day.priced, 0);
+    assert.equal(day.running, 0);
+    assert.equal(month.requests, 2);
+    assert.equal(month.priced, 1);
+    store.close();
+  });
+  test('new insight routes require login; key writes enforce Origin and all responses are private', async (t) => {
+    const {createApp} = await import('./02-hub/src/server.mjs'),
+      {passwordHash} = await import('./02-hub/src/auth.mjs');
+    const dir = directory(t),
+      mod = createModule(path.join(dir, 'balance', 'ledger.sqlite'), {
+        chatDirectory: path.join(dir, 'chat'),
+        fetcher: async (url) =>
+          url.includes('cbr.ru') ? new Response(xml) : Response.json(crypto(Date.now()))
+      });
+    const config = {
+      username: 'admin',
+      origin: 'https://hub.example.com',
+      ...(await passwordHash('test-password-12345'))
+    };
+    const app = createApp({
+      config,
+      modules: new Map([['balance', {id: 'balance', title: 'Баланс', ...mod}]])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+      mod.close();
+    });
+    const base = 'http://127.0.0.1:' + app.address().port;
+    for (const route of ['rates', 'ai', 'credit', 'market-config'])
+      assert.equal(
+        (await fetch(base + '/modules/balance/' + route, {redirect: 'manual'})).status,
+        303
+      );
+    const login = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=test-password-12345'
+    });
+    const Cookie = login.headers.get('set-cookie').split(';')[0];
+    const request = {
+      method: 'POST',
+      headers: {Cookie, Origin: 'https://evil.example', 'Content-Type': 'application/json'},
+      body: JSON.stringify({key: 'test-only-demo-key'})
+    };
+    assert.equal((await fetch(base + '/modules/balance/market-config', request)).status, 403);
+    request.headers.Origin = config.origin;
+    const saved = await fetch(base + '/modules/balance/market-config', request);
+    assert.equal(saved.status, 200);
+    assert.deepEqual(await saved.json(), {configured: true});
+    for (const route of ['rates', 'ai', 'credit', 'market-config']) {
+      const response = await fetch(base + '/modules/balance/' + route, {headers: {Cookie}});
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      assert.equal((await response.text()).includes('test-only-demo-key'), false);
+    }
+  });
+}
+
+// 02-hub/tests/pulse
+{
+  const {mkdtempSync, writeFileSync, rmSync} = await import('node:fs');
+  const {createHandler} = await import('./02-hub/modules/pulse/index.mjs');
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {passwordHash} = await import('./02-hub/src/auth.mjs');
+  const snapshot = {
+    schema: 1,
+    generated_at: 100000,
+    server: {hostname: 'test'},
+    disks: [],
+    network: []
+  };
+  function fixture(t) {
+    const directory = mkdtempSync(path.join(os.tmpdir(), 'pulse-'));
+    t.after(() => rmSync(directory, {recursive: true, force: true}));
+    return path.join(directory, 'pulse.json');
+  }
+  const input = (route, method = 'GET') => ({
+    request: {method},
+    path: route,
+    user: {username: 'admin'}
+  });
+  test('pulse reports freshness, old snapshots and future clock skew', async (t) => {
+    const file = fixture(t);
+    writeFileSync(file, JSON.stringify(snapshot));
+    for (const [now, stale] of [
+      [110000, false],
+      [125000, true],
+      [80000, true]
+    ]) {
+      const response = await createHandler(file, () => now)(input('/api'));
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).stale, stale);
+    }
+  });
+  test('pulse fails clearly on missing, corrupt and oversized snapshots', async (t) => {
+    const file = fixture(t),
+      handle = createHandler(file);
+    assert.equal((await handle(input('/api'))).status, 503);
+    for (const content of ['not json', '{}', 'x'.repeat(524289)]) {
+      writeFileSync(file, content);
+      assert.equal((await handle(input('/api'))).status, 503);
+    }
+  });
+  test('pulse exposes only fixed read-only routes', async (t) => {
+    const handle = createHandler(fixture(t));
+    for (const route of ['/', '/pulse.css', '/pulse.js'])
+      assert.equal((await handle(input(route))).status, 200);
+    for (const route of ['/../../config/auth.json', '/manifest.json', '/run'])
+      assert.equal((await handle(input(route))).status, 404);
+    assert.equal((await handle(input('/api', 'POST'))).status, 405);
+    assert.match(await (await handle(input('/'))).text(), /Пульс/);
+  });
+  test('pulse page, assets and metrics require hub login and remain uncached', async (t) => {
+    const file = fixture(t);
+    writeFileSync(file, JSON.stringify({...snapshot, generated_at: Date.now()}));
+    const config = {
+      username: 'admin',
+      origin: 'https://hub.example.com',
+      ...(await passwordHash('test-password-123'))
+    };
+    const app = createApp({
+      config,
+      modules: new Map([
+        ['pulse', {id: 'pulse', title: 'Пульс', description: 'test', handle: createHandler(file)}]
+      ])
+    });
+    await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((resolve) => app.close(resolve));
+    });
+    const base = `http://127.0.0.1:${app.address().port}`;
+    const login = await fetch(base + '/api/auth/login', {
+      redirect: 'manual',
+      method: 'POST',
+      headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=test-password-123'
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    for (const route of ['/', '/api', '/pulse.css', '/pulse.js']) {
+      const denied = await fetch(base + '/modules/pulse' + route, {redirect: 'manual'});
+      assert.equal(denied.status, 303);
+      assert.equal(denied.headers.get('location'), '/login');
+      const response = await fetch(base + '/modules/pulse' + route, {headers: {Cookie: cookie}});
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+    }
+    const dashboard = await (await fetch(base, {headers: {Cookie: cookie}})).text();
+    assert.match(dashboard, /href="\/modules\/pulse\/"/);
+  });
+
+  test('pulse card reports resource values and preserves missing or stale data', async (t) => {
+    const {createSummary} = await import('./02-hub/modules/pulse/index.mjs');
+    const file = fixture(t);
+    let now = 100000;
+    const summary = createSummary(createHandler(file, () => now));
+    assert.deepEqual(await summary(), {state: 'stale', items: []});
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...snapshot,
+        cpu: {percent: 12.4},
+        memory: {percent: 40},
+        disks: [{mount: '/', percent: 33}]
+      })
+    );
+    assert.deepEqual(await summary(), {
+      state: 'ok',
+      items: [
+        {label: 'CPU', value: '12%'},
+        {label: 'RAM', value: '40%'},
+        {label: 'Диск', value: '33%'}
+      ]
+    });
+    now += 21000;
+    assert.equal((await summary()).state, 'stale');
+  });
+}
+
+// 02-hub/tests/server
+{
+  const {mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync} = await import('node:fs');
+  const {passwordHash, Sessions, validateAuth, authIdentity} = await import(
+    './02-hub/src/auth.mjs'
+  );
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {loadModules} = await import('./02-hub/src/modules.mjs');
+  const password = 'correct-password-123';
+  const config = {
+    username: 'admin',
+    origin: 'https://hub.example.com',
+    ...(await passwordHash(password))
+  };
+  async function setup(t, options = {}) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nexus-hub-'));
+    const app = createApp({config, sessionsFile: path.join(dir, 'sessions.json'), ...options});
+    await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((resolve) => app.close(resolve));
+      rmSync(dir, {recursive: true, force: true});
+    });
+    const base = `http://127.0.0.1:${app.address().port}`;
+    const request = (route, options = {}) => fetch(base + route, {redirect: 'manual', ...options});
+    const signin = (pass = password, origin = config.origin) =>
+      request('/api/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', Origin: origin},
+        body: new URLSearchParams({username: 'admin', password: pass})
+      });
+    return {request, signin, dir};
+  }
+  const cookie = (response) => response.headers.get('set-cookie').split(';')[0];
+
+  test('unknown and repeated logout tokens do not write session storage', () => {
+    const sessions = new Sessions();
+    const token = sessions.create();
+    let writes = 0;
+    const commit = sessions.commit.bind(sessions);
+    sessions.commit = (entries) => {
+      writes++;
+      commit(entries);
+    };
+    for (const value of [undefined, '', 'invalid', '0'.repeat(64)]) sessions.revoke(value);
+    assert.equal(writes, 0);
+    assert.equal(sessions.valid(token), true);
+    sessions.revoke(token);
+    sessions.revoke(token);
+    assert.equal(writes, 1);
+    assert.equal(sessions.valid(token), false);
+  });
+
+  test('private pages and APIs require login', async (t) => {
+    const {request} = await setup(t);
+    for (const route of ['/', '/modules/chat/', '/settings/', '/settings/?module=signal']) {
+      const r = await request(route);
+      assert.equal(r.status, 303);
+      assert.equal(r.headers.get('location'), '/login');
+    }
+    for (const route of ['/api/health', '/api/modules']) {
+      const r = await request(route);
+      assert.equal(r.status, 401);
+      assert.equal(r.headers.get('cache-control'), 'no-store');
+    }
+  });
+  test('login and PWA assets are public; no chat shortcuts', async (t) => {
+    const {request} = await setup(t);
+    const text = await (await request('/login')).text();
+    assert.match(text, /autocomplete="current-password"/);
+    assert.match(text, /rel="manifest"/);
+    assert.doesNotMatch(text, /user-scalable=no|fonts.googleapis/);
+    const manifest = await (await request('/manifest.json')).json();
+    assert.equal(manifest.display, 'standalone');
+    assert.equal(manifest.shortcuts, undefined);
+    assert.deepEqual(
+      manifest.icons.map((icon) => icon.sizes),
+      ['192x192', '512x512']
+    );
+    assert.equal((await request('/sw.js')).headers.get('cache-control'), 'no-cache');
+  });
+  test('cookies are secure and tokens are not stored raw', async (t) => {
+    const {request, signin, dir} = await setup(t);
+    const response = await signin();
+    assert.equal(response.status, 303);
+    assert.match(response.headers.get('set-cookie'), /^__Host-nexus_session=/);
+    for (const flag of ['HttpOnly', 'SameSite=Strict', 'Secure', 'Path=/'])
+      assert.ok(response.headers.get('set-cookie').includes(flag));
+    const session = cookie(response);
+    assert.equal((await request('/', {headers: {Cookie: session}})).status, 200);
+    assert.equal((await request('/api/health', {headers: {Cookie: session}})).status, 200);
+    assert.ok(
+      !readFileSync(path.join(dir, 'sessions.json'), 'utf8').includes(session.split('=')[1])
+    );
+  });
+  test('incorrect credentials and forged origins are rejected', async (t) => {
+    const {signin} = await setup(t);
+    assert.equal((await signin('incorrect')).status, 401);
+    assert.equal((await signin(password, 'https://evil.example')).status, 403);
+    assert.equal((await signin(password, '')).status, 403);
+  });
+  test('logout revokes tokens across restart; csrf cannot log out', async (t) => {
+    const {request, signin, dir} = await setup(t);
+    const session = cookie(await signin());
+    assert.equal(
+      (
+        await request('/api/auth/logout', {
+          method: 'POST',
+          headers: {Cookie: session, Origin: 'https://evil.example'}
+        })
+      ).status,
+      403
+    );
+    assert.equal((await request('/api/health', {headers: {Cookie: session}})).status, 200);
+    const response = await request('/api/auth/logout', {
+      method: 'POST',
+      headers: {Cookie: session, Origin: config.origin}
+    });
+    assert.equal(response.status, 303);
+    assert.match(response.headers.get('set-cookie'), /Max-Age=0/);
+    assert.equal((await request('/api/health', {headers: {Cookie: session}})).status, 401);
+    assert.equal(
+      new Sessions(path.join(dir, 'sessions.json'), authIdentity(config)).valid(
+        session.split('=')[1]
+      ),
+      false
+    );
+  });
+  test('sessions survive restart and password changes invalidate them', async (t) => {
+    const {signin, dir} = await setup(t);
+    const token = cookie(await signin()).split('=')[1];
+    assert.ok(new Sessions(path.join(dir, 'sessions.json'), authIdentity(config)).valid(token));
+    assert.equal(
+      new Sessions(path.join(dir, 'sessions.json'), 'different-password').valid(token),
+      false
+    );
+  });
+  test('bad passwords are rate limited', async (t) => {
+    const {signin} = await setup(t);
+    for (let i = 0; i < 10; i++) assert.equal((await signin('wrong')).status, 401);
+    const blocked = await signin();
+    assert.equal(blocked.status, 429);
+    assert.ok(blocked.headers.get('retry-after'));
+  });
+  test('oversized login and unsupported content types are rejected', async (t) => {
+    const {request} = await setup(t);
+    assert.equal(
+      (
+        await request('/api/auth/login', {
+          method: 'POST',
+          headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'x'.repeat(9000)
+        })
+      ).status,
+      413
+    );
+    assert.equal(
+      (
+        await request('/api/auth/login', {
+          method: 'POST',
+          headers: {Origin: config.origin, 'Content-Type': 'application/json'},
+          body: '{}'
+        })
+      ).status,
+      415
+    );
+  });
+  test('empty shell has no built-in chat or functional modules', async (t) => {
+    const {request, signin} = await setup(t);
+    const headers = {Cookie: cookie(await signin())};
+    const text = await (await request('/', {headers})).text();
+    assert.match(text, /Пока нет модулей/);
+    assert.doesNotMatch(text, /href="\/chat"/);
+    assert.deepEqual(await (await request('/api/modules', {headers})).json(), {modules: []});
+    assert.equal((await request('/chat', {headers})).status, 404);
+  });
+  test('modules share auth and cannot issue platform cookies', async (t) => {
+    const modules = new Map([
+      [
+        'example',
+        {
+          id: 'example',
+          title: '<script>alert(1)</script>',
+          description: 'test',
+          handle: async ({path, user}) =>
+            new Response(JSON.stringify({path, username: user.username}), {
+              headers: {
+                'Content-Type': 'application/json',
+                'Set-Cookie': 'injected=1',
+                'Cache-Control': 'public'
+              }
+            })
+        }
+      ]
+    ]);
+    const {request, signin} = await setup(t, {modules});
+    const headers = {Cookie: cookie(await signin())};
+    const text = await (await request('/', {headers})).text();
+    assert.match(text, /&lt;script&gt;/);
+    assert.doesNotMatch(text, /<script>alert/);
+    assert.equal((await request('/modules/example/')).status, 303);
+    const response = await request('/modules/example/hello?x=1', {headers});
+    assert.deepEqual(await response.json(), {path: '/hello', username: 'admin'});
+    assert.equal(response.headers.get('set-cookie'), null);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(
+      (
+        await request('/modules/example/', {
+          method: 'POST',
+          headers: {...headers, Origin: 'https://evil.example'}
+        })
+      ).status,
+      403
+    );
+  });
+  test('discovery loads valid entries and skips disabled ones', async (t) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nexus-modules-'));
+    t.after(() => rmSync(dir, {recursive: true, force: true}));
+    for (const [id, enabled] of [
+      ['example', true],
+      ['disabled', false]
+    ]) {
+      mkdirSync(path.join(dir, id));
+      writeFileSync(
+        path.join(dir, id, 'manifest.json'),
+        JSON.stringify({apiVersion: 1, title: id, description: 'test', enabled})
+      );
+      writeFileSync(
+        path.join(dir, id, 'index.mjs'),
+        'export async function handle(){ return new Response("module"); } export async function summary(){return {state:"ok",items:[]};} export const settings={title:"Example",content:"<p>Options</p>"};'
+      );
+    }
+    const modules = await loadModules(dir);
+    assert.deepEqual([...modules.keys()], ['example']);
+    assert.equal(typeof modules.get('example').summary, 'function');
+    assert.equal(modules.get('example').settings.title, 'Example');
+  });
+  test('a failed module startup is isolated and cleaned up before serving the hub', async (t) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nexus-start-'));
+    t.after(() => rmSync(dir, {recursive: true, force: true}));
+    for (const id of ['broken', 'healthy']) {
+      mkdirSync(path.join(dir, id));
+      writeFileSync(
+        path.join(dir, id, 'manifest.json'),
+        JSON.stringify({apiVersion: 1, title: id, description: '', enabled: true})
+      );
+      writeFileSync(
+        path.join(dir, id, 'index.mjs'),
+        `
+      import fs from 'node:fs';
+      let ready = false;
+      export function start() { ${id === 'broken' ? 'throw new Error("private config detail");' : 'ready = true;'} }
+      export function close() { fs.writeFileSync(new URL('./closed', import.meta.url), 'closed'); }
+      export function handle() { return new Response(ready ? 'ready' : 'not started'); }
+    `
+      );
+    }
+    const messages = [];
+    t.mock.method(console, 'error', (...args) => messages.push(args.join(' ')));
+    const modules = await loadModules(dir, {start: true});
+    assert.deepEqual([...modules.keys()], ['healthy']);
+    assert.equal(readFileSync(path.join(dir, 'broken/closed'), 'utf8'), 'closed');
+    assert.deepEqual(messages, ['Module not loaded: broken']);
+    const {request, signin} = await setup(t, {modules});
+    assert.equal((await request('/login')).status, 200);
+    const response = await request('/modules/healthy/', {
+      headers: {Cookie: cookie(await signin())}
+    });
+    assert.equal(await response.text(), 'ready');
+  });
+  test('invalid auth configuration fails closed', () => {
+    assert.throws(() => validateAuth({...config, hash: ''}));
+    assert.throws(() => validateAuth({...config, origin: 'http://example.com'}));
+    assert.throws(() => validateAuth({...config, origin: 'https://example.com/path'}));
+  });
+
+  test('service worker changes when cached assets change and stays stable otherwise', async (t) => {
+    const {cpSync} = await import('node:fs');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nexus-assets-'));
+    t.after(() => rmSync(dir, {recursive: true, force: true}));
+    cpSync(new URL('./02-hub/public', import.meta.url), dir, {recursive: true});
+    const first = await setup(t, {publicDir: dir});
+    const worker = await (await first.request('/sw.js')).text();
+    assert.doesNotMatch(worker, /__ASSET_HASH__/);
+    assert.match(worker, /nexus404-shell-[a-f0-9]{20}/);
+    const same = await setup(t, {publicDir: dir});
+    assert.equal(await (await same.request('/sw.js')).text(), worker);
+    writeFileSync(
+      dir + '/app.css',
+      readFileSync(dir + '/app.css', 'utf8') + '\nhtml{--revision:2}\n'
+    );
+    const changed = await setup(t, {publicDir: dir});
+    assert.notEqual(await (await changed.request('/sw.js')).text(), worker);
+  });
+  test('installer and module loader use strict manifest validation', async () => {
+    const {validateManifest} = await import('./02-hub/src/modules.mjs');
+    const manifest = {apiVersion: 1, title: 'Example', description: '', enabled: false};
+    assert.equal(validateManifest(manifest), manifest);
+    for (const invalid of [
+      null,
+      {...manifest, title: ' '},
+      {...manifest, enabled: 'false'},
+      {...manifest, enabled: undefined}
+    ])
+      assert.throws(() => validateManifest(invalid));
+  });
+  test('malformed push payload still produces a generic notification', async () => {
+    const {runInNewContext} = await import('node:vm');
+    const handlers = {},
+      notices = [];
+    runInNewContext(readFileSync(new URL('./02-hub/public/sw.js', import.meta.url), 'utf8'), {
+      self: {
+        addEventListener: (name, handler) => {
+          handlers[name] = handler;
+        },
+        registration: {
+          showNotification: async (title, options) => notices.push({title, ...options})
+        }
+      },
+      URL
+    });
+    for (const value of [null, [], 'bad', 123]) {
+      let pending;
+      handlers.push({
+        data: {json: () => value},
+        waitUntil: (p) => {
+          pending = p;
+        }
+      });
+      await pending;
+    }
+    assert.equal(notices.length, 4);
+    assert.ok(notices.every((n) => n.title === 'NEXUS404 · Сигнал'));
+  });
+
+  test('dashboard summaries require login, isolate errors and omit private plugin fields', async (t) => {
+    let calls = 0;
+    const modules = new Map([
+      [
+        'live',
+        {
+          id: 'live',
+          title: 'Live',
+          description: 'test',
+          summary: async () => {
+            calls++;
+            return {state: 'ok', items: [{label: 'CPU', value: '12%'}], secret: 'private'};
+          }
+        }
+      ],
+      [
+        'broken',
+        {
+          id: 'broken',
+          title: 'Broken',
+          description: 'test',
+          summary: async () => {
+            throw new Error('private error');
+          }
+        }
+      ],
+      ['legacy', {id: 'legacy', title: 'Legacy', description: 'test'}]
+    ]);
+    const {request, signin} = await setup(t, {modules});
+    assert.equal((await request('/api/modules')).status, 401);
+    assert.equal(calls, 0);
+    const headers = {Cookie: cookie(await signin())};
+    const response = await request('/api/modules', {headers}),
+      data = await response.json();
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(data.modules[0].summary, {state: 'ok', items: [{label: 'CPU', value: '12%'}]});
+    assert.deepEqual(data.modules[1].summary, {state: 'stale', items: []});
+    assert.equal(data.modules[2].summary, undefined);
+    assert.doesNotMatch(JSON.stringify(data), /private/);
+    const html = await (await request('/', {headers})).text();
+    assert.doesNotMatch(html, /module-open|открыть/);
+    assert.match(html, /data-summary="live"/);
+  });
+  test('unresponsive module summary times out and receives cancellation', async () => {
+    const {moduleSummary} = await import('./02-hub/src/modules.mjs');
+    let aborted = false;
+    const result = await moduleSummary(
+      {
+        summary: ({signal}) =>
+          new Promise(() =>
+            signal.addEventListener('abort', () => {
+              aborted = true;
+            })
+          )
+      },
+      10
+    );
+    assert.deepEqual(result, {state: 'stale', items: []});
+    assert.ok(aborted);
+  });
+
+  test('settings render only the selected installed module and support an empty hub', async (t) => {
+    const modules = new Map([
+      [
+        'first',
+        {
+          id: 'first',
+          title: 'Первый',
+          settings: {title: '<Первый>', content: '<p id="first-settings">First</p>'}
+        }
+      ],
+      [
+        'second',
+        {
+          id: 'second',
+          title: 'Второй',
+          settings: {title: 'Второй', content: '<p id="second-settings">Second</p>'}
+        }
+      ],
+      ['legacy', {id: 'legacy', title: 'Прежний'}]
+    ]);
+    const {request, signin} = await setup(t, {modules});
+    const headers = {Cookie: cookie(await signin())};
+    const second = await (await request('/settings/?module=second', {headers})).text();
+    assert.match(second, /id="second-settings"/);
+    assert.doesNotMatch(second, /id="first-settings"/);
+    assert.match(second, /&lt;Первый&gt;/);
+    assert.doesNotMatch(second, /Прежний/);
+    const fallback = await (await request('/settings/?module=missing', {headers})).text();
+    assert.match(fallback, /id="first-settings"/);
+    modules.clear();
+    const empty = await (await request('/settings/', {headers})).text();
+    assert.match(empty, /пока не добавили настройки/);
+    const home = await (await request('/', {headers})).text();
+    assert.match(home, /href="\/settings\/"/);
+    assert.doesNotMatch(home, /module-mark/);
+  });
+}
+
+// 02-hub/tests/signal
+{
+  const {createHandler, settings: signalSettings} = await import(
+    './02-hub/modules/signal/index.mjs'
+  );
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {passwordHash} = await import('./02-hub/src/auth.mjs');
+  const sub = {
+    endpoint: 'https://fcm.googleapis.com/wp/example',
+    keys: {
+      p256dh:
+        'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4',
+      auth: 'BTBZMqHH6r4Tts7J_aSIgg'
+    }
+  };
+  async function setup(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signal-api-'));
+    const config = {
+      username: 'admin',
+      origin: 'https://hub.example.com',
+      ...(await passwordHash('test-password-123'))
+    };
+    fs.writeFileSync(dir + '/auth.json', JSON.stringify(config));
+    fs.writeFileSync(dir + '/public.json', JSON.stringify({publicKey: 'public'}));
+    const handle = createHandler({
+      file: dir + '/settings.json',
+      feed: dir + '/feed.json',
+      publicFile: dir + '/public.json',
+      authFile: dir + '/auth.json'
+    });
+    const app = createApp({
+      config,
+      auditFile: dir + '/auth-events.jsonl',
+      modules: new Map([
+        [
+          'signal',
+          {id: 'signal', title: 'Сигнал', description: 'test', handle, settings: signalSettings}
+        ]
+      ])
+    });
+    await new Promise((r) => app.listen(0, '127.0.0.1', r));
+    t.after(async () => {
+      app.closeAllConnections();
+      await new Promise((r) => app.close(r));
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    const base = 'http://127.0.0.1:' + app.address().port;
+    const login = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=admin&password=test-password-123'
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const request = (route, data, headers = {}) =>
+      fetch(base + '/modules/signal' + route, {
+        method: data === undefined ? 'GET' : 'POST',
+        redirect: 'manual',
+        headers: {
+          Cookie: cookie,
+          Origin: config.origin,
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        body: data === undefined ? undefined : JSON.stringify(data)
+      });
+    return {dir, request, base, config, cookie};
+  }
+  test('signal subscription is protected, private and revocable', async (t) => {
+    const {request, dir} = await setup(t);
+    let r = await request('/subscribe', {name: 'Phone', subscription: sub});
+    assert.equal(r.status, 200);
+    const {id} = await r.json();
+    assert.equal(fs.statSync(dir + '/settings.json').mode & 0o777, 0o600);
+    const response = await request('/api');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const data = await response.json();
+    assert.equal(data.devices[0].id, id);
+    assert.ok(!JSON.stringify(data).includes(sub.endpoint));
+    assert.ok(!JSON.stringify(data).includes(sub.keys.auth));
+    assert.equal((await request('/unsubscribe', {id})).status, 200);
+    assert.equal((await (await request('/api')).json()).devices.length, 0);
+  });
+  test('signal refuses anonymous access and forged origins', async (t) => {
+    const {request, base} = await setup(t);
+    assert.equal((await fetch(base + '/modules/signal/api', {redirect: 'manual'})).status, 303);
+    assert.equal(
+      (await request('/subscribe', {subscription: sub}, {Origin: 'https://evil.test'})).status,
+      403
+    );
+    assert.equal((await request('/subscribe', {subscription: sub}, {Cookie: ''})).status, 401);
+  });
+  test('signal rejects SSRF subscription and path traversal', async (t) => {
+    const {request} = await setup(t);
+    assert.equal(
+      (await request('/subscribe', {subscription: {...sub, endpoint: 'https://127.0.0.1/'}}))
+        .status,
+      400
+    );
+    assert.equal((await request('/settings.json')).status, 404);
+    assert.equal((await request('/test', {id: 'missing'})).status, 400);
+  });
+  test('push test is queued and limited to one per thirty seconds', async (t) => {
+    const {request, dir} = await setup(t);
+    const {id} = await (await request('/subscribe', {subscription: sub})).json();
+    assert.equal((await request('/test', {id})).status, 200);
+    assert.equal((await request('/test', {id})).status, 429);
+    assert.ok(JSON.parse(fs.readFileSync(dir + '/settings.json')).devices[0].testAt > 0);
+  });
+  test('settings save only known categories and valid schedule', async (t) => {
+    const {request} = await setup(t);
+    const config = {
+      categories: {
+        resources: false,
+        services: true,
+        security: true,
+        maintenance: true,
+        recovery: true,
+        summary: false
+      },
+      dailyTime: '22:30',
+      detailOnLockScreen: true
+    };
+    assert.equal((await request('/settings', config)).status, 200);
+    assert.deepEqual((await (await request('/api')).json()).settings, config);
+    assert.equal((await request('/settings', {...config, dailyTime: '24:30'})).status, 400);
+  });
+  test('auth event excludes passwords and HTTP credentials', async (t) => {
+    const {dir} = await setup(t);
+    const text = fs.readFileSync(dir + '/auth-events.jsonl', 'utf8');
+    assert.match(text, /security.hub.login_new/);
+    assert.doesNotMatch(text, /test-password-123|hash|cookie/i);
+  });
+
+  test('signal settings moved to the protected central page, preserving old links', async (t) => {
+    const {request, base, cookie} = await setup(t);
+    const home = await (await request('/')).text();
+    assert.match(home, /id="signalEvents"/);
+    assert.doesNotMatch(home, /signal-settings-card|id="signalSettings"|id="deviceName"/);
+    const old = await request('/settings/');
+    assert.equal(old.status, 303);
+    assert.equal(old.headers.get('location'), '/settings/?module=signal');
+    const response = await fetch(base + '/settings/?module=signal', {headers: {Cookie: cookie}});
+    const settings = await response.text();
+    assert.match(settings, /id="signalSettings"/);
+    assert.match(settings, /id="deviceName"/);
+    assert.doesNotMatch(settings, /id="signalEvents"/);
+    const denied = await fetch(base + '/settings/', {redirect: 'manual'});
+    assert.equal(denied.status, 303);
+    assert.equal(denied.headers.get('location'), '/login');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  });
+  test('signal card shows warnings and active device count without subscription secrets', async (t) => {
+    const {createSummary} = await import('./02-hub/modules/signal/index.mjs');
+    const {request, dir} = await setup(t);
+    const {id} = await (await request('/subscribe', {name: 'Phone', subscription: sub})).json();
+    fs.writeFileSync(
+      dir + '/feed.json',
+      JSON.stringify({
+        updatedAt: Date.now(),
+        active: [{key: 'disk'}],
+        events: [],
+        devices: [{id, expired: false}]
+      })
+    );
+    const summary = createSummary(async () => request('/api'));
+    assert.deepEqual(await summary(), {
+      state: 'warning',
+      items: [
+        {label: 'Тревоги', value: '1'},
+        {label: 'Устройства', value: '1'}
+      ]
+    });
+    fs.writeFileSync(
+      dir + '/feed.json',
+      JSON.stringify({updatedAt: 0, active: [], events: [], devices: []})
+    );
+    assert.equal((await summary()).state, 'stale');
+  });
+}

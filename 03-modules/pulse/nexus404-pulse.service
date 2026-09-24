@@ -1,0 +1,36 @@
+[Unit]
+Description=NEXUS404 Pulse metrics
+After=local-fs.target
+
+[Service]
+Type=simple
+User=nexus404-metrics
+Group=nexus404-metrics
+ExecStart=/usr/local/bin/nexus404-node --max-old-space-size=32 /opt/nexus404/host/metrics.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+UMask=0022
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nexus404-metrics
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+TasksMax=32
+MemoryMax=128M
+CPUQuota=5%
+
+[Install]
+WantedBy=multi-user.target

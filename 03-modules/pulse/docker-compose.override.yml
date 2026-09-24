@@ -1,0 +1,7 @@
+# NEXUS404 Pulse · managed override
+services:
+  hub:
+    environment:
+      PULSE_FILE: /app/metrics/pulse.json
+    volumes:
+      - /var/lib/nexus404-metrics:/app/metrics:ro
