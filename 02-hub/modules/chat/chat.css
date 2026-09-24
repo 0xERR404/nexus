@@ -13,3 +13,5 @@
 .chat-text code,.chat-code pre{font-family:var(--mono)}.chat-message[data-role=user]{background:var(--surface-raised);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0 10px auto;max-width:88%}.chat-message[data-role=assistant]{border-top:0}.chat-panel{padding:14px}.chat-text{font-size:1rem;line-height:1.7}.chat-code{background:var(--bg)}
 
 .chat-topic-row{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.chat-topic-row #chatTopics{flex:1;min-width:0}.chat-topic-row #chatProvider{flex:0 0 120px;width:120px;max-width:120px}@media(max-width:500px){.chat-topic-row{flex-basis:100%;width:100%}.chat-topic-row #chatTopics{flex-basis:0}.chat-topic-row #chatProvider{flex-basis:108px;width:108px;max-width:108px}}
+
+#flowCredits{font-size:11px;white-space:normal}#flowCreditDialog{width:min(540px,calc(100vw - 24px));max-height:80dvh;overflow:auto}#flowCreditHistory p{padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}#flowCreditStatus{font-size:12px;margin:10px 0}

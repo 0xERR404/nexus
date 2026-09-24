@@ -32,8 +32,40 @@
     $(id).value = list.includes(selected) ? selected : config.model;
     if (id === 'chatModel') $(id).hidden = flow();
   }
+  let creditData,
+    creditLoading = false;
+  async function updateCredits() {
+    if (isSettings || !flow() || creditLoading || document.hidden) return;
+    creditLoading = true;
+    try {
+      creditData = await api('/flow/credits');
+      $('flowCredits').textContent =
+        `Кредиты · ${creditData.remaining == null ? '—' : creditData.remaining.toLocaleString('ru-RU')}${creditData.stale ? ' · не обновлено' : ''}`;
+      $('flowCredits').title = creditData.updatedAt
+        ? 'Проверено: ' + new Date(creditData.updatedAt).toLocaleString('ru-RU')
+        : 'Остаток ещё не получен';
+      $('flowCreditStatus').textContent = creditData.error || $('flowCredits').title;
+      $('flowCreditHistory').replaceChildren(
+        ...creditData.history
+          .slice()
+          .reverse()
+          .map((x) =>
+            make(
+              'p',
+              `${new Date(x.time).toLocaleString('ru-RU')} · ${x.remaining.toLocaleString('ru-RU')}${x.change == null ? '' : ` (${x.change > 0 ? '+' : ''}${x.change})`}`
+            )
+          )
+      );
+    } catch {
+      $('flowCredits').textContent = 'Кредиты · не обновлено';
+    } finally {
+      creditLoading = false;
+    }
+  }
   function providerUI() {
     $('chatProvider').value = provider;
+    $('flowCredits').hidden = !flow();
+    if (flow()) void updateCredits();
     $('chatModel').hidden = flow();
     $('chatInput').placeholder = flow() ? 'Опиши музыку, настроение и вокал…' : 'Напиши сообщение…';
     $('chatInput').maxLength = flow() ? 8000 : 32000;
@@ -485,6 +517,10 @@
       } catch {}
       status(error.message, true);
     } finally {
+      if (flow()) {
+        void updateCredits();
+        setTimeout(() => void updateCredits(), 12000);
+      }
       if (ended) pendingSend = null;
       busy = false;
       pendingId = null;
@@ -498,7 +534,10 @@
     $('flowState').textContent = config.flowmusic.needsLogin
       ? 'нужна новая сессия'
       : config.flowmusic.configured
-        ? 'сессия сохранена'
+        ? config.flowmusic.error ||
+          (config.flowmusic.lastRefresh
+            ? 'Сессия обновлена: ' + new Date(config.flowmusic.lastRefresh).toLocaleString('ru-RU')
+            : 'сессия сохранена')
         : 'не подключён';
     $('flowCheck').disabled = $('flowRemove').disabled = !config.flowmusic.configured;
     $('chatMaxTokens').value = String(config.maxTokens);
@@ -736,4 +775,12 @@
     modelOptions('chatModel', config.model);
     await load();
   })().catch((e) => status(e.message, true));
+  if (!isSettings) {
+    $('flowCredits').onclick = () => {
+      void updateCredits();
+      $('flowCreditDialog').showModal();
+    };
+    $('flowCreditClose').onclick = () => $('flowCreditDialog').close();
+    setInterval(() => void updateCredits(), 60000);
+  }
 })();

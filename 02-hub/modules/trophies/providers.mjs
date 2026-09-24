@@ -32,7 +32,8 @@ export class Provider {
     {fetcher = fetch, now = Date.now, sleep = delay, budget = () => {}, token = null} = {}
   ) {
     Object.assign(this, {kind, account, fetcher, now, sleep, budget, token});
-    this.next = 0;
+    this.next = {};
+    this.gates = {};
     this.stopped = false;
     this.controller = new AbortController();
   }
@@ -40,35 +41,53 @@ export class Provider {
     this.stopped = true;
     this.controller.abort();
   }
-  async get(endpoint, args = {}) {
+  async get(endpoint, args = {}, source = 'api') {
     const url =
-      this.kind === 'steam'
-        ? new URL('https://api.steampowered.com/' + endpoint)
-        : new URL('https://retroachievements.org/API/API_' + endpoint + '.php');
+      source === 'store'
+        ? new URL('https://store.steampowered.com/' + endpoint)
+        : this.kind === 'steam'
+          ? new URL('https://api.steampowered.com/' + endpoint)
+          : new URL('https://retroachievements.org/API/API_' + endpoint + '.php');
+    const stats = this.kind === 'steam' && endpoint.startsWith('ISteamUserStats/');
+    const publicRequest =
+      source === 'store' || endpoint.includes('GetGlobalAchievementPercentages');
+    const useToken = !publicRequest && !stats && this.token;
+    if (stats && !publicRequest && !this.account.key)
+      throw fail(
+        'Для достижений Steam добавь Web API key в настройках «Трофеев». QR-сессия сохранена.',
+        409
+      );
     url.search = new URLSearchParams({
       ...args,
-      ...(this.token
-        ? {access_token: await this.token(false)}
-        : {[this.kind === 'steam' ? 'key' : 'y']: this.account.key})
+      ...(publicRequest
+        ? {}
+        : useToken
+          ? {access_token: await this.token(false)}
+          : {[this.kind === 'steam' ? 'key' : 'y']: this.account.key})
     }).toString();
     let refreshed = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (this.stopped) throw fail('Синхронизация остановлена', 503);
-      await this.sleep(Math.max(0, this.next - this.now()));
-      if (this.stopped) throw fail('Синхронизация остановлена', 503);
-      this.budget();
-      this.next = this.now() + 1100;
+      const gate = (this.gates[source] ?? Promise.resolve()).then(async () => {
+        await this.sleep(Math.max(0, (this.next[source] || 0) - this.now()));
+        if (this.stopped) throw fail('Синхронизация остановлена', 503);
+        this.budget();
+        this.next[source] =
+          this.now() + (source === 'store' ? 700 : this.kind === 'steam' ? 200 : 1100);
+      });
+      this.gates[source] = gate.catch(() => {});
+      await gate;
       let response;
       try {
         response = await this.fetcher(url, {
           redirect: 'error',
           signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(20000)]),
-          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.13.0'}
+          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.14.0'}
         });
       } catch {
         throw fail('Сервис не отвечает. Сохранённые данные оставлены.');
       }
-      if ((response.status === 401 || response.status === 403) && this.token && !refreshed) {
+      if ((response.status === 401 || response.status === 403) && useToken && !refreshed) {
         await response.body?.cancel();
         refreshed = true;
         url.searchParams.set('access_token', await this.token(true));
@@ -82,7 +101,7 @@ export class Provider {
         const wait =
           Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : 2000 * 2 ** attempt;
         await response.body?.cancel();
-        this.next = Math.max(this.next, this.now() + wait);
+        this.next[source] = Math.max(this.next[source] || 0, this.now() + wait);
         if (attempt === 2 || wait > 60000)
           throw fail('Сервис ограничил запросы. Повторим позже.', 503);
         continue;
@@ -91,11 +110,11 @@ export class Provider {
         await response.body?.cancel();
         throw fail(
           response.status === 401 || response.status === 403
-            ? this.token
+            ? useToken
               ? 'Сессия Steam не даёт доступа к этому запросу. Повтори вход по QR.'
               : 'Проверь ключ API и доступность профиля.'
             : 'API отклонил запрос. Данные оставлены.',
-          this.token && [401, 403].includes(response.status) ? 401 : 502
+          [401, 403].includes(response.status) ? (useToken ? 401 : 409) : 502
         );
       }
       try {
@@ -161,6 +180,8 @@ export class Provider {
           id: String(g.appid),
           title: label(g.name) || String(g.appid),
           console: 'Steam',
+          minutes: integer(g.playtime_forever) ? g.playtime_forever : null,
+          lastPlayed: timestamp(g.rtime_last_played),
           cover: `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg`
         };
       });
@@ -215,6 +236,43 @@ export class Provider {
         time: timestamp(x.AwardedAt)
       })),
       hiddenAwards: Number(a.HiddenAwardsCount) || 0
+    };
+  }
+  async reviews(id) {
+    const r = await this.get(
+      'appreviews/' + id,
+      {json: 1, language: 'all', purchase_type: 'all', num_per_page: 0, filter: 'all'},
+      'store'
+    );
+    const q = r.query_summary;
+    if (
+      r.success !== 1 ||
+      !q ||
+      !integer(q.total_reviews) ||
+      !integer(q.total_positive) ||
+      q.total_positive > q.total_reviews
+    )
+      throw fail('Отзывы Steam временно недоступны');
+    return {
+      reviewPercent: percent(q.total_positive, q.total_reviews),
+      reviewCount: q.total_reviews,
+      reviewAt: this.now()
+    };
+  }
+  async price(id) {
+    const r = await this.get('api/appdetails', {appids: id, cc: 'us', l: 'english'}, 'store');
+    const entry = r[id];
+    if (!entry || typeof entry.success !== 'boolean') throw fail('Цена Steam временно недоступна');
+    const d = entry.data,
+      price = d?.price_overview;
+    return {
+      priceUsd:
+        d?.is_free === true
+          ? 0
+          : price?.currency === 'USD' && integer(price.initial)
+            ? price.initial / 100
+            : null,
+      priceAt: this.now()
     };
   }
   async game(game, cached = {}) {
@@ -275,6 +333,7 @@ export class Provider {
     }
     if (!schema.length)
       return {
+        ...cached,
         ...game,
         achievements: [],
         total: 0,
@@ -327,6 +386,7 @@ export class Provider {
       };
     });
     return {
+      ...cached,
       ...game,
       achievements,
       total: achievements.length,

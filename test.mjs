@@ -3278,7 +3278,7 @@ import path from 'node:path';
     assert.doesNotMatch(publicConfig, /test-access|test-refresh|test-anon/);
   });
 
-  test('FlowMusic incomplete rotation and interrupted persistence never reuse an old session', async (t) => {
+  test('FlowMusic incomplete rotation blocks access; interrupted refresh can recover', async (t) => {
     const dir = directory(t);
     const session = new FlowSession(dir, {
       fetcher: async () => Response.json({...tokens(), refresh_token: undefined})
@@ -3296,10 +3296,10 @@ import path from 'node:path';
       JSON.stringify({...tokens(), anon_key: credentials.anonKey, refreshing: true})
     );
     const restarted = new FlowSession(dir, {
-      fetcher: async () => assert.fail('Must not reuse ambiguous session')
+      fetcher: async () => Response.json(tokens(2))
     });
-    assert.equal(restarted.publicConfig().needsLogin, true);
-    await assert.rejects(restarted.token(), /новая сессия/);
+    assert.equal(restarted.publicConfig().needsLogin, false);
+    assert.equal(await restarted.refresh(), 'test-access-2');
     restarted.close();
   });
   test('HTTP protects FlowMusic settings and audio, serves ranges, and deletes files with the topic', async (t) => {
@@ -3981,7 +3981,7 @@ import path from 'node:path';
     assert.equal(manifest.shortcuts, undefined);
     assert.deepEqual(
       manifest.icons.map((icon) => icon.sizes),
-      ['192x192', '512x512']
+      ['192x192', '512x512', 'any']
     );
     assert.equal((await request('/sw.js')).headers.get('cache-control'), 'no-cache');
   });
@@ -5168,5 +5168,330 @@ test('dashboard previews allow only bounded public fields for their own modules'
     );
     await assert.rejects(poll, (e) => e.status === 410);
     a.close();
+  });
+}
+
+// tests/sync-recovery
+{
+  const {FlowSession} = await import('./02-hub/modules/chat/flow-session.mjs');
+  const {Provider} = await import('./02-hub/modules/trophies/providers.mjs');
+  const {TrophiesStore} = await import('./02-hub/modules/trophies/store.mjs');
+  const temp = (t) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-recovery-'));
+    t.after(() => fs.rmSync(d, {recursive: true, force: true}));
+    return d;
+  };
+  test('FlowMusic transient failures keep tokens and retry after backoff, even after restart', async (t) => {
+    const dir = temp(t);
+    let now = Date.now(),
+      calls = 0;
+    const options = {
+      now: () => now,
+      fetcher: async () => {
+        calls++;
+        if (calls === 1) return new Response('private-error', {status: 503});
+        return Response.json({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600
+        });
+      }
+    };
+    let s = new FlowSession(dir, options);
+    s.save({refreshToken: 'current-refresh-token', anonKey: 'public-anon-key'});
+    await assert.rejects(s.refresh(), /временно/);
+    assert.equal(s.publicConfig().needsLogin, false);
+    assert.equal(JSON.parse(fs.readFileSync(s.file)).refresh_token, 'current-refresh-token');
+    s.close();
+    s = new FlowSession(dir, options);
+    t.after(() => s.close());
+    await assert.rejects(s.token(), /временно/);
+    assert.equal(calls, 1);
+    now += 30001;
+    assert.equal(await s.token(), 'new-access-token');
+    assert.equal(JSON.parse(fs.readFileSync(s.file)).refresh_token, 'new-refresh-token');
+    assert.equal(s.publicConfig().error, null);
+  });
+  test('FlowMusic respects 429 Retry-After and does not leak upstream body', async (t) => {
+    let now = Date.now();
+    const s = new FlowSession(temp(t), {
+      now: () => now,
+      fetcher: async () => new Response('secret', {status: 429, headers: {'Retry-After': '120'}})
+    });
+    t.after(() => s.close());
+    s.save({refreshToken: 'current-refresh-token', anonKey: 'public-anon-key'});
+    await assert.rejects(s.refresh(), (e) => !e.message.includes('secret'));
+    assert.equal(s.publicConfig().nextRetry, now + 120000);
+    assert.equal(s.publicConfig().needsLogin, false);
+  });
+  test('FlowMusic serves an unexpired token through temporary proactive-refresh failure', async (t) => {
+    const now = Date.now(),
+      dir = temp(t);
+    fs.writeFileSync(
+      dir + '/flowmusic.json',
+      JSON.stringify({
+        access_token: 'still-valid-access',
+        refresh_token: 'current-refresh-token',
+        anon_key: 'public-anon-key',
+        expires_at: Math.floor(now / 1000) + 90
+      })
+    );
+    const s = new FlowSession(dir, {
+      now: () => now,
+      fetcher: async () => {
+        throw Error('network');
+      }
+    });
+    t.after(() => s.close());
+    assert.equal(await s.token(), 'still-valid-access');
+    assert.equal(s.publicConfig().needsLogin, false);
+  });
+  test('Steam QR is used for library, API key for statistics, no secrets for store or rarity', async () => {
+    const requests = [];
+    const p = new Provider(
+      'steam',
+      {id: '76561198000000000', key: 'private-api-key'},
+      {
+        token: async () => 'private-access-token',
+        sleep: async () => {},
+        fetcher: async (u) => {
+          requests.push(new URL(u));
+          return Response.json({});
+        }
+      }
+    );
+    await p.get('IPlayerService/GetOwnedGames/v1/');
+    await p.get('ISteamUserStats/GetPlayerAchievements/v1/');
+    await p.get('ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/');
+    await p.get('appreviews/10', {}, 'store');
+    assert.equal(requests[0].searchParams.get('access_token'), 'private-access-token');
+    assert.equal(requests[1].searchParams.get('key'), 'private-api-key');
+    assert.equal(requests[1].searchParams.has('access_token'), false);
+    for (const u of requests.slice(2)) assert.doesNotMatch(u.href, /private|access_token|key=/);
+    assert.equal(requests[3].hostname, 'store.steampowered.com');
+    p.close();
+  });
+  test('Steam review percentage validates totals and distinguishes no reviews', async () => {
+    let summary = {total_reviews: 200, total_positive: 187};
+    const p = new Provider(
+      'steam',
+      {},
+      {
+        sleep: async () => {},
+        fetcher: async () => Response.json({success: 1, query_summary: summary})
+      }
+    );
+    assert.equal((await p.reviews('10')).reviewPercent, 93.5);
+    summary = {total_reviews: 0, total_positive: 0};
+    assert.equal((await p.reviews('10')).reviewPercent, null);
+    summary = {total_reviews: 2, total_positive: 3};
+    await assert.rejects(p.reviews('10'), /Отзывы/);
+    p.close();
+  });
+  test('Steam key update keeps the QR session and library intact', async (t) => {
+    const s = new TrophiesStore(temp(t), {
+      sleep: async () => {},
+      fetcher: async () =>
+        Response.json({
+          response: {players: [{steamid: '76561198000000000', personaname: 'Player'}]}
+        })
+    });
+    s.load();
+    t.after(() => s.close());
+    s.set('steam', {
+      id: '76561198000000000',
+      name: 'Player',
+      refreshToken: 'retained-refresh',
+      accessToken: 'retained-access',
+      expiresAt: Date.now() + 3600000
+    });
+    let synced = false;
+    s.sync = async () => {
+      synced = true;
+    };
+    await s.steamKey('new-api-key-123456789');
+    assert.equal(s.account('steam').refreshToken, 'retained-refresh');
+    assert.equal(s.account('steam').key, 'new-api-key-123456789');
+    assert.ok(synced);
+    assert.doesNotMatch(JSON.stringify(s.config()), /retained-|new-api-key/);
+  });
+  test('Trophies parallel refresh preserves metadata, unlocks and notifications without duplicates', async (t) => {
+    let now = Date.now(),
+      active = 0,
+      peak = 0,
+      unlocked = false,
+      storeCalls = 0,
+      statsCalls = 0;
+    const s = new TrophiesStore(temp(t), {now: () => now});
+    s.load();
+    t.after(() => s.close());
+    s.set('steam', {
+      id: '76561198000000000',
+      key: 'test-key',
+      name: 'Player',
+      connectedAt: now - 86400000
+    });
+    s.provider = () => ({
+      close() {},
+      library: async () => ({
+        items: Array.from({length: 8}, (_, i) => ({
+          id: String(i + 1),
+          title: 'Game',
+          minutes: unlocked ? 2 : 1,
+          lastPlayed: now
+        })),
+        awards: []
+      }),
+      game: async (g) => {
+        statsCalls++;
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 10));
+        active--;
+        return {
+          ...g,
+          total: 1,
+          detailAt: now,
+          achievements: [{id: 'WIN', title: 'Win', soft: unlocked, hard: false, date: now}]
+        };
+      },
+      reviews: async () => {
+        storeCalls++;
+        return {reviewPercent: 95, reviewCount: 100, reviewAt: now};
+      },
+      price: async () => ({priceUsd: 10, priceAt: now})
+    });
+    await s.sync('steam');
+    assert.equal(peak, 4);
+    assert.equal(statsCalls, 8);
+    assert.equal(storeCalls, 8);
+    assert.ok(s.snapshot().games.every((g) => g.reviewPercent === 95 && g.priceUsd === 10));
+    assert.equal(s.get('steam').error, null);
+    now += 3600001;
+    unlocked = true;
+    await s.sync('steam');
+    assert.equal(storeCalls, 8);
+    assert.ok(s.snapshot().games.every((g) => g.soft === 1));
+    assert.equal(s.db.prepare('SELECT count(*) n FROM events').get().n, 8);
+    now += 3600001;
+    await s.sync('steam', 'full');
+    assert.equal(storeCalls, 16);
+    assert.equal(s.db.prepare('SELECT count(*) n FROM events').get().n, 8);
+  });
+  test('Missing statistics key stops promptly and keeps the QR library', async (t) => {
+    const s = new TrophiesStore(temp(t));
+    s.load();
+    t.after(() => s.close());
+    s.set('steam', {id: '76561198000000000', refreshToken: 'kept-token'});
+    s.provider = () => ({
+      close() {},
+      library: async () => ({items: [{id: '1', title: 'Library game'}], awards: []}),
+      game: async () => assert.fail('No unsupported statistics request'),
+      reviews: async () => assert.fail('No lengthy store queue')
+    });
+    await s.sync('steam');
+    assert.equal(s.snapshot().games.length, 1);
+    assert.match(s.config().steam.error, /Web API key/);
+    assert.equal(s.account('steam').refreshToken, 'kept-token');
+  });
+  test('Trophies cover queue waits instead of rejecting the seventh image', async (t) => {
+    let active = 0,
+      peak = 0;
+    const s = new TrophiesStore(temp(t), {
+      fetcher: async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return new Response(new Uint8Array([1, 2, 3]), {headers: {'Content-Type': 'image/png'}});
+      }
+    });
+    s.load();
+    t.after(() => s.close());
+    const a = {id: 'id', key: 'key'};
+    s.set('steam', a);
+    for (let i = 1; i <= 12; i++)
+      s.commitGame('steam', a, {
+        id: String(i),
+        cover: 'https://shared.akamai.steamstatic.com/test.png',
+        achievements: []
+      });
+    const result = await Promise.all(
+      Array.from({length: 12}, (_, i) => s.cover('steam', String(i + 1)))
+    );
+    assert.equal(result.filter(Boolean).length, 12);
+    assert.equal(peak, 6);
+  });
+}
+
+// tests/flow-credits
+{
+  const {FlowSession} = await import('./02-hub/modules/chat/flow-session.mjs');
+  const fixture = (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-credits-'));
+    let now = Date.now();
+    const s = new FlowSession(dir, {now: () => now});
+    s.save({refreshToken: 'private-refresh-token', anonKey: 'public-anon-key'});
+    t.after(() => {
+      s.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+    return {s, advance: () => (now += 300001)};
+  };
+  test('FlowMusic credits parse the live web-client shape, cache, track changes and keep zero', async (t) => {
+    const f = fixture(t);
+    let value = 1200,
+      calls = 0;
+    f.s.request = async (route) => {
+      assert.equal(route, '/billing/credits');
+      calls++;
+      return Response.json({data: {credits_remaining: value}, private: 'not-exposed'});
+    };
+    let d = await f.s.credits();
+    assert.equal(d.remaining, 1200);
+    assert.equal(d.history.length, 1);
+    await f.s.credits();
+    assert.equal(calls, 1);
+    f.advance();
+    value = 1180;
+    d = await f.s.credits();
+    assert.equal(d.history[1].change, -20);
+    assert.equal(d.stale, false);
+    f.advance();
+    value = 0;
+    d = await f.s.credits();
+    assert.equal(d.remaining, 0);
+    assert.equal(d.history[2].change, -1180);
+    assert.doesNotMatch(JSON.stringify(d), /private|not-exposed|anon/);
+    assert.equal(fs.statSync(f.s.creditFile).mode & 0o777, 0o600);
+  });
+  test('FlowMusic credits preserve previous data after a malformed reply or outage', async (t) => {
+    const f = fixture(t);
+    f.s.request = async () => Response.json({data: {credits_remaining: 75}});
+    await f.s.credits();
+    f.advance();
+    f.s.request = async () => Response.json({data: {credits_remaining: '75'}});
+    const d = await f.s.credits();
+    assert.equal(d.remaining, 75);
+    assert.equal(d.stale, true);
+    assert.equal(d.history.length, 1);
+    f.advance();
+    f.s.request = async () => {
+      throw Error('PRIVATE_REFRESH');
+    };
+    const next = await f.s.credits();
+    assert.equal(next.remaining, 75);
+    assert.doesNotMatch(JSON.stringify(next), /PRIVATE_REFRESH/);
+  });
+  test('FlowMusic late credit reply cannot restore history after session removal', async (t) => {
+    const f = fixture(t);
+    let finish;
+    f.s.request = () => new Promise((r) => (finish = r));
+    const pending = f.s.credits();
+    f.s.save({remove: true});
+    finish(Response.json({data: {credits_remaining: 777}}));
+    await pending;
+    assert.equal(f.s.creditSnapshot().remaining, null);
+    assert.equal(fs.existsSync(f.s.creditFile), false);
   });
 }

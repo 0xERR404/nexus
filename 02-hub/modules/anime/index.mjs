@@ -38,10 +38,6 @@ export function createModule(
           !c.connected || d.lastError || !d.syncedAt || Date.now() - d.syncedAt > 7200000
             ? 'stale'
             : 'ok',
-        covers: d.items
-          .filter((x) => x.poster)
-          .slice(0, 3)
-          .map((x) => x.id),
         items: [
           {label: 'В списке', value: d.items.length},
           {label: 'Смотрю', value: d.items.filter((x) => x.status === 'watching').length},

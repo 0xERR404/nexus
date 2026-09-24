@@ -15,6 +15,7 @@ const types = {
   '.json': 'application/manifest+json',
   '.html': 'text/html',
   '.png': 'image/png',
+  '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
   '.woff2': 'font/woff2'
 };
@@ -25,6 +26,7 @@ const assets = [
   'offline.html',
   'sw.js',
   'icon-192.png',
+  'icon.svg',
   'icon-512.png',
   'apple-touch-icon.png',
   'fonts/jetbrains-mono.woff2',

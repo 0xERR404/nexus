@@ -49,7 +49,7 @@
     $('trophyAwardsSection').hidden = selected() === 'steam';
   }
   function accountText(name, a) {
-    return `${name}: ${a.connected ? a.name + (a.mode === 'qr' ? ' · QR-сессия' : '') : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
+    return `${name}: ${a.connected ? a.name + (a.mode === 'qr' ? ' · QR-сессия' : '') : 'не подключён'}${a.connected ? ' · обновлено: ' + date(a.lastSync) : ''}${a.syncing ? ' · загрузка ' + (a.progress ? `${a.progress.done}/${a.progress.total}` + (a.progress.metadataTotal ? ` · магазин ${a.progress.metadata}/${a.progress.metadataTotal}` : '') : 'списка') : ''}${a.error ? ' · ' + a.error : ''}`;
   }
   function refreshButton() {
     if (!page || !snapshot) return;
@@ -59,6 +59,7 @@
       button = $('trophySync');
     const available = accounts.some((a) => !a.syncing && Date.now() >= a.nextAttempt);
     button.disabled = !available;
+    $('trophyFullSync').disabled = !available;
     const wait = accounts.length
       ? Math.max(
           0,
@@ -76,6 +77,10 @@
   function render() {
     if (!snapshot) return;
     if (settings) {
+      $('steamKeyState').textContent = snapshot.config.steam.hasKey
+        ? 'Ключ достижений сохранён'
+        : 'Для достижений нужен Web API key, QR-сессии недостаточно.';
+      $('steamStatsKey').hidden = !snapshot.config.steam.connected;
       for (const k of ['steam', 'ra']) {
         const a = snapshot.config[k];
         $(k + 'Account').textContent = accountText(
@@ -109,7 +114,18 @@
             (filter === 'complete' && g.total > 0 && n === g.total))
         );
       })
-      .sort((a, b) => a.title.localeCompare(b.title));
+      .sort((a, b) => {
+        const sort = $('trophySort').value;
+        const value = (g) =>
+          sort === 'hours'
+            ? (g.minutes ?? -1)
+            : sort === 'reviews'
+              ? (g.reviewPercent ?? -1)
+              : g.total
+                ? ((g.provider === 'ra' && mode() === 'hard' ? g.hard : g.soft) ?? 0) / g.total
+                : -1;
+        return (sort === 'name' ? 0 : value(b) - value(a)) || a.title.localeCompare(b.title);
+      });
     const signature = JSON.stringify(games);
     if (signature !== renderedList) {
       renderedList = signature;
@@ -126,6 +142,21 @@
             b.append(image);
           }
           b.append(el('strong', g.title), el('small', g.console));
+          if (g.provider === 'steam') {
+            if (g.minutes != null) b.append(el('small', `${Math.round(g.minutes / 6) / 10} ч`));
+            b.append(
+              el(
+                'small',
+                g.reviewPercent != null
+                  ? `${g.reviewPercent}% положительных · ${g.reviewCount.toLocaleString('ru-RU')}`
+                  : g.reviewCount === 0
+                    ? 'Пока нет отзывов'
+                    : 'Отзывы ещё не загружены',
+                'trophy-review'
+              )
+            );
+            if (g.metadataError) b.append(el('small', 'Отзывы / цена не обновлены'));
+          }
           for (const [label, n] of g.provider === 'ra'
             ? [
                 ['SC', g.soft],
@@ -156,6 +187,30 @@
       if (!games.length)
         $('trophyGames').append(el('p', 'Нет игр по выбранным условиям.', 'trophy-muted'));
     }
+    const library = snapshot.games.filter((g) => !selected() || g.provider === selected()),
+      known = library.filter((g) => g.available),
+      unlocked = (g) => (g.provider === 'ra' && mode() === 'hard' ? g.hard || 0 : g.soft || 0),
+      prices = library.filter((g) => g.provider === 'steam' && g.priceUsd != null);
+    const summary = [
+      ['Игр', library.length],
+      ['Открыто', known.reduce((n, g) => n + unlocked(g), 0)],
+      ['100%', known.filter((g) => g.total > 0 && unlocked(g) === g.total).length],
+      ['Часов Steam', Math.round(library.reduce((n, g) => n + (g.minutes || 0), 0) / 6) / 10]
+    ];
+    if (prices.length)
+      summary.push([
+        'Библиотека · USD',
+        '$' +
+          prices.reduce((n, g) => n + g.priceUsd, 0).toFixed(2) +
+          ` · ${prices.length}/${library.filter((g) => g.provider === 'steam').length}`
+      ]);
+    $('trophyOverview').replaceChildren(
+      ...summary.map(([label, value]) => {
+        const cell = el('div');
+        cell.append(el('small', label), el('strong', String(value)));
+        return cell;
+      })
+    );
     $('trophyCount').textContent = `${games.length} игр`;
     refreshButton();
     const names = {
@@ -271,7 +326,13 @@
     try {
       snapshot = settings ? {config: await api('/config')} : await api('/api');
       render();
-      if (page) await activity();
+      if (page) {
+        if (current && $('trophyDialog').open) {
+          current = await api(`/game/${current.provider}/${current.id}`);
+          renderDetail();
+        }
+        await activity();
+      }
     } catch (e) {
       status(e.message);
     } finally {
@@ -279,7 +340,7 @@
     }
   }
   if (page) {
-    for (const id of ['trophySearch', 'trophyFilter', 'trophyMode'])
+    for (const id of ['trophySearch', 'trophyFilter', 'trophyMode', 'trophySort'])
       $(id).addEventListener(id === 'trophySearch' ? 'input' : 'change', () => {
         render();
         if (id === 'trophyMode') void activity();
@@ -312,7 +373,7 @@
         b.disabled = false;
       }
     };
-    $('trophySync').onclick = async () => {
+    const synchronize = async (mode) => {
       $('trophySync').disabled = true;
       status();
       for (const [k, a] of Object.entries(snapshot.config))
@@ -323,15 +384,33 @@
           Date.now() >= a.nextAttempt
         )
           try {
-            await api('/sync', {provider: k});
+            await api('/sync', {provider: k, mode});
           } catch (e) {
             status(e.message);
           }
       await load();
     };
+    $('trophySync').onclick = () => synchronize('quick');
+    $('trophyFullSync').onclick = () => synchronize('full');
     setInterval(refreshButton, 1000);
   }
   if (settings) {
+    $('steamStatsKey').onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget,
+        button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        await api('/steam/key', {key: form.elements.key.value.trim()});
+        form.reset();
+        await load();
+        status('Ключ сохранён. Достижения обновляются.');
+      } catch (e) {
+        status(e.message);
+      } finally {
+        button.disabled = false;
+      }
+    };
     let qrAttempt,
       qrTimer,
       qrBusy = false,

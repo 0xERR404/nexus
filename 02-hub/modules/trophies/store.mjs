@@ -94,6 +94,7 @@ export class TrophiesStore {
           a
             ? {
                 connected: true,
+                hasKey: Boolean(a.key),
                 mode: a.refreshToken ? 'qr' : 'api',
                 name: a.name,
                 lastSync: a.lastSync ?? 0,
@@ -182,6 +183,28 @@ export class TrophiesStore {
     Object.assign(account, await this.tokenJob);
     return account.accessToken;
   }
+  async steamKey(key) {
+    const a = this.account('steam');
+    if (!a) throw fail('Сначала подключи Steam', 409);
+    if (this.closed || this.jobs.has('steam') || this.connecting.has('steam') || this.steamBusy())
+      throw fail('Дождись завершения синхронизации или QR-входа', 409);
+    if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(key.trim()))
+      throw fail('Проверь ключ API', 400);
+    this.connecting.add('steam');
+    const p = this.provider('steam', {key: key.trim()});
+    this.clients.set('key:steam', p);
+    try {
+      await p.identity(a.id);
+      if (this.closed || this.account('steam')?.id !== a.id) throw fail('Аккаунт изменён', 409);
+      this.set('steam', {...a, key: key.trim(), error: null, nextAttempt: 0, backgroundAt: 0});
+    } finally {
+      p.close();
+      this.clients.delete('key:steam');
+      this.connecting.delete('steam');
+    }
+    void this.sync('steam').catch(() => {});
+    return this.config();
+  }
   async connect(kind, input, key) {
     this.account(kind);
     if (kind === 'steam' && this.steamBusy()) throw fail('Сначала заверши или отмени QR-вход', 409);
@@ -200,9 +223,11 @@ export class TrophiesStore {
         previous?.id === identity.id
           ? {...previous, ...identity, key: key.trim(), error: null, nextAttempt: 0}
           : {...identity, key: key.trim(), connectedAt: this.now(), nextAttempt: 0};
-      delete account.refreshToken;
-      delete account.accessToken;
-      delete account.expiresAt;
+      if (previous?.id !== identity.id) {
+        delete account.refreshToken;
+        delete account.accessToken;
+        delete account.expiresAt;
+      }
       this.atomic(() => {
         if (previous && previous.id !== identity.id) {
           this.db
@@ -284,6 +309,16 @@ export class TrophiesStore {
       .prepare('SELECT data FROM games WHERE provider=? AND account=? AND id=?')
       .get(kind, account.id, game.id);
     const previous = row ? JSON.parse(row.data) : null;
+    if (previous)
+      for (const field of [
+        'reviewPercent',
+        'reviewCount',
+        'reviewAt',
+        'priceUsd',
+        'priceAt',
+        'metadataError'
+      ])
+        if (Object.hasOwn(previous, field)) game[field] = previous[field];
     this.atomic(() => {
       for (const a of game.achievements)
         for (const mode of kind === 'ra' ? ['soft', 'hard'] : ['soft']) {
@@ -344,7 +379,7 @@ export class TrophiesStore {
       .map((x) => JSON.parse(x.data));
     atomicJSON(path.join(this.dir, 'notifications.json'), events);
   }
-  sync(kind) {
+  sync(kind, mode = 'quick') {
     if (kind === 'steam' && this.steamBusy())
       return Promise.reject(fail('Дождись завершения QR-входа', 409));
     const a = this.account(kind);
@@ -353,18 +388,18 @@ export class TrophiesStore {
     if (this.closed) return Promise.reject(fail('Модуль остановлен', 503));
     if (this.now() < (a.nextAttempt ?? 0))
       return Promise.reject(fail('Повторная синхронизация пока недоступна', 429));
-    const job = this.run(kind, a).finally(() => {
+    const job = this.run(kind, a, mode).finally(() => {
       this.jobs.delete(kind);
       delete this.progress[kind];
     });
     this.jobs.set(kind, job);
     return job;
   }
-  async run(kind, account) {
+  async run(kind, account, mode) {
     const client = this.provider(kind, account);
     this.clients.set(kind, client);
     account.attemptedAt = this.now();
-    account.nextAttempt = this.now() + 300000;
+    account.nextAttempt = this.now() + 60000;
     this.set(kind, account);
     try {
       const list = await client.library();
@@ -378,42 +413,121 @@ export class TrophiesStore {
               .prepare('INSERT OR IGNORE INTO games VALUES(?,?,?,?)')
               .run(kind, account.id, game.id, JSON.stringify(game));
       });
-      // Resume large libraries from the oldest unchecked game.
+      if (kind === 'steam' && !account.key)
+        throw fail(
+          'Добавь Web API key в настройках «Трофеев» для загрузки достижений. QR-сессия сохранена.',
+          409
+        );
       const queue = list.items.sort(
-        (a, b) => (old.get(a.id)?.checkedAt ?? 0) - (old.get(b.id)?.checkedAt ?? 0)
+        (a, b) =>
+          (b.lastPlayed || 0) - (a.lastPlayed || 0) ||
+          (old.get(a.id)?.checkedAt || 0) - (old.get(b.id)?.checkedAt || 0)
       );
       let errors = 0,
-        count = 0;
-      for (const base of queue) {
-        if (this.closed) throw fail('Модуль остановлен', 503);
-        this.progress[kind] = {done: count, total: queue.length};
-        const cached = old.get(base.id);
-        let game;
-        try {
-          game =
-            cached?.detailAt && this.now() - cached.detailAt < 300000
+        count = 0,
+        cursor = 0,
+        fatal = null;
+      const total = queue.length;
+      this.progress[kind] = {
+        done: 0,
+        total,
+        metadata: 0,
+        metadataTotal: kind === 'steam' ? total : 0
+      };
+      const recent = (base, cached) => {
+        if (mode === 'full' || !cached?.achievements || cached.error) return false;
+        const age = this.now() - (cached.detailAt || 0);
+        if (kind === 'ra')
+          return (
+            base.soft === cached.achievements.filter((a) => a.soft).length &&
+            base.hard === cached.achievements.filter((a) => a.hard).length &&
+            base.total === cached.total &&
+            age < 21600000
+          );
+        if (
+          base.minutes == null ||
+          base.minutes !== cached.minutes ||
+          base.lastPlayed !== cached.lastPlayed
+        )
+          return false;
+        const complete = cached.achievements.every((a) => a.soft);
+        return age < (!cached.total ? 30 * 86400000 : complete ? 7 * 86400000 : 0);
+      };
+      const worker = async () => {
+        while (!fatal && cursor < total) {
+          const base = queue[cursor++],
+            cached = old.get(base.id);
+          if (this.closed) {
+            fatal = fail('Модуль остановлен', 503);
+            break;
+          }
+          try {
+            const game = recent(base, cached)
               ? {...cached, ...base}
-              : await client.game(base, cached);
-        } catch (e) {
-          errors++;
-          const game = {
-            ...(cached ?? base),
-            error: e.status ? e.message : 'Не удалось загрузить достижения',
-            checkedAt: this.now()
-          };
-          this.db
-            .prepare('INSERT OR REPLACE INTO games VALUES(?,?,?,?)')
-            .run(kind, account.id, base.id, JSON.stringify(game));
-          if (e.status === 401 || e.status === 429 || e.status === 503)
-            throw fail('Синхронизация неполная. Прогресс сохранён, повторим позже.', 503);
+              : await client.game(base, mode === 'full' ? {...cached, schema: null} : cached);
+            game.checkedAt = this.now();
+            this.commitGame(kind, account, game);
+          } catch (e) {
+            errors++;
+            const row = this.db
+              .prepare('SELECT data FROM games WHERE provider=? AND account=? AND id=?')
+              .get(kind, account.id, base.id);
+            const game = {
+              ...(row ? JSON.parse(row.data) : (cached ?? base)),
+              ...base,
+              error: e.status ? e.message : 'Не удалось загрузить достижения',
+              checkedAt: this.now()
+            };
+            this.db
+              .prepare('INSERT OR REPLACE INTO games VALUES(?,?,?,?)')
+              .run(kind, account.id, base.id, JSON.stringify(game));
+            if ([401, 409, 429, 503].includes(e.status)) fatal = e;
+          }
+          this.progress[kind].done = ++count;
         }
-        if (game) {
-          game.checkedAt = this.now();
-          this.commitGame(kind, account, game);
+      };
+      // Metadata uses a separate limiter and never blocks achievement requests.
+      let metadataErrors = 0;
+      const metadata = async () => {
+        if (kind !== 'steam') return;
+        for (const base of queue) {
+          if (this.closed || fatal) return;
+          const cached = old.get(base.id) || {},
+            changes = {};
+          for (const [method, field] of [
+            ['reviews', 'reviewAt'],
+            ['price', 'priceAt']
+          ]) {
+            if (mode !== 'full' && cached[field] && this.now() - cached[field] < 21 * 86400000)
+              continue;
+            try {
+              Object.assign(changes, await client[method](base.id));
+            } catch (e) {
+              metadataErrors++;
+              changes.metadataError = 'Отзывы или цена не обновлены';
+              if ([429, 503].includes(e.status)) return;
+            }
+          }
+          const row = this.db
+            .prepare('SELECT data FROM games WHERE provider=? AND account=? AND id=?')
+            .get(kind, account.id, base.id);
+          if (row)
+            this.db
+              .prepare('UPDATE games SET data=? WHERE provider=? AND account=? AND id=?')
+              .run(
+                JSON.stringify({...JSON.parse(row.data), metadataError: null, ...changes}),
+                kind,
+                account.id,
+                base.id
+              );
+          this.progress[kind].metadata++;
         }
-        this.publish();
-        count++;
-      }
+      };
+      await Promise.all([
+        Promise.all(Array.from({length: kind === 'steam' ? 4 : 2}, worker)),
+        metadata()
+      ]);
+      if (fatal) throw fatal;
       this.atomic(() => {
         const active = new Set(list.items.map((g) => g.id));
         for (const id of old.keys())
@@ -421,9 +535,13 @@ export class TrophiesStore {
             this.db
               .prepare('DELETE FROM games WHERE provider=? AND account=? AND id=?')
               .run(kind, account.id, id);
-        account.error = errors ? `Не обновлено игр: ${errors}. Предыдущие данные сохранены.` : null;
+        account.error = errors
+          ? `Не обновлено игр: ${errors}. Предыдущие данные сохранены.`
+          : metadataErrors
+            ? 'Достижения обновлены. Часть отзывов или цен недоступна.'
+            : null;
         if (!errors) account.lastSync = this.now();
-        account.nextAttempt = this.now() + 300000;
+        account.nextAttempt = this.now() + 60000;
         account.backgroundAt = this.now() + (errors ? 900000 : 3600000);
         this.set(kind, account);
       });
@@ -432,7 +550,7 @@ export class TrophiesStore {
         ? e.message
         : 'Не удалось обновить данные. Предыдущий список сохранён.';
       account.backgroundAt = this.now() + 900000;
-      account.nextAttempt = this.now() + 300000;
+      account.nextAttempt = this.now() + 60000;
       this.set(kind, account);
     } finally {
       client.close();
@@ -499,7 +617,10 @@ export class TrophiesStore {
       cached = this.images.get(key);
     if (cached && this.now() - cached.time < 86400000) return cached;
     if (this.imageJobs.has(key)) return this.imageJobs.get(key);
-    if (this.imageJobs.size >= 6) return null;
+    if (this.imageJobs.size >= 6) {
+      await Promise.race(this.imageJobs.values());
+      return this.cover(kind, id);
+    }
     const task = (async () => {
       const r = await (this.options.fetcher ?? fetch)(url, {
         redirect: 'error',

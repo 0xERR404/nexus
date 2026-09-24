@@ -8,7 +8,7 @@ export const escape = (value) =>
     (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]
   );
 const head = (title) =>
-  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><meta name="mobile-web-app-capable" content="yes"><title>${title}</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>`;
+  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><meta name="mobile-web-app-capable" content="yes"><title>${title}</title><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/svg+xml" href="/icon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>`;
 const install = `<button class="install-btn" data-install hidden type="button">Установить</button>`;
 const dialog = `<dialog id="installHelp" aria-labelledby="installHelpTitle"><h2 id="installHelpTitle">Хаб на телефоне</h2><p>Открой меню браузера и выбери «Установить приложение» или «Добавить на главный экран».</p><form method="dialog"><button class="login-btn">Понятно</button></form></dialog>`;
 export function login(error = '', username = '') {

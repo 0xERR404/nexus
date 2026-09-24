@@ -255,3 +255,83 @@ addEventListener('keydown', (event) => {
   event.preventDefault();
   history.back();
 });
+
+(() => {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'constellation';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    canvas.remove();
+    return;
+  }
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  let width = 0,
+    height = 0,
+    stars = [],
+    frame = 0,
+    last = 0;
+  function resize() {
+    width = innerWidth;
+    height = innerHeight;
+    const scale = Math.min(devicePixelRatio || 1, 1.5);
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const count = Math.min(65, Math.max(22, Math.round((width * height) / 22000)));
+    stars = Array.from({length: count}, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 5,
+      vy: (Math.random() - 0.5) * 5,
+      r: 0.7 + Math.random() * 0.8
+    }));
+    draw(0);
+  }
+  function draw(dt) {
+    ctx.clearRect(0, 0, width, height);
+    for (let i = 0; i < stars.length; i++) {
+      const a = stars[i];
+      a.x = (a.x + a.vx * dt + width) % width;
+      a.y = (a.y + a.vy * dt + height) % height;
+      for (let j = i + 1; j < stars.length; j++) {
+        const b = stars[j],
+          distance = Math.hypot(a.x - b.x, a.y - b.y),
+          reach = width < 600 ? 150 : 200;
+        if (distance < reach) {
+          ctx.strokeStyle = `rgba(156,187,226,${0.22 * (1 - distance / reach)})`;
+          ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = '#b7cce7';
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  function tick(time) {
+    if (time - last >= 1000 / 30) {
+      draw(last ? Math.min((time - last) / 1000, 0.1) : 0);
+      last = time;
+    }
+    frame = requestAnimationFrame(tick);
+  }
+  function start() {
+    cancelAnimationFrame(frame);
+    last = 0;
+    if (!document.hidden && !reduced.matches) frame = requestAnimationFrame(tick);
+    else draw(0);
+  }
+  addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', start);
+  reduced.addEventListener('change', start);
+  addEventListener('pagehide', () => cancelAnimationFrame(frame));
+  addEventListener('pageshow', start);
+  resize();
+  start();
+})();

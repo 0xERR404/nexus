@@ -104,6 +104,7 @@ export const projectFiles = [
   '02-hub/public/fonts/jetbrains-mono.woff2',
   '02-hub/public/fonts/space-grotesk.woff2',
   '02-hub/public/icon-192.png',
+  '02-hub/public/icon.svg',
   '02-hub/public/icon-512.png',
   '02-hub/public/manifest.json',
   '02-hub/public/offline.html',
