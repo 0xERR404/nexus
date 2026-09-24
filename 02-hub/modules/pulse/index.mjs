@@ -19,7 +19,7 @@ const content = `<link rel="stylesheet" href="/modules/pulse/pulse.css"><script 
 <div class="pulse-resources"><section class="pulse-panel"><div class="pulse-panel-title"><h2>Диски</h2><span>локальные файловые системы</span></div><div id="pulseDisks"><p class="pulse-placeholder">Ожидаем показатели…</p></div></section>
 <section class="pulse-panel"><div class="pulse-panel-title"><h2>Сеть</h2><span>скорость / с</span></div><div id="pulseNetwork"><p class="pulse-placeholder">Ожидаем показатели…</p></div><p class="pulse-small">↓ приём · ↑ отправка. Счётчики — с запуска интерфейса.</p></section>
 </div><section class="pulse-panel"><div class="pulse-panel-title"><h2>О сервере</h2><span id="pulseHost">—</span></div><dl class="pulse-details"><div><dt>Система</dt><dd id="pulseOs">—</dd></div><div><dt>Ядро</dt><dd id="pulseKernel">—</dd></div><div><dt>Процессор</dt><dd id="pulseModel">—</dd></div><div><dt>Load · 1 / 5 / 15 мин</dt><dd id="pulseLoad">—</dd></div><div><dt>Ожидание I/O / steal</dt><dd id="pulseWait">—</dd></div></dl></section></div>
-<footer class="page-foot"><span>ПУЛЬС · NEXUS404</span><span>обновление каждые 5 с</span></footer><noscript><p>Для обновления показателей включи JavaScript.</p></noscript>`;
+<noscript><p>Для обновления показателей включи JavaScript.</p></noscript>`;
 
 export function createHandler(
   file = process.env.PULSE_FILE ?? '/app/metrics/pulse.json',

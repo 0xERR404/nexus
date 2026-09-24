@@ -12,6 +12,7 @@ import {
   exec,
   lock,
   sleep,
+  clean,
   direct
 } from './common.mjs';
 export function parseSSH(text) {
@@ -32,11 +33,27 @@ export function clearPorts(text) {
     })
     .join('\n');
 }
+export function prepareRuntime(directory = '/run/sshd') {
+  fs.mkdirSync(directory, {recursive: true, mode: 0o755});
+  if (!fs.lstatSync(directory).isDirectory())
+    throw new Error('Некорректный каталог SSH: ' + directory);
+  fs.chmodSync(directory, 0o755);
+}
 export class SSH {
-  constructor(ui, {base = BASE, sshDirectory = '/etc/ssh', run = exec, inspect = query} = {}) {
+  constructor(
+    ui,
+    {
+      base = BASE,
+      sshDirectory = '/etc/ssh',
+      runtimeDirectory = '/run/sshd',
+      run = exec,
+      inspect = query
+    } = {}
+  ) {
     this.ui = ui;
     this.base = base;
     this.sshDirectory = sshDirectory;
+    this.runtimeDirectory = runtimeDirectory;
     this.managedFile = sshDirectory + '/sshd_config.d/00-nexus404.conf';
     this.run = run;
     this.inspect = inspect;
@@ -46,14 +63,20 @@ export class SSH {
     this.guard = null;
   }
   config(user, address = process.env.SSH_CONNECTION?.split(' ')[0] ?? '127.0.0.1') {
-    const r = this.inspect('sshd', ['-T', '-C', `user=${user},host=localhost,addr=${address}`]);
-    if (!r.ok) throw new Error('Не удалось проверить SSH');
+    return this.inspectConfig(['-T', '-C', `user=${user},host=localhost,addr=${address}`]);
+  }
+  inspectConfig(args) {
+    prepareRuntime(this.runtimeDirectory);
+    const r = this.inspect('sshd', args);
+    if (!r.ok)
+      throw new Error(
+        'Не удалось проверить SSH: ' +
+          clean(r.error || 'sshd -T завершился с ошибкой').slice(0, 1000)
+      );
     return parseSSH(r.text);
   }
   ports() {
-    const r = this.inspect('sshd', ['-T']);
-    if (!r.ok) throw new Error('SSH -T недоступен');
-    return [...new Set(parseSSH(r.text).port ?? [])].map(Number).sort((a, b) => a - b);
+    return [...new Set(this.inspectConfig(['-T']).port ?? [])].map(Number).sort((a, b) => a - b);
   }
   previousPorts() {
     const pid = this.inspect('systemctl', ['show', '-p', 'MainPID', '--value', this.service]).text;
@@ -108,6 +131,7 @@ export class SSH {
       atomic(file, clearPorts(read(file)) + '\n', fs.statSync(file).mode & 0o777);
   }
   async reload() {
+    prepareRuntime(this.runtimeDirectory);
     await this.run('sshd', ['-t'], {log: this.ui.log});
     let action = 'reload-or-restart';
     if (this.inspect('systemctl', ['is-active', '--quiet', 'ssh.socket']).ok) {
@@ -199,6 +223,7 @@ export class SSH {
     await rollback(folder, {
       base: this.base,
       sshDirectory: this.sshDirectory,
+      runtimeDirectory: this.runtimeDirectory,
       run: this.run,
       inspect: this.inspect
     });
@@ -208,7 +233,13 @@ export class SSH {
 }
 export async function rollback(
   folder,
-  {base = BASE, sshDirectory = '/etc/ssh', run = exec, inspect = query} = {}
+  {
+    base = BASE,
+    sshDirectory = '/etc/ssh',
+    runtimeDirectory = '/run/sshd',
+    run = exec,
+    inspect = query
+  } = {}
 ) {
   if (!path.resolve(folder).startsWith(base + '/ssh-rollback.'))
     throw new Error('Некорректная копия SSH');
@@ -232,6 +263,7 @@ export async function rollback(
       if (!original.split('\n').includes('Include ' + managed))
         atomic(config, 'Include ' + managed + '\n' + original + '\n');
     }
+    prepareRuntime(runtimeDirectory);
     await run('sshd', ['-t']);
     await run('systemctl', ['enable', service]);
     inspect('systemctl', ['disable', '--now', 'ssh.socket']);

@@ -86,6 +86,21 @@ export async function moduleSummary(module, timeout = 3000) {
       throw new Error('Invalid summary');
     return {
       state: data.state,
+      ...(data.chart &&
+      ['RUB', 'USD', 'EUR'].includes(data.chart.currency) &&
+      /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/.test(data.chart.month) &&
+      Array.isArray(data.chart.points) &&
+      data.chart.points.length > 0 &&
+      data.chart.points.length <= 31 &&
+      data.chart.points.every(Number.isSafeInteger)
+        ? {
+            chart: {
+              currency: data.chart.currency,
+              month: data.chart.month,
+              points: data.chart.points
+            }
+          }
+        : {}),
       items: data.items.slice(0, 3).map((item) => ({
         label: String(item.label ?? '').slice(0, 24),
         value: String(item.value ?? '—').slice(0, 24)

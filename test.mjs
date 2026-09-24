@@ -1275,6 +1275,7 @@ import path from 'node:path';
     const options = {
       base,
       sshDirectory,
+      runtimeDirectory: base + '/run/sshd',
       run: async (command, args) => {
         calls.push([command, args]);
         if (command === 'cp') await exec(command, args);
@@ -1287,6 +1288,49 @@ import path from 'node:path';
     const ui = {line() {}, confirm: async () => true};
     return {base, sshDirectory, calls, options, ui, ssh: new SSH(ui, options)};
   }
+  test('SSH recreates its runtime directory immediately before each configuration check', (t) => {
+    const f = fixture(t),
+      directory = f.options.runtimeDirectory,
+      old = process.umask(0o077);
+    t.after(() => process.umask(old));
+    f.ssh.inspect = () => {
+      assert.equal(fs.statSync(directory).mode & 0o777, 0o755);
+      return {ok: true, text: 'port 22\npasswordauthentication yes'};
+    };
+    assert.equal(f.ssh.config('deploy').passwordauthentication[0], 'yes');
+    fs.rmSync(directory, {recursive: true});
+    assert.deepEqual(f.ssh.ports(), [22]);
+    fs.rmSync(directory, {recursive: true});
+    assert.equal(f.ssh.config('root').port[0], '22');
+  });
+  test('SSH configuration failures retain the diagnostic and never reload the service', (t) => {
+    const f = fixture(t);
+    f.ssh.inspect = () => ({
+      ok: false,
+      error: '/etc/ssh/sshd_config line 12: Bad configuration option\n'
+    });
+    assert.throws(() => f.ssh.config('deploy'), /line 12: Bad configuration option/);
+    assert.throws(() => f.ssh.ports(), /line 12: Bad configuration option/);
+    assert.equal(
+      f.calls.some(([cmd, args]) => cmd === 'systemctl' && args[0] !== 'cat'),
+      false
+    );
+  });
+  test('SSH reload and rollback prepare a missing runtime directory before validation', async (t) => {
+    const f = fixture(t),
+      directory = f.options.runtimeDirectory;
+    const run = f.options.run;
+    f.options.run = f.ssh.run = async (command, args) => {
+      if (command === 'sshd') assert.equal(fs.statSync(directory).mode & 0o777, 0o755);
+      await run(command, args);
+    };
+    f.ssh.inspect = (command, args) => ({ok: args.at(-1) !== 'ssh.socket', text: ''});
+    await f.ssh.reload();
+    await f.ssh.begin();
+    fs.rmSync(directory, {recursive: true});
+    await f.ssh.abort();
+    assert.equal(fs.existsSync(directory), true);
+  });
   test('SSH rejected confirmation restores original files and stops timer', async (t) => {
     const f = fixture(t);
     await f.ssh.begin();
@@ -1548,6 +1592,55 @@ import path from 'node:path';
     });
     return {dir, file, ledger, card, savings, income, expense, send, transaction};
   }
+  test('balance history preserves currencies, transfers and pre-period opening amounts', (t) => {
+    const f = fixture(t);
+    f.send('account.save', {...f.card, opening: '100'});
+    f.send('transaction.save', f.transaction({date: '2026-08-31', amount: '20'}));
+    f.send(
+      'transaction.save',
+      f.transaction({date: '2026-09-02', kind: 'expense', category: f.expense.id, amount: '10'})
+    );
+    f.send(
+      'transaction.save',
+      f.transaction({date: '2026-09-03', kind: 'transfer', target: f.savings.id, amount: '30'})
+    );
+    const usd = f.send('account.save', {
+      name: 'USD',
+      currency: 'USD',
+      kind: 'cash',
+      opening: '5'
+    }).id;
+    f.send(
+      'transaction.save',
+      f.transaction({
+        date: '2026-09-04',
+        kind: 'transfer',
+        target: usd,
+        amount: '20',
+        received: '2'
+      })
+    );
+    f.send('transaction.save', f.transaction({date: '2026-09-25', amount: '999'}));
+    const history = f.ledger.history('2026-09', new Date('2026-09-24T12:00:00Z'));
+    assert.deepEqual(history[0].points.slice(0, 5), [12000, 11000, 11000, 9000, 9000]);
+    assert.deepEqual(history[1].points.slice(0, 5), [500, 500, 500, 700, 700]);
+    assert.equal(history[0].points.length, 24);
+    assert.equal(history[0].points.at(-1), 9000);
+    assert.equal(history[0].currency, 'RUB');
+    assert.equal(history[1].currency, 'USD');
+  });
+  test('balance history recomputes deleted operations and handles empty, leap and future months', (t) => {
+    const f = fixture(t),
+      now = new Date('2026-10-01T00:00:00Z');
+    const row = f.send('transaction.save', f.transaction());
+    assert.equal(f.ledger.history('2026-09', now)[0].points.at(-1), 1000);
+    f.send('transaction.delete', {id: row.id, version: 1});
+    assert.deepEqual(f.ledger.history('2026-09', now)[0].points, Array(30).fill(0));
+    assert.equal(f.ledger.history('2024-02', now)[0].points.length, 29);
+    assert.equal(f.ledger.history('2026-01', now)[0].points.length, 31);
+    assert.deepEqual(f.ledger.history('2027-01', now), []);
+    assert.throws(() => f.ledger.history('2026-99', now));
+  });
   test('money is exact cents, not implicit rounding', () => {
     assert.equal(money('0,10') + money('0.20'), 30);
     assert.equal(money('-12.34', true), -1234);
@@ -3888,5 +3981,36 @@ import path from 'node:path';
       JSON.stringify({updatedAt: 0, active: [], events: [], devices: []})
     );
     assert.equal((await summary()).state, 'stale');
+  });
+}
+
+{
+  const {moduleSummary} = await import('./02-hub/src/modules.mjs');
+  test('module charts expose only bounded numeric points and known currency metadata', async () => {
+    const input = {
+      state: 'ok',
+      items: [],
+      chart: {currency: 'RUB', month: '2026-09', points: [-5, 0, 100], secret: 'private'}
+    };
+    const summarize = () => moduleSummary({summary: async () => input});
+    assert.deepEqual((await summarize()).chart, {
+      currency: 'RUB',
+      month: '2026-09',
+      points: [-5, 0, 100]
+    });
+    for (const points of [
+      Array(32).fill(0),
+      [NaN],
+      [Infinity],
+      ['100'],
+      [],
+      [Number.MAX_SAFE_INTEGER + 1]
+    ]) {
+      input.chart.points = points;
+      assert.equal((await summarize()).chart, undefined);
+    }
+    input.chart.points = [0];
+    input.chart.currency = '<script>';
+    assert.equal((await summarize()).chart, undefined);
   });
 }

@@ -141,6 +141,45 @@ export class Ledger {
       }))
       .filter((t) => accounts.some((a) => a.currency === t.currency));
   }
+  history(month = new Date().toISOString().slice(0, 7), now = new Date()) {
+    const {next} = this.filter(new URLSearchParams({month}));
+    const today = now.toISOString().slice(0, 10);
+    if (month > today.slice(0, 7)) return [];
+    const end =
+      month === today.slice(0, 7)
+        ? today
+        : new Date(Date.parse(next) - 86400000).toISOString().slice(0, 10);
+    const start = month + '-01';
+    const movements = this.db
+      .prepare(
+        `
+      SELECT currency,date,SUM(amount) AS amount FROM (
+        SELECT a.currency,t.date,CASE WHEN t.kind='income' THEN t.amount ELSE -t.amount END AS amount
+        FROM transactions t JOIN accounts a ON a.id=t.account WHERE t.date<=?
+        UNION ALL SELECT a.currency,t.date,t.received AS amount
+        FROM transactions t JOIN accounts a ON a.id=t.target WHERE t.date<=?
+      ) GROUP BY currency,date ORDER BY date`
+      )
+      .all(end, end);
+    return this.totals().map(({currency}) => {
+      let amount = this.db
+        .prepare('SELECT COALESCE(SUM(opening),0) AS amount FROM accounts WHERE currency=?')
+        .get(currency).amount;
+      const daily = new Map();
+      for (const row of movements)
+        if (row.currency === currency) {
+          if (row.date < start) amount += row.amount;
+          else daily.set(row.date, row.amount);
+        }
+      const points = [];
+      for (let day = 1; day <= Number(end.slice(8)); day++) {
+        const date = month + '-' + String(day).padStart(2, '0');
+        amount += daily.get(date) ?? 0;
+        points.push(amount);
+      }
+      return {currency, month, points};
+    });
+  }
   snapshot(params = new URLSearchParams()) {
     return this.atomic(() => this.readSnapshot(params), false);
   }
@@ -167,6 +206,7 @@ export class Ledger {
       categories: this.db.prepare('SELECT * FROM categories ORDER BY archived,kind,name').all(),
       totals,
       period,
+      history: this.history(f.month),
       month: f.month,
       transactions: rows,
       total: this.db

@@ -100,6 +100,7 @@ export function createModule(
       const totals = store().totals();
       return {
         state: 'ok',
+        chart: store().history()[0],
         items: totals.map(({currency, amount}) => ({
           label: currency,
           value: new Intl.NumberFormat('ru-RU', {

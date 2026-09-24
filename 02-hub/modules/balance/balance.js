@@ -289,6 +289,13 @@
           metric(kind === 'income' ? 'Доходы' : 'Расходы', value, 'balance-' + kind);
         }
         card.append(grid);
+        const history = state.history?.find((item) => item.currency === total.currency);
+        const chart = window.nexusBalanceChart?.(history);
+        if (chart) {
+          const section = make('div', undefined, 'balance-history');
+          section.append(chart, make('p', 'Остаток по дням · ' + state.month, 'spark-caption'));
+          card.append(section);
+        }
         return card;
       })
     );

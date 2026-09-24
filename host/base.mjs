@@ -13,7 +13,7 @@ import {
   supported,
   event
 } from './common.mjs';
-import {SSH} from './ssh.mjs';
+import {SSH, prepareRuntime} from './ssh.mjs';
 import {protection, portFindings} from './security.mjs';
 import {
   installEvents,
@@ -574,7 +574,7 @@ export class BaseSetup {
   async run() {
     const os = supported();
     fs.mkdirSync(BASE, {recursive: true, mode: 0o700});
-    fs.mkdirSync('/run/sshd', {recursive: true});
+    prepareRuntime();
     installHost();
     fs.rmSync(BASE + '/installed.flag', {force: true});
     this.backup = fs.mkdtempSync(BASE + '/backup.');
