@@ -4361,7 +4361,7 @@ import path from 'node:path';
     assert.ok(aborted);
   });
 
-  test('settings render only the selected installed module and support an empty hub', async (t) => {
+  test('settings render the selected module or core appearance settings, including an empty hub', async (t) => {
     const modules = new Map([
       [
         'first',
@@ -4389,10 +4389,10 @@ import path from 'node:path';
     assert.match(second, /&lt;Первый&gt;/);
     assert.doesNotMatch(second, /Прежний/);
     const fallback = await (await request('/settings/?module=missing', {headers})).text();
-    assert.match(fallback, /id="first-settings"/);
+    assert.match(fallback, /id="introEnabled"/);
     modules.clear();
     const empty = await (await request('/settings/', {headers})).text();
-    assert.match(empty, /пока не добавили настройки/);
+    assert.match(empty, /id="introEnabled"/);
     const home = await (await request('/', {headers})).text();
     assert.match(home, /href="\/settings\/"/);
     assert.doesNotMatch(home, /module-mark/);

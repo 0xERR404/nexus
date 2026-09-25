@@ -22,6 +22,8 @@ const types = {
 const assets = [
   'app.css',
   'app.js',
+  'intro.js',
+  'intro.css',
   'manifest.json',
   'offline.html',
   'sw.js',

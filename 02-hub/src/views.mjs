@@ -8,7 +8,7 @@ export const escape = (value) =>
     (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]
   );
 const head = (title) =>
-  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><meta name="mobile-web-app-capable" content="yes"><title>${title}</title><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/svg+xml" href="/icon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>`;
+  `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><meta name="mobile-web-app-capable" content="yes"><title>${title}</title><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/svg+xml" href="/icon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/intro.css"><script src="/intro.js" defer></script><script src="/app.js" defer></script></head>`;
 const install = `<button class="install-btn" data-install hidden type="button">Установить</button>`;
 const dialog = `<dialog id="installHelp" aria-labelledby="installHelpTitle"><h2 id="installHelpTitle">Хаб на телефоне</h2><p>Открой меню браузера и выбери «Установить приложение» или «Добавить на главный экран».</p><form method="dialog"><button class="login-btn">Понятно</button></form></dialog>`;
 export function login(error = '', username = '') {
@@ -57,7 +57,17 @@ export function modulePage({username, title, content}) {
 }
 
 export function settingsPage(username, modules, selectedId) {
-  const entries = modules.filter((module) => module.settings);
+  const entries = [
+    {
+      id: 'appearance',
+      settings: {
+        title: 'Оформление',
+        content:
+          '<section class="intro-settings"><label><input id="introEnabled" type="checkbox">Приветствие после входа</label><p>NEXUS ONLINE · WELCOME BACK</p><button id="introPreview" type="button">Посмотреть заставку</button><p id="introSettingStatus" role="status"></p></section>'
+      }
+    },
+    ...modules.filter((module) => module.settings)
+  ];
   const selected = entries.find((module) => module.id === selectedId) ?? entries[0];
   const nav = entries.length
     ? `<nav class="settings-tabs" aria-label="Разделы настроек">${entries.map((module) => `<a href="/settings/?module=${module.id}"${module === selected ? ' aria-current="page"' : ''}>${escape(module.settings.title)}</a>`).join('')}</nav>`
@@ -75,5 +85,5 @@ export function settingsPage(username, modules, selectedId) {
 export function playerShell(url) {
   const target = new URL(url, 'http://localhost');
   target.searchParams.set('_view', '1');
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><title>NEXUS404</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/modules/wave/wave.css"><script src="/modules/wave/player.js" defer></script></head><body class="wave-shell"><iframe id="hubFrame" title="NEXUS404" src="${escape(target.pathname + target.search + target.hash)}" allow="autoplay; clipboard-write"></iframe><section id="wavePlayer" aria-label="Плеер Волна" hidden><audio id="waveAudio" preload="metadata"></audio><div class="wave-player-row"><img id="wavePlayerCover" alt="" hidden><div class="wave-player-info"><strong id="waveTrackTitle"></strong><span id="waveTrackArtist"></span></div><button id="wavePrev" aria-label="Предыдущий трек">Ⅰ◀</button><button id="waveToggle" aria-label="Воспроизвести">▶</button><button id="waveNext" aria-label="Следующий трек">▶Ⅰ</button><button id="waveExpand" aria-label="Раскрыть плеер" aria-expanded="false">⌃</button></div><div class="wave-player-progress"><input id="waveSeek" type="range" min="0" max="100" step="0.1" value="0" disabled aria-label="Позиция трека"><span id="waveTime">0:00 / 0:00</span></div><div class="wave-player-extra"><button id="waveShuffle" aria-label="Перемешивание" aria-pressed="false">⤨</button><button id="waveRepeat" aria-label="Повтор" aria-pressed="false">↻</button><input id="waveVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Громкость"><button id="waveQueueToggle" aria-expanded="false">Очередь</button><span id="waveQueueCount"></span></div><p id="wavePlayerStatus" role="status"></p><div id="waveQueue" hidden></div></section></body></html>`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0d"><title>NEXUS404</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/intro.css"><script src="/intro.js" defer></script><link rel="stylesheet" href="/modules/wave/wave.css"><script src="/modules/wave/player.js" defer></script></head><body class="wave-shell"><iframe id="hubFrame" title="NEXUS404" src="${escape(target.pathname + target.search + target.hash)}" allow="autoplay; clipboard-write"></iframe><section id="wavePlayer" aria-label="Плеер Волна" hidden><audio id="waveAudio" preload="metadata"></audio><div class="wave-player-row"><img id="wavePlayerCover" alt="" hidden><div class="wave-player-info"><strong id="waveTrackTitle"></strong><span id="waveTrackArtist"></span></div><button id="wavePrev" aria-label="Предыдущий трек">Ⅰ◀</button><button id="waveToggle" aria-label="Воспроизвести">▶</button><button id="waveNext" aria-label="Следующий трек">▶Ⅰ</button><button id="waveExpand" aria-label="Раскрыть плеер" aria-expanded="false">⌃</button></div><div class="wave-player-progress"><input id="waveSeek" type="range" min="0" max="100" step="0.1" value="0" disabled aria-label="Позиция трека"><span id="waveTime">0:00 / 0:00</span></div><div class="wave-player-extra"><button id="waveShuffle" aria-label="Перемешивание" aria-pressed="false">⤨</button><button id="waveRepeat" aria-label="Повтор" aria-pressed="false">↻</button><input id="waveVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Громкость"><button id="waveQueueToggle" aria-expanded="false">Очередь</button><span id="waveQueueCount"></span></div><p id="wavePlayerStatus" role="status"></p><div id="waveQueue" hidden></div></section></body></html>`;
 }
