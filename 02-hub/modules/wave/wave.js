@@ -263,14 +263,13 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
     }
   }
   const views = [
-    ['overview', 'Обзор'],
     ['artists', 'Артисты'],
     ['albums', 'Альбомы'],
-    ['singles', 'Синглы'],
     ['tracks', 'Треки'],
     ['favorite', 'Избранное'],
     ['playlists', 'Плейлисты']
   ];
+  let playlistsOpen = false;
   let route,
     library,
     limit = 100;
@@ -286,13 +285,13 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
     route.view === 'playlist' ? data.playlists.find((p) => p.id === route.id) : null;
   function readRoute() {
     const p = new URLSearchParams(location.search);
-    route = {view: p.get('view') || 'overview', id: p.get('id') || ''};
+    route = {view: p.get('view') || 'artists', id: p.get('id') || ''};
     if (![...views.map((v) => v[0]), 'artist', 'album', 'playlist'].includes(route.view))
-      route.view = 'overview';
+      route.view = 'artists';
   }
   function url(view, id = '') {
     const u = new URL('/modules/wave/', location.origin);
-    if (view !== 'overview') u.searchParams.set('view', view);
+    if (view !== 'artists') u.searchParams.set('view', view);
     if (id) u.searchParams.set('id', id);
     return u;
   }
@@ -304,6 +303,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
     limit = 100;
     $('waveSearch').value = '';
     $('waveSort').value = 'default';
+    if (view === 'playlist') playlistsOpen = true;
     render();
   }
   function link(title, view, id = '', cls = '') {
@@ -355,8 +355,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
     const section = make('section', undefined, 'wave-section'),
       heading = make('div', undefined, 'wave-section-head'),
       grid = make('div', undefined, 'wave-card-grid');
-    if (!['artists', 'albums', 'singles', 'playlists'].includes(route.view))
-      heading.append(make('h3', title));
+    if (!['artists', 'albums', 'playlists'].includes(route.view)) heading.append(make('h3', title));
     if (view) heading.append(link('Все →', view));
     grid.append(...groups.slice(0, max).map((g) => groupCard(g, type)));
     section.append(heading, grid);
@@ -380,9 +379,24 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
         const a = link(title, value);
         if (route.view === value || route.view === value.slice(0, -1))
           a.setAttribute('aria-current', 'page');
-        return a;
+        if (value !== 'playlists') return a;
+        a.setAttribute('aria-expanded', String(playlistsOpen));
+        a.setAttribute('aria-controls', 'wavePlaylists');
+        a.onclick = (e) => {
+          if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          playlistsOpen = !playlistsOpen;
+          if (route.view !== 'playlists') go('playlists');
+          else render();
+        };
+        const row = make('div', undefined, 'wave-playlist-heading');
+        const add = button('Создать плейлист', createPlaylist, '+');
+        add.id = 'waveCreate';
+        row.append(a, add);
+        return row;
       })
     );
+    $('wavePlaylists').hidden = !playlistsOpen;
     $('wavePlaylists').replaceChildren(
       ...data.playlists.map((p) => {
         const a = link(p.name, 'playlist', p.id);
@@ -427,10 +441,6 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
       tracks = tracks.filter((t) => t.favorite);
       subtitle = 'Твоя коллекция';
     }
-    if (route.view === 'overview') {
-      title = 'Твоя музыка';
-      subtitle = `${library.artists.length} артистов · ${library.albums.length} альбомов · ${library.singles.length} синглов`;
-    }
     const hero = make('div', undefined, 'wave-hero'),
       heading = make('div', undefined, 'wave-hero-text');
     if (art) hero.append(art);
@@ -464,17 +474,11 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
       );
     else if (sort === 'name' || !['album', 'playlist'].includes(route.view))
       shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-    const browsing = ['artists', 'albums', 'singles', 'playlists'].includes(route.view);
-    if (route.view === 'overview') {
-      section('Альбомы', library.albums.filter(groupMatches), 'album', 'albums', 4);
-      section('Артисты', library.artists.filter(groupMatches), 'artist', 'artists', 4);
-    }
+    const browsing = ['artists', 'albums', 'playlists'].includes(route.view);
     if (route.view === 'artists')
       section('Артисты', library.artists.filter(groupMatches), 'artist', null, limit);
     if (route.view === 'albums')
       section('Альбомы', library.albums.filter(groupMatches), 'album', null, limit);
-    if (route.view === 'singles')
-      section('Синглы', library.singles.filter(groupMatches), 'album', null, limit);
     if (route.view === 'playlists')
       section('Плейлисты', data.playlists.filter(groupMatches), 'playlist', null, limit);
     if (route.view === 'artist' && artist)
@@ -491,14 +495,12 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
         'album',
         null
       );
-    if (route.view === 'overview')
-      section('Синглы', library.singles.filter(groupMatches), 'album', 'singles', 4);
     $('waveCount').textContent = shown.length + ' треков · ' + duration(shown);
     $('waveEditPlaylist').hidden = !playlist;
     $('wavePlay').disabled = $('waveMix').disabled = !shown.length;
     $('wavePlay').hidden = $('waveMix').hidden = browsing;
-    $('waveSort').hidden = browsing || route.view === 'overview';
-    const visible = browsing || route.view === 'overview' ? [] : shown.slice(0, limit);
+    $('waveSort').hidden = browsing;
+    const visible = browsing ? [] : shown.slice(0, limit);
     $('waveTracks').replaceChildren(...visible.map(trackRow));
     let count = shown.length;
     if (browsing)
@@ -507,9 +509,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
           ? library.artists
           : route.view === 'albums'
             ? library.albums
-            : route.view === 'singles'
-              ? library.singles
-              : data.playlists
+            : data.playlists
       ).filter(groupMatches).length;
     if (browsing)
       $('waveCount').textContent =
@@ -518,7 +518,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
         ] +
         ': ' +
         count;
-    $('waveMore').hidden = route.view === 'overview' || count <= limit;
+    $('waveMore').hidden = count <= limit;
     if (!count)
       $('waveTracks').append(
         make(
@@ -533,7 +533,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
           'wave-empty'
         )
       );
-    $('waveSelect').hidden = browsing || route.view === 'overview' || !shown.length;
+    $('waveSelect').hidden = browsing || !shown.length;
     selectionPaint();
     paintPlaying();
   }
@@ -678,7 +678,7 @@ import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
         })
     );
   }
-  $('waveCreate').onclick = () =>
+  const createPlaylist = () =>
     dialog(
       'Новый плейлист',
       (box) => {

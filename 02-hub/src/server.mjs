@@ -10,6 +10,7 @@ import {login, dashboard, settingsPage, playerShell} from './views.mjs';
 import {loadModules, moduleSummary} from './modules.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const types = {
+  '.mp3': 'audio/mpeg',
   '.css': 'text/css',
   '.js': 'text/javascript',
   '.json': 'application/manifest+json',
@@ -25,6 +26,7 @@ const assets = [
   'ui.js',
   'intro.js',
   'intro.css',
+  'intro-voice.mp3',
   'manifest.json',
   'offline.html',
   'sw.js',

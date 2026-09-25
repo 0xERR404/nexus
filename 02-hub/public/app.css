@@ -44,3 +44,5 @@ dialog{overscroll-behavior:contain;max-height:calc(100dvh - 32px);overflow-y:aut
 .page>main{animation:page-enter .24s ease-out both}@keyframes page-enter{from{opacity:.4}to{opacity:1}}
 ::view-transition-group(root),::view-transition-group(hub-header){animation-duration:.24s}
 @media(prefers-reduced-motion:reduce){#hubFrame.hub-navigating{opacity:1}.page>main{animation:none}}
+
+.ui-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.ui-discard{max-width:360px}

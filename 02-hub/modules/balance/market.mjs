@@ -1,3 +1,4 @@
+import {FileCache} from '../../src/cache.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
@@ -84,6 +85,14 @@ export function parseCrypto(data, now) {
 export class Market {
   constructor(directory, {fetcher = fetch, now = Date.now} = {}) {
     this.directory = directory;
+    this.creditDisk = new FileCache(path.join(directory, 'cache-credits'), {
+      ttl: 60000,
+      retention: 86400000,
+      maxBytes: 65536,
+      maxEntries: 4,
+      now
+    });
+    this.creditDisk.prune();
     this.fetcher = fetcher;
     this.now = now;
     this.configFile = path.join(directory, 'market.json');
@@ -95,7 +104,12 @@ export class Market {
     }
     if (!this.cache || typeof this.cache !== 'object' || Array.isArray(this.cache)) this.cache = {};
     this.pending = new Map();
-    this.next = {};
+    this.next = Object.fromEntries(
+      ['fiat', 'crypto'].map((k) => [
+        k,
+        (this.cache[k]?.fetchedAt || 0) + (k === 'fiat' ? 3600000 : 300000)
+      ])
+    );
   }
   config() {
     return read(this.configFile, {});
@@ -143,7 +157,11 @@ export class Market {
     return task;
   }
   async rates() {
-    await Promise.all([this.update('fiat'), this.update('crypto')]);
+    const updates = ['fiat', 'crypto'].map((kind) => {
+      const task = this.update(kind);
+      return this.cache[kind]?.prices ? null : task;
+    });
+    await Promise.all(updates);
     return Object.fromEntries(
       ['fiat', 'crypto'].map((kind) => {
         const item = this.cache[kind] ?? {};
@@ -183,7 +201,14 @@ export class Market {
       return {state: 'unconfigured'};
     }
     const fingerprint = createHash('sha256').update(key).digest('hex');
-    if (this.creditCache?.fingerprint !== fingerprint) this.creditCache = {fingerprint, next: 0};
+    if (this.creditCache?.fingerprint !== fingerprint) {
+      const disk = this.creditDisk.get(fingerprint);
+      let value;
+      try {
+        if (disk) value = JSON.parse(disk.data);
+      } catch {}
+      this.creditCache = {fingerprint, value, next: disk && !disk.stale ? disk.time + 60000 : 0};
+    }
     const cache = this.creditCache;
     if (!cache.pending && this.now() < cache.next) return cache.value;
     cache.pending ??= (async () => {
@@ -204,7 +229,16 @@ export class Market {
             throw new Error('balance');
           return {currency: item.currency, amount: item.total_balance};
         });
+        const current = read(path.join(chatDirectory, 'deepseek.json'), {}).key;
+        if (current !== key) {
+          cache.value = {state: current ? 'error' : 'unconfigured'};
+          return cache.value;
+        }
         cache.value = {state: 'ok', balances, updatedAt: this.now()};
+        this.creditDisk.put(fingerprint, {
+          type: 'application/json',
+          data: Buffer.from(JSON.stringify(cache.value))
+        });
         cache.next = this.now() + 60000;
       } catch {
         cache.value = {...cache.value, state: 'error'};
@@ -214,6 +248,7 @@ export class Market {
       }
       return cache.value;
     })();
+    if (cache.value) return {...cache.value, stale: true};
     const value = await cache.pending;
     try {
       const current = read(path.join(chatDirectory, 'deepseek.json'), {}).key;

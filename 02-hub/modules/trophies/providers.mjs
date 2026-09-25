@@ -106,7 +106,7 @@ export class Provider {
         response = await this.fetcher(url, {
           redirect: 'error',
           signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(20000)]),
-          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.20.4'}
+          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.21.1'}
         });
       } catch {
         throw fail('Сервис не отвечает. Сохранённые данные оставлены.');

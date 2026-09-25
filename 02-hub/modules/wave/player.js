@@ -567,13 +567,15 @@
       requestAnimationFrame(() => requestAnimationFrame(revealPage));
     }
     if (m?.type === 'nexus:location') {
-      const url = safeURL(m.url);
-      if (url && url.href !== location.href)
-        history[m.replace ? 'replaceState' : 'pushState'](
-          {},
-          '',
-          url.pathname + url.search + url.hash
-        );
+      window.NexusUI.afterDialogs(() => {
+        const url = safeURL(m.url);
+        if (url && url.href !== location.href)
+          history[m.replace ? 'replaceState' : 'pushState'](
+            {},
+            '',
+            url.pathname + url.search + url.hash
+          );
+      });
     }
     if (m?.type === 'nexus:back') history.back();
     if (m?.type === 'nexus:logout') {

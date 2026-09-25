@@ -63,7 +63,7 @@ export function settingsPage(username, modules, selectedId) {
       settings: {
         title: 'Оформление',
         content:
-          '<section class="intro-settings"><label><input id="introEnabled" type="checkbox">Приветствие после входа</label><p>NEXUS ONLINE · WELCOME BACK</p><button id="introPreview" type="button">Посмотреть заставку</button><p id="introSettingStatus" role="status"></p></section>'
+          '<section class="intro-settings"><label><input id="introEnabled" type="checkbox">Приветствие после входа</label><label><input id="introSound" type="checkbox">Звук приветствия</label><p>NEXUS ONLINE · WELCOME BACK</p><button id="introPreview" type="button">Посмотреть заставку</button><p id="introSettingStatus" role="status"></p></section>'
       }
     },
     ...modules.filter((module) => module.settings)

@@ -1,3 +1,4 @@
+import {FileCache} from '../../src/cache.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -115,6 +116,14 @@ export function normalize(rate) {
 export class AnimeStore {
   constructor(directory, {fetcher = fetch, now = Date.now, wait = sleep, write = save} = {}) {
     this.file = path.join(directory, 'shikimori.json');
+    this.coverCache = new FileCache(path.join(directory, 'cache-covers'), {now});
+    this.detailCache = new FileCache(path.join(directory, 'cache-details'), {
+      ttl: 6 * HOUR,
+      maxBytes: 4 * 1024 * 1024,
+      now
+    });
+    this.coverCache.prune();
+    this.detailCache.prune();
     this.fetcher = fetcher;
     this.now = now;
     this.wait = wait;
@@ -500,10 +509,20 @@ export class AnimeStore {
     const item = this.data.items.find((x) => x.id === id),
       connection = this.data.connection;
     if (!item || !connection) throw fail('Аниме не найдено.', 404);
-    const cached = this.details.get(id);
+    const key = String(connection.user.id) + ':' + id;
+    const disk = this.detailCache.get(key);
+    let cached = this.details.get(id);
+    if (!cached && disk) {
+      try {
+        cached = JSON.parse(disk.data);
+      } catch {}
+    }
     if (cached && this.now() - cached.updatedAt < 6 * HOUR) return {...cached, stale: false};
-    if (this.detailJobs.has(id)) return this.detailJobs.get(id);
-    if (this.detailJobs.size >= 8) throw fail('Дождись загрузки информации.', 429);
+    if (this.detailJobs.has(id)) return cached ? {...cached, stale: true} : this.detailJobs.get(id);
+    if (this.detailJobs.size >= 8) {
+      if (cached) return {...cached, stale: true};
+      throw fail('Дождись загрузки информации.', 429);
+    }
     const job = (async () => {
       try {
         const d = await this.remote('/api/animes/' + id, {connection, token: false});
@@ -539,6 +558,10 @@ export class AnimeStore {
         if (this.data.connection !== connection) throw fail('Подключение изменилось.', 409);
         if (this.details.size >= 128) this.details.delete(this.details.keys().next().value);
         this.details.set(id, result);
+        this.detailCache.put(key, {
+          type: 'application/json',
+          data: Buffer.from(JSON.stringify(result))
+        });
         return {...result, stale: false};
       } catch (e) {
         if (cached && this.data.connection === connection) return {...cached, stale: true};
@@ -546,14 +569,21 @@ export class AnimeStore {
       }
     })().finally(() => this.detailJobs.delete(id));
     this.detailJobs.set(id, job);
+    if (cached) {
+      void job.catch(() => {});
+      return {...cached, stale: true};
+    }
     return job;
   }
   async cover(id) {
     this.load();
     const url = posterURL(this.data.items.find((x) => x.id === id)?.poster);
     if (!url) return Promise.resolve(null);
-    if (this.images.has(url)) return Promise.resolve(this.images.get(url));
-    if (this.imageJobs.has(url)) return this.imageJobs.get(url);
+    const disk = this.coverCache.get(url);
+    if (disk && !disk.stale) return disk;
+    if (this.images.has(url) && this.now() - this.images.get(url).time < 86400000)
+      return Promise.resolve(this.images.get(url));
+    if (this.imageJobs.has(url)) return disk ?? this.imageJobs.get(url);
     if (this.imageJobs.size >= 6) {
       await Promise.race(this.imageJobs.values());
       return this.cover(id);
@@ -579,15 +609,16 @@ export class AnimeStore {
           await res.body?.cancel();
           return null;
         }
-        const image = {type, data: await bytes(res, 524288)};
+        const image = {type, data: await bytes(res, 524288), time: this.now()};
         if (this.images.size >= 96) this.images.delete(this.images.keys().next().value);
         this.images.set(url, image);
+        this.coverCache.put(url, image);
         return image;
       } catch {
         return null;
       }
     })().finally(() => this.imageJobs.delete(url));
     this.imageJobs.set(url, job);
-    return job;
+    return disk ?? job;
   }
 }

@@ -1,30 +1,35 @@
 (() => {
   const TIMING = Object.freeze({
     loading: 1500,
-    online: 1000,
-    between: 300,
-    welcome: 1000,
+    welcomeAt: 1877,
+    voiceDuration: 2952,
     hold: 400,
     reveal: 500
   });
   const preference = 'nexus-intro-enabled',
-    pending = 'nexus-intro-pending';
+    pending = 'nexus-intro-pending',
+    soundPreference = 'nexus-intro-sound';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const enabled = () => {
+  const enabled = (key = preference) => {
     try {
-      return localStorage.getItem(preference) !== 'false';
+      return localStorage.getItem(key) !== 'false';
     } catch {
       return true;
     }
   };
   const setting = document.getElementById('introEnabled'),
+    soundSetting = document.getElementById('introSound'),
     preview = document.getElementById('introPreview'),
     status = document.getElementById('introSettingStatus');
-  if (setting) {
-    setting.checked = enabled();
-    setting.onchange = () => {
+  for (const [input, key] of [
+    [setting, preference],
+    [soundSetting, soundPreference]
+  ]) {
+    if (!input) continue;
+    input.checked = enabled(key);
+    input.onchange = () => {
       try {
-        localStorage.setItem(preference, String(setting.checked));
+        localStorage.setItem(key, String(input.checked));
         status.textContent = 'Сохранено для этого устройства.';
       } catch {
         status.textContent = 'Браузер не разрешает сохранить настройку.';
@@ -145,7 +150,7 @@
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Приветствие NEXUS404');
     overlay.innerHTML =
-      '<canvas class="intro-stars" aria-hidden="true"></canvas><div class="intro-center"><img class="intro-emblem" src="/mark.svg" alt=""><div class="intro-headline"><span class="intro-brand">NEXUS404</span><span class="intro-online">NEXUS ONLINE</span></div><div class="intro-welcome">WELCOME BACK</div><div class="intro-progress" aria-hidden="true"><div class="intro-track"><span></span></div><span class="intro-percent">0%</span></div></div><span class="sr-only intro-announcement" role="status" aria-live="polite">Приветствие</span><button class="intro-skip" type="button">Пропустить</button>';
+      '<canvas class="intro-stars" aria-hidden="true"></canvas><div class="intro-center"><img class="intro-emblem" src="/mark.svg" alt=""><div class="intro-headline"><span class="intro-brand">NEXUS404</span><span class="intro-online">NEXUS ONLINE</span></div><div class="intro-welcome">WELCOME BACK</div><div class="intro-progress" aria-hidden="true"><div class="intro-track"><span></span></div><span class="intro-percent">0%</span></div></div><span class="sr-only intro-announcement" role="status" aria-live="polite">Приветствие</span><div class="intro-controls"><button class="intro-sound" type="button">Включить звук</button><button class="intro-skip" type="button">Пропустить</button></div>';
     const previous = document.activeElement,
       siblings = [...document.body.children]
         .filter((e) => !['SCRIPT', 'LINK', 'STYLE'].includes(e.tagName))
@@ -155,12 +160,78 @@
     document.body.append(overlay);
     const controller = new AbortController(),
       stopBackdrop = backdrop(overlay.querySelector('canvas'));
-    const skip = overlay.querySelector('button'),
+    const skip = overlay.querySelector('.intro-skip'),
+      sound = overlay.querySelector('.intro-sound'),
       bar = overlay.querySelector('.intro-track span'),
       percent = overlay.querySelector('.intro-percent'),
       announcement = overlay.querySelector('.intro-announcement');
     let frame = 0,
       closed = false;
+    const voice = document.createElement('audio');
+    voice.src = '/intro-voice.mp3';
+    voice.preload = 'auto';
+    voice.hidden = true;
+    overlay.append(voice);
+    let wantsSound = enabled(soundPreference),
+      ready = false,
+      playing = false,
+      attempt = 0,
+      clock = 0,
+      deadline = 0;
+    function soundLabel() {
+      sound.textContent = wantsSound ? 'Выключить звук' : 'Включить звук';
+      sound.setAttribute('aria-pressed', String(wantsSound));
+    }
+    function silentClock() {
+      playing = false;
+      clock = performance.now() - voice.currentTime * 1000;
+    }
+    function startVoice() {
+      const id = ++attempt;
+      voice.currentTime = 0;
+      clock = performance.now();
+      deadline = clock + 10000;
+      playing = false;
+      voice
+        .play()
+        .then(() => {
+          if (closed) {
+            voice.pause();
+            return;
+          }
+          if (id !== attempt) return;
+          playing = true;
+          soundLabel();
+        })
+        .catch(() => {
+          if (closed || id !== attempt) return;
+          wantsSound = false;
+          silentClock();
+          soundLabel();
+        });
+    }
+    voice.addEventListener('error', () => {
+      if (closed) return;
+      ++attempt;
+      wantsSound = false;
+      silentClock();
+      soundLabel();
+    });
+    voice.addEventListener('ended', silentClock);
+    soundLabel();
+    sound.addEventListener('click', (event) => {
+      event.stopPropagation();
+      wantsSound = !wantsSound;
+      try {
+        localStorage.setItem(soundPreference, String(wantsSound));
+      } catch {}
+      if (!wantsSound) {
+        ++attempt;
+        silentClock();
+        voice.pause();
+      } else if (ready) startVoice();
+      soundLabel();
+    });
     active = overlay;
     overlay.tabIndex = -1;
     overlay.focus({preventScroll: true});
@@ -183,6 +254,10 @@
     function finish(immediate = false) {
       if (closed) return;
       closed = true;
+      ++attempt;
+      voice.pause();
+      voice.removeAttribute('src');
+      voice.load();
       controller.abort();
       cancelAnimationFrame(frame);
       stopBackdrop();
@@ -200,6 +275,7 @@
           active = null;
           document.removeEventListener('keydown', keys, true);
           document.removeEventListener('visibilitychange', visibility);
+          removeEventListener('pagehide', hide);
         },
         immediate ? 0 : TIMING.reveal
       );
@@ -207,8 +283,13 @@
     function keys(event) {
       if (event.key === 'Tab') {
         event.preventDefault();
-        skip.focus();
-      } else if (['Escape', 'Enter', ' '].includes(event.key)) {
+        const buttons = [sound, skip];
+        const index = buttons.indexOf(document.activeElement);
+        buttons[index === 0 ? 1 : index === 1 ? 0 : event.shiftKey ? 1 : 0].focus();
+      } else if (
+        event.key === 'Escape' ||
+        (['Enter', ' '].includes(event.key) && !event.target.closest('button'))
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
         finish();
@@ -217,6 +298,8 @@
     function visibility() {
       if (document.hidden) finish(true);
     }
+    const hide = () => finish(true);
+    addEventListener('pagehide', hide);
     document.addEventListener('keydown', keys, true);
     document.addEventListener('visibilitychange', visibility);
     overlay.addEventListener('click', () => finish());
@@ -238,19 +321,33 @@
         wait(TIMING.loading)
       ]);
       if (closed) return;
-      if (!response.ok || (await response.json()).status !== 'ok') {
+      const healthy = response.ok && (await response.json()).status === 'ok';
+      if (closed) return;
+      if (!healthy) {
         finish(true);
         return;
       }
       bar.style.transform = 'scaleX(1)';
       percent.textContent = '100%';
-      overlay.dataset.phase = 'online';
-      announcement.textContent = 'NEXUS ONLINE';
-      if (!(await wait(TIMING.online + TIMING.between))) return;
-      overlay.dataset.phase = 'welcome';
-      announcement.textContent = 'WELCOME BACK';
-      if (!(await wait(TIMING.welcome + TIMING.hold))) return;
-      finish();
+      ready = true;
+      clock = performance.now();
+      deadline = clock + 10000;
+      if (wantsSound) startVoice();
+      function timeline(now) {
+        if (closed) return;
+        const elapsed = playing ? voice.currentTime * 1000 : now - clock;
+        const phase = elapsed >= TIMING.welcomeAt ? 'welcome' : 'online';
+        if (overlay.dataset.phase !== phase) {
+          overlay.dataset.phase = phase;
+          announcement.textContent = phase === 'welcome' ? 'WELCOME BACK' : 'NEXUS ONLINE';
+        }
+        const duration = Number.isFinite(voice.duration)
+          ? voice.duration * 1000
+          : TIMING.voiceDuration;
+        if (elapsed >= duration + TIMING.hold || now >= deadline) finish();
+        else frame = requestAnimationFrame(timeline);
+      }
+      frame = requestAnimationFrame(timeline);
     } catch {
       finish(true);
     }

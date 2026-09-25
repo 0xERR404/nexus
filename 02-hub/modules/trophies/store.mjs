@@ -1,3 +1,4 @@
+import {FileCache} from '../../src/cache.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
@@ -41,6 +42,8 @@ export class TrophiesStore {
     this.dir = directory;
     this.options = options;
     this.now = options.now ?? Date.now;
+    this.coverCache = new FileCache(path.join(directory, 'cache-covers'), {now: this.now});
+    this.coverCache.prune();
     this.jobs = new Map();
     this.clients = new Map();
     this.connecting = new Set();
@@ -626,8 +629,10 @@ export class TrophiesStore {
     this.imageJobs ??= new Map();
     const key = kind + ':' + a.id + ':' + id + ':' + url.href,
       cached = this.images.get(key);
+    const disk = this.coverCache.get(key);
+    if (disk && !disk.stale) return disk;
     if (cached && this.now() - cached.time < 86400000) return cached;
-    if (this.imageJobs.has(key)) return this.imageJobs.get(key);
+    if (this.imageJobs.has(key)) return disk ?? this.imageJobs.get(key);
     if (this.imageJobs.size >= 6) {
       await Promise.race(this.imageJobs.values());
       return this.cover(kind, id);
@@ -702,12 +707,13 @@ export class TrophiesStore {
       )
         this.images.delete(this.images.keys().next().value);
       this.images.set(key, image);
+      this.coverCache.put(key, image);
       return image;
     })()
       .catch(() => null)
       .finally(() => this.imageJobs.delete(key));
     this.imageJobs.set(key, task);
-    return task;
+    return disk ?? task;
   }
   start() {
     this.load();
