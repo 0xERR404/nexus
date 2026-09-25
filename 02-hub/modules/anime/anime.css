@@ -15,3 +15,5 @@
 .anime-list{gap:12px}.anime-details h2{flex:1;min-height:0;-webkit-line-clamp:4}.anime-card-meta{margin-top:auto}.anime-progress{margin-top:0}.anime-details{gap:5px}@media(max-width:600px){.anime-details h2{min-height:50px;-webkit-line-clamp:3}.anime-card{contain-intrinsic-size:auto 215px}}
 
 .anime-list{gap:var(--card-gap)}
+
+#animeDetailDialog>.anime-meta{display:grid;grid-template-columns:minmax(0,1fr) 40px;align-items:start;gap:12px;margin:0 0 12px}#animeDetailTitle{min-width:0;overflow-wrap:anywhere;padding-top:5px}#animePage #animeDetailClose{background:transparent;border-color:transparent;justify-self:end}#animePage #animeDetailClose:hover{background:var(--surface-raised);border-color:var(--line)}

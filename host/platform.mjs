@@ -403,7 +403,7 @@ export function moduleFiles(
   id,
   {root = ROOT, hub = HUB, state = STATE, copy = fs.copyFileSync} = {}
 ) {
-  if (!/^(pulse|signal|balance|chat|anime|trophies)$/.test(id))
+  if (!/^(pulse|signal|balance|chat|anime|trophies|wave)$/.test(id))
     throw new Error('Неизвестный модуль');
   const source = root + '/02-hub/modules/' + id,
     target = hub + '/modules/' + id,
@@ -479,9 +479,9 @@ export async function installModule(ui, id, maintenance = true) {
   supported();
   if (!fs.existsSync(HUB + '/config/auth.json'))
     throw new Error('Сначала установи хаб через пункт 5');
-  if (!['pulse', 'signal', 'balance', 'chat', 'anime', 'trophies'].includes(id))
+  if (!['pulse', 'signal', 'balance', 'chat', 'anime', 'trophies', 'wave'].includes(id))
     throw new Error('Неизвестный модуль');
-  const embedded = ['balance', 'chat', 'anime', 'trophies'].includes(id);
+  const embedded = ['balance', 'chat', 'anime', 'trophies', 'wave'].includes(id);
   const override = embedded ? null : moduleOverride(id);
   const installed = query(
     'docker',
@@ -552,7 +552,8 @@ export async function installModule(ui, id, maintenance = true) {
         balance: '«Баланс»',
         chat: '«Чат»',
         anime: '«Кадр»',
-        trophies: '«Трофеи»'
+        trophies: '«Трофеи»',
+        wave: '«Волна»'
       }[id] +
       ' установлен'
   );
@@ -560,7 +561,7 @@ export async function installModule(ui, id, maintenance = true) {
 }
 
 export async function waitModule(ui, id) {
-  const embedded = ['balance', 'chat', 'anime', 'trophies'].includes(id);
+  const embedded = ['balance', 'chat', 'anime', 'trophies', 'wave'].includes(id);
   const file = id === 'pulse' ? '/app/metrics/pulse.json' : '/app/signal/feed.json';
   const code = embedded
     ? `import('/app/modules/${id}/index.mjs').then(async m=>{await m.summary();process.exit(0)}).catch(()=>process.exit(1))`

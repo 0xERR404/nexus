@@ -24,3 +24,5 @@
 .trophy-price-note{margin-top:5px;line-height:1.5}
 
 .trophy-grid,.trophy-overview{gap:var(--card-gap)}
+
+#trophiesPage .trophy-card>strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.35;min-height:2.7em;max-height:2.7em;overflow:hidden;flex-shrink:0}.trophy-card-stats{display:flex;flex-direction:column;gap:6px;margin-top:auto;width:100%;min-width:0}.trophy-card-stats progress{flex-shrink:0}

@@ -163,7 +163,12 @@
           });
           b.append(image);
         }
-        b.append(el('strong', g.title));
+        const title = el('strong', g.title);
+        title.title = g.title;
+        b.append(title);
+        const stats = el('div', undefined, 'trophy-card-stats');
+        if (g.error) stats.append(el('small', 'Не обновлено'));
+        if (g.metadataError) stats.append(el('small', 'Отзывы / цена не обновлены'));
         if (g.provider === 'steam') {
           const review = el('small', undefined, 'trophy-review');
           if (g.reviewPercent != null) {
@@ -181,8 +186,7 @@
           facts.append(review);
           if (g.minutes != null)
             facts.append(el('small', `${Math.round(g.minutes / 6) / 10} ч`, 'trophy-hours'));
-          b.append(facts);
-          if (g.metadataError) b.append(el('small', 'Отзывы / цена не обновлены'));
+          stats.append(facts);
         }
         for (const [label, n] of g.provider === 'ra'
           ? [
@@ -190,7 +194,7 @@
               ['HC', g.hard]
             ]
           : [['', g.soft]]) {
-          b.append(
+          stats.append(
             el(
               'small',
               n === null
@@ -203,10 +207,10 @@
             bar.max = g.total;
             bar.value = n;
             bar.setAttribute('aria-label', label || 'Прогресс');
-            b.append(bar);
+            stats.append(bar);
           }
         }
-        if (g.error) b.append(el('small', 'Не обновлено'));
+        b.append(stats);
         b.addEventListener('click', () => openGame(g));
         gameNodes.set(key, {signature, node: b});
         return b;

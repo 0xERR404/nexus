@@ -6,7 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Readable} from 'node:stream';
 import {validateAuth, checkPassword, Sessions, SESSION_TTL, authIdentity} from './auth.mjs';
-import {login, dashboard, settingsPage} from './views.mjs';
+import {login, dashboard, settingsPage, playerShell} from './views.mjs';
 import {loadModules, moduleSummary} from './modules.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const types = {
@@ -238,6 +238,21 @@ export function createApp({
           return send(401, JSON.stringify({error: 'Требуется вход'}), 'application/json');
         return redirect('/login');
       }
+      if (modules.has('wave')) {
+        response.setHeader(
+          'Content-Security-Policy',
+          CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+        );
+        response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        const pageRoute = /^\/(?:$|settings\/?$|modules\/[a-z-]+\/?$)/.test(url.pathname);
+        if (
+          pageRoute &&
+          request.method === 'GET' &&
+          url.searchParams.get('_view') !== '1' &&
+          request.headers['sec-fetch-dest'] !== 'iframe'
+        )
+          return send(200, playerShell(url.href));
+      }
       if (url.pathname === '/' && ['GET', 'HEAD'].includes(request.method))
         return send(200, dashboard(config.username, [...modules.values()]));
       if (
@@ -314,7 +329,7 @@ export function createApp({
       if (error.status !== 413) console.error('Request failed:', request.method);
     }
   });
-  server.requestTimeout = 30000;
+  server.requestTimeout = 300000;
   server.headersTimeout = 15000;
   server.keepAliveTimeout = 5000;
   return server;

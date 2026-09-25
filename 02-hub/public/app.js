@@ -1,3 +1,51 @@
+if (window.parent !== window) {
+  const send = (data) => window.parent.postMessage(data, location.origin);
+  const replace = history.replaceState.bind(history);
+  for (const method of ['pushState', 'replaceState'])
+    history[method] = (state, title, url) => {
+      replace(state, title, url);
+      send({type: 'nexus:location', url: location.href, replace: method === 'replaceState'});
+    };
+  document.addEventListener(
+    'click',
+    (event) => {
+      const a = event.target.closest('a[href]');
+      if (
+        !a ||
+        a.download ||
+        a.hasAttribute('download') ||
+        a.target === '_blank' ||
+        event.button ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      if (a.matches('[data-trophy-provider]')) return;
+      const url = new URL(a.href, location.href);
+      if (
+        url.origin === location.origin &&
+        /^\/(?:$|settings\/?$|modules\/[a-z-]+\/?$)/.test(url.pathname)
+      ) {
+        event.preventDefault();
+        send({type: 'nexus:navigate', url: url.href});
+      }
+    },
+    true
+  );
+  document.addEventListener(
+    'submit',
+    (event) => {
+      if (event.target.action?.endsWith('/api/auth/logout')) {
+        event.preventDefault();
+        send({type: 'nexus:logout'});
+      }
+    },
+    true
+  );
+  document.addEventListener('play', () => window.parent.NexusWave?.pause(), true);
+}
 let installPrompt;
 const standalone = matchMedia('(display-mode: standalone)');
 const installButtons = document.querySelectorAll('[data-install]');
@@ -228,7 +276,8 @@ addEventListener('keydown', (event) => {
   )
     return;
   event.preventDefault();
-  history.back();
+  if (window.parent !== window) window.parent.postMessage({type: 'nexus:back'}, location.origin);
+  else history.back();
 });
 
 (() => {

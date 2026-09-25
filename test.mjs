@@ -1114,6 +1114,7 @@ import path from 'node:path';
       'balance',
       'anime',
       'trophies',
+      'wave',
       'maintenance'
     ]);
   });
@@ -5729,4 +5730,224 @@ test('FlowMusic exports real WAV, MP3 and M4A, caches conversions and removes th
   assert.equal(JSON.parse(probeWav.stdout).streams[0].codec_name, 'pcm_s16le');
   audio.remove([id, compressedId]);
   assert.deepEqual(fs.readdirSync(audio.directory), []);
+});
+
+// Волна
+{
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const {spawnSync} = await import('node:child_process');
+  const {Readable} = await import('node:stream');
+  const available = spawnSync('ffmpeg', ['-version']).status === 0;
+  function waveFixture(t) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-test-'));
+    t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+    return {dir, store: new WaveStore(path.join(dir, 'wave'))};
+  }
+  function tone(dir, extension = 'wav') {
+    const file = path.join(dir, 'source.' + extension);
+    const result = spawnSync('ffmpeg', [
+      '-y',
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:duration=1',
+      '-metadata',
+      'title=Тишина <ночь>',
+      '-metadata',
+      'artist=Исполнитель',
+      '-metadata',
+      'album=Альбом',
+      file
+    ]);
+    assert.equal(result.status, 0, result.stderr.toString());
+    return fs.readFileSync(file);
+  }
+  test(
+    'Wave reads actual audio tags, deduplicates, streams ranges and retains original',
+    {skip: !available},
+    async (t) => {
+      const {dir, store} = waveFixture(t);
+      const bytes = tone(dir);
+      const {track} = await store.upload(Readable.from([bytes]), 'song.wav');
+      assert.equal(track.title, 'Тишина <ночь>');
+      assert.equal(track.artist, 'Исполнитель');
+      assert.equal(track.album, 'Альбом');
+      assert.ok(track.duration > 0.9);
+      assert.equal(track.extension, '.wav');
+      assert.equal((await store.upload(Readable.from([bytes]), 'copy.wav')).duplicate, true);
+      assert.equal(store.snapshot().tracks.length, 1);
+      const req = {method: 'GET', headers: {range: 'bytes=0-99'}};
+      const r = store.serve(track.id, 'audio', req);
+      assert.equal(r.status, 206);
+      assert.equal(r.headers.get('content-type'), 'audio/mpeg');
+      assert.equal((await r.arrayBuffer()).byteLength, 100);
+      assert.equal(
+        store.serve(track.id, 'audio', {method: 'GET', headers: {range: 'bytes=9999999-'}}).status,
+        416
+      );
+      const original = store.serve(track.id, 'original', {method: 'GET', headers: {}});
+      assert.deepEqual(Buffer.from(await original.arrayBuffer()), bytes);
+      assert.equal(store.serve(track.id, 'audio', {method: 'HEAD', headers: {}}).body, null);
+      assert.throws(
+        () => store.serve('../library.json', 'original', req),
+        (e) => e.status === 404
+      );
+      const resumed = new WaveStore(path.join(dir, 'wave'));
+      assert.equal(resumed.snapshot().tracks[0].title, track.title);
+    }
+  );
+  test(
+    'Wave favorites and playlist changes persist and deletion cleans references',
+    {skip: !available},
+    async (t) => {
+      const {dir, store} = waveFixture(t);
+      const {track} = await store.upload(Readable.from([tone(dir)]), 'song.wav');
+      store.change({action: 'favorite', id: track.id, favorite: true});
+      store.change({action: 'playlist.create', name: 'Ночь'});
+      const p = store.snapshot().playlists[0];
+      store.change({action: 'playlist.add', id: p.id, track: track.id});
+      store.change({action: 'playlist.add', id: p.id, track: track.id});
+      assert.equal(store.snapshot().playlists[0].tracks.length, 1);
+      store.change({action: 'playlist.rename', id: p.id, name: 'Тишина'});
+      assert.equal(new WaveStore(path.join(dir, 'wave')).snapshot().playlists[0].name, 'Тишина');
+      store.change({action: 'delete', id: track.id});
+      assert.equal(store.snapshot().tracks.length, 0);
+      assert.equal(store.snapshot().playlists[0].tracks.length, 0);
+      assert.equal(fs.existsSync(path.join(dir, 'wave', track.id)), false);
+    }
+  );
+  test('Wave rejects malformed files and concurrent imports without leaving partial files', async (t) => {
+    const {store} = waveFixture(t);
+    await assert.rejects(
+      store.upload(Readable.from([Buffer.from('text')]), 'file.html'),
+      (e) => e.status === 400
+    );
+    assert.deepEqual(fs.readdirSync(store.directory), []);
+    if (available) {
+      await assert.rejects(
+        store.upload(Readable.from([Buffer.from('#EXTM3U\nhttp://127.0.0.1/secret')]), 'file.mp3'),
+        (e) => e.status === 400
+      );
+      assert.deepEqual(fs.readdirSync(store.directory), []);
+    }
+    store.busy = true;
+    await assert.rejects(store.upload(Readable.from([]), 'song.mp3'), (e) => e.status === 429);
+    await assert.rejects(store.fromFlow(crypto.randomUUID()), (e) => e.status === 429);
+  });
+  test(
+    'Wave imports a durable independent FlowMusic copy and deduplicates it',
+    {skip: !available},
+    async (t) => {
+      const {dir, store} = waveFixture(t);
+      const id = crypto.randomUUID(),
+        source = path.join(dir, 'chat', 'audio');
+      fs.mkdirSync(source, {recursive: true});
+      fs.writeFileSync(path.join(source, id), tone(dir, 'mp3'));
+      fs.writeFileSync(
+        path.join(source, id + '.json'),
+        JSON.stringify({title: 'Flow track', extension: 'mp3'})
+      );
+      const result = await store.fromFlow(id);
+      assert.equal(result.duplicate, false);
+      assert.equal((await store.fromFlow(id)).duplicate, true);
+      fs.rmSync(source, {recursive: true});
+      const response = store.serve(result.track.id, 'audio', {method: 'GET', headers: {}});
+      assert.ok((await response.arrayBuffer()).byteLength > 100);
+      await assert.rejects(store.fromFlow('../x'), (e) => e.status === 400);
+    }
+  );
+  test('Wave accepts the documented first-version audio formats', {skip: !available}, async (t) => {
+    const {dir, store} = waveFixture(t);
+    for (const extension of ['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'webm']) {
+      const {track} = await store.upload(
+        Readable.from([tone(dir, extension)]),
+        'song.' + extension
+      );
+      assert.ok(track.duration > 0);
+      const probe = spawnSync('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'stream=codec_name',
+        '-of',
+        'json',
+        path.join(store.directory, track.id, 'play.mp3')
+      ]);
+      assert.equal(JSON.parse(probe.stdout).streams[0].codec_name, 'mp3');
+    }
+  });
+}
+
+test('Wave HTTP routes require login and same-origin writes; shell permits only same-origin frames', async (t) => {
+  const {createApp} = await import('./02-hub/src/server.mjs');
+  const {passwordHash} = await import('./02-hub/src/auth.mjs');
+  const {createModule} = await import('./02-hub/modules/wave/index.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-auth-'));
+  const config = {
+    username: 'admin',
+    origin: 'http://localhost',
+    ...(await passwordHash('test-password-123'))
+  };
+  const wave = createModule(path.join(dir, 'wave'));
+  const app = createApp({
+    config,
+    modules: new Map([['wave', {id: 'wave', title: 'Волна', ...wave}]])
+  });
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  t.after(async () => {
+    app.closeAllConnections();
+    await new Promise((r) => app.close(r));
+    fs.rmSync(dir, {force: true, recursive: true});
+  });
+  const base = 'http://127.0.0.1:' + app.address().port;
+  for (const route of ['/modules/wave/library', '/modules/wave/audio/' + crypto.randomUUID()]) {
+    const r = await fetch(base + route, {redirect: 'manual'});
+    assert.equal(r.status, 303);
+    assert.equal(r.headers.get('location'), '/login');
+  }
+  const login = await fetch(base + '/api/auth/login', {
+    method: 'POST',
+    redirect: 'manual',
+    headers: {Origin: config.origin, 'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({username: config.username, password: 'test-password-123'})
+  });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const rejected = await fetch(base + '/modules/wave/change', {
+    method: 'POST',
+    headers: {Cookie: cookie, Origin: 'https://evil.invalid', 'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'playlist.create', name: 'bad'})
+  });
+  assert.equal(rejected.status, 403);
+  const changed = await fetch(base + '/modules/wave/change', {
+    method: 'POST',
+    headers: {Cookie: cookie, Origin: config.origin, 'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'playlist.create', name: 'Тишина'})
+  });
+  assert.equal(changed.status, 200);
+  const page = await fetch(base + '/modules/wave/', {headers: {Cookie: cookie}});
+  assert.match(await page.text(), /id="hubFrame"/);
+  assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+  assert.equal(page.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const inner = await fetch(base + '/modules/wave/?_view=1', {headers: {Cookie: cookie}});
+  const html = await inner.text();
+  assert.match(html, /id="wavePage"/);
+  assert.doesNotMatch(html, /id="hubFrame"/);
+  const signout = await fetch(base + '/api/auth/logout', {
+    method: 'POST',
+    redirect: 'manual',
+    headers: {Cookie: cookie, Origin: config.origin}
+  });
+  assert.equal(signout.status, 303);
+  assert.equal(
+    (
+      await fetch(base + '/modules/wave/flow', {
+        method: 'POST',
+        headers: {Cookie: cookie, Origin: config.origin, 'Content-Type': 'application/json'},
+        body: '{}'
+      })
+    ).status,
+    401
+  );
 });

@@ -417,7 +417,35 @@
     player.addEventListener('error', () => {
       error.textContent = 'Трек недоступен. Нажми воспроизведение, чтобы повторить.';
     });
-    card.append(player, play, title, download, seek, time, error);
+    const tools = make('div', undefined, 'audio-tools');
+    tools.append(download);
+    if (window.parent.NexusWave) {
+      const save = make('button', undefined, 'audio-download');
+      save.type = 'button';
+      save.title = 'Сохранить в Волну';
+      save.setAttribute('aria-label', save.title);
+      icon(save, 'M12 4v16M4 12h16');
+      save.onclick = async () => {
+        save.disabled = true;
+        error.textContent = 'Сохранение…';
+        try {
+          const response = await fetch('/modules/wave/flow', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: track.id})
+          });
+          const data = await response.json();
+          if (!response.ok) throw Error(data.error || 'Не удалось сохранить трек.');
+          error.textContent = data.duplicate ? 'Уже в «Волне».' : 'Сохранено в «Волну».';
+          await window.parent.NexusWave.refresh();
+        } catch (e) {
+          error.textContent = e.message;
+          save.disabled = false;
+        }
+      };
+      tools.append(save);
+    }
+    card.append(player, play, title, tools, seek, time, error);
     return card;
   }
   function message(m) {

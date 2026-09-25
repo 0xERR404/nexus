@@ -29,7 +29,8 @@ export const modules = [
   {id: 'chat', title: 'Чат · DeepSeek и FlowMusic'},
   {id: 'balance', title: 'Баланс'},
   {id: 'anime', title: 'Кадр · Shikimori'},
-  {id: 'trophies', title: 'Трофеи · Steam и RetroAchievements'}
+  {id: 'trophies', title: 'Трофеи · Steam и RetroAchievements'},
+  {id: 'wave', title: 'Волна · музыка'}
 ];
 export async function installModules(
   ui,

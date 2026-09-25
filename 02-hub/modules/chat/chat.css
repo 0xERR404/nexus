@@ -37,3 +37,5 @@
 .audio-seek::-moz-range-track{height:3px;border-radius:2px;background:var(--line)}
 .audio-seek::-moz-range-progress{height:3px;background:var(--accent)}
 .audio-seek::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:var(--accent)}
+
+.chat-audio .audio-tools{grid-column:3;grid-row:1;display:flex;gap:6px;justify-self:end}.chat-audio .audio-tools .audio-download{grid-column:auto;grid-row:auto}
