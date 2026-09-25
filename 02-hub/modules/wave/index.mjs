@@ -11,8 +11,8 @@ const assets = new Map(
 );
 const content = `<link rel="stylesheet" href="/modules/wave/wave.css"><script src="/modules/wave/wave.js" type="module"></script>
 <section id="wavePage"><div class="wave-layout"><aside class="wave-sidebar"><nav id="waveNav" aria-label="Музыкальная библиотека"></nav><div class="wave-playlist-heading"><span>Плейлисты</span><button id="waveCreate" aria-label="Создать плейлист" title="Создать плейлист">+</button></div><nav id="wavePlaylists" aria-label="Мои плейлисты"></nav></aside>
-<div class="wave-main"><div class="wave-toolbar"><input id="waveSearch" type="search" placeholder="Трек, артист, альбом" aria-label="Поиск музыки"><button id="waveUploadButton" title="Загрузить музыку" aria-label="Загрузить музыку">↑ Загрузить</button><input id="waveUpload" type="file" accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.webm" multiple hidden></div>
-<p id="waveStatus" role="status"></p><div id="waveHero"></div><div class="wave-toolbar wave-secondary"><span id="waveCount"></span><button id="wavePlay">▶ Слушать</button><button id="waveMix" title="Перемешать" aria-label="Перемешать">⇄</button><select id="waveSort" aria-label="Сортировка музыки"><option value="default">По порядку</option><option value="name">По названию</option><option value="artist">По артисту</option><option value="recent">Сначала новые</option><option value="duration">По длительности</option></select><button id="waveEditPlaylist" hidden>Изменить</button></div><div id="waveBrowse"></div><div id="waveTracks"></div><button id="waveMore" hidden>Показать ещё</button></div></div>
+<div class="wave-main"><div class="wave-toolbar"><input id="waveSearch" type="search" placeholder="Трек, артист, альбом" aria-label="Поиск музыки"><button id="waveUploadButton" title="Загрузить музыку" aria-label="Загрузить музыку">↑ Загрузить</button><input id="waveUpload" type="file" accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.webm" multiple hidden><input id="waveFolder" type="file" webkitdirectory multiple hidden></div>
+<p id="waveStatus" role="status"></p><div id="waveHero"></div><div class="wave-toolbar wave-secondary"><span id="waveCount"></span><button id="wavePlay">▶ Слушать</button><button id="waveMix" title="Перемешать" aria-label="Перемешать">⇄</button><select id="waveSort" aria-label="Сортировка музыки"><option value="default">По порядку</option><option value="name">По названию</option><option value="artist">По артисту</option><option value="recent">Сначала новые</option><option value="duration">По длительности</option></select><button id="waveSelect" type="button">Выбрать</button><button id="waveEditPlaylist" hidden>Изменить</button></div><div id="waveSelection" class="wave-toolbar" hidden><label><input id="waveSelectAll" type="checkbox"> Все в списке</label><span id="waveSelectedCount"></span><button id="waveDeleteSelected" type="button">Удалить</button><button id="waveCancelSelect" type="button">Отмена</button></div><div id="waveBrowse"></div><div id="waveTracks"></div><button id="waveMore" hidden>Показать ещё</button></div></div>
 <dialog id="waveDialog" aria-labelledby="waveDialogTitle"><form id="waveDialogForm"><div class="wave-toolbar"><h2 id="waveDialogTitle"></h2><button id="waveDialogClose" class="dialog-close" type="button" aria-label="Закрыть">×</button></div><div id="waveDialogBody"></div><p id="waveDialogError" role="status"></p><button id="waveDialogSubmit" type="submit">Сохранить</button></form></dialog></section>`;
 export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app/data', 'wave')) {
   let instance;
@@ -41,15 +41,19 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
               headers: {'Content-Type': 'text/html'}
             });
           if (route === '/library') return Response.json(store().snapshot());
+          const photo = /^\/artist-photo\/([a-f0-9-]+)$/.exec(route);
+          if (photo) return store().serveArtistPhoto(photo[1], request);
           const match = /^\/(audio|cover|original)\/([a-f0-9-]+)$/.exec(route);
           if (match) return store().serve(match[2], match[1], request);
         }
         if (request.method === 'POST') {
+          if (route === '/artist-photo')
+            return Response.json(await store().artistPhoto(request, searchParams.get('key')));
           if (route === '/upload')
             return Response.json(await store().upload(request, searchParams.get('name') || ''));
           if (!request.headers['content-type']?.startsWith('application/json'))
             return Response.json({error: 'Нужен JSON.'}, {status: 415});
-          const data = JSON.parse(await body(request, 16384));
+          const data = JSON.parse(await body(request, 512 * 1024));
           if (route === '/change') return Response.json(store().change(data));
           if (route === '/flow') return Response.json(await store().fromFlow(data.id));
         }

@@ -70,10 +70,187 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       $('waveDialogSubmit').disabled = false;
     }
   };
+  function artistArt(artist) {
+    const box = make('div', undefined, 'wave-art artist'),
+      profile = (data.artistProfiles || []).find((p) => p.key === artist.key);
+    if (profile?.photo) {
+      const image = make('img');
+      image.src = '/modules/wave/artist-photo/' + profile.photo;
+      image.alt = '';
+      image.loading = 'lazy';
+      image.onerror = () => {
+        image.remove();
+        box.textContent = artist.name.slice(0, 2).toLocaleUpperCase('ru');
+      };
+      box.append(image);
+    } else box.textContent = artist.name.slice(0, 2).toLocaleUpperCase('ru');
+    return box;
+  }
+  function editArtist(artist) {
+    const profile = (data.artistProfiles || []).find((p) => p.key === artist.key) || {};
+    dialog(
+      'Профиль артиста',
+      (box) => {
+        for (const [key, title, value] of [
+          ['Name', 'Имя / название группы', artist.name],
+          ['Bio', 'Об артисте', profile.bio || '']
+        ]) {
+          const label = make('label', title),
+            field = make(key === 'Bio' ? 'textarea' : 'input');
+          field.id = 'waveArtist' + key;
+          field.value = value;
+          field.maxLength = key === 'Bio' ? 1000 : 180;
+          field.required = key === 'Name';
+          label.append(field);
+          box.append(label);
+        }
+        const image = make('img');
+        image.className = 'wave-profile-preview';
+        image.alt = 'Фото артиста';
+        image.hidden = !profile.photo;
+        if (profile.photo) image.src = '/modules/wave/artist-photo/' + profile.photo;
+        const label = make('label', 'Фото · JPEG, PNG или WebP · до 8 МБ'),
+          input = make('input');
+        input.type = 'file';
+        input.accept = '.jpg,.jpeg,.png,.webp';
+        input.id = 'waveArtistPhoto';
+        label.append(input);
+        const note = make('p', 'Фото сохраняется после выбора файла.', 'wave-muted');
+        note.setAttribute('role', 'status');
+        input.onchange = async () => {
+          const file = input.files[0];
+          if (!file) return;
+          input.disabled = $('waveDialogSubmit').disabled = true;
+          note.textContent = 'Сохранение фото…';
+          try {
+            if (file.size > 8 * 1024 * 1024) throw Error('Фото — не больше 8 МБ.');
+            const response = await fetch(
+              '/modules/wave/artist-photo?key=' + encodeURIComponent(artist.key),
+              {
+                method: 'POST',
+                headers: {'Content-Type': file.type || 'application/octet-stream'},
+                body: file
+              }
+            );
+            if (response.redirected) throw Error('Войди в хаб заново.');
+            const result = await response.json();
+            if (!response.ok) throw Error(result.error || 'Не удалось загрузить фото.');
+            data = result;
+            render();
+            image.src =
+              '/modules/wave/artist-photo/' +
+              data.artistProfiles.find((p) => p.key === artist.key).photo;
+            image.hidden = false;
+            note.textContent = 'Фото сохранено.';
+          } catch (e) {
+            note.textContent = e.message;
+          } finally {
+            input.disabled = $('waveDialogSubmit').disabled = false;
+            input.value = '';
+          }
+        };
+        const removeLabel = make('label', 'Убрать фото'),
+          remove = make('input');
+        remove.type = 'checkbox';
+        remove.id = 'waveArtistRemovePhoto';
+        removeLabel.prepend(remove);
+        box.append(image, label, note, removeLabel);
+      },
+      async () => {
+        const name = $('waveArtistName').value;
+        await change({
+          action: 'artist.save',
+          key: artist.key,
+          name,
+          bio: $('waveArtistBio').value,
+          removePhoto: $('waveArtistRemovePhoto').checked
+        });
+        go('artist', nameKey(name));
+      }
+    );
+  }
+  function editRelease(release) {
+    dialog(
+      'Тип релиза',
+      (box) => {
+        box.append(make('p', release.name));
+        const label = make('label', 'Тип'),
+          select = make('select');
+        select.id = 'waveReleaseType';
+        select.append(new Option('Альбом', 'album'), new Option('Сингл', 'single'));
+        select.value = release.type;
+        label.append(select);
+        box.append(label);
+      },
+      () => change({action: 'release.type', key: release.key, type: $('waveReleaseType').value})
+    );
+  }
+  let selecting = false;
+  const selected = new Set();
+  function selectionPaint() {
+    const live = new Set(data.tracks.map((t) => t.id));
+    for (const id of selected) if (!live.has(id)) selected.delete(id);
+    $('waveSelection').hidden = !selecting;
+    $('waveSelectedCount').textContent = 'Выбрано: ' + selected.size;
+    $('waveDeleteSelected').disabled = !selected.size;
+    $('waveSelectAll').checked = shown.length > 0 && shown.every((t) => selected.has(t.id));
+    $('waveSelectAll').indeterminate =
+      shown.some((t) => selected.has(t.id)) && !$('waveSelectAll').checked;
+    $('waveSelect').textContent = selecting ? 'Завершить выбор' : 'Выбрать';
+  }
+  $('waveSelect').onclick = () => {
+    selecting = !selecting;
+    selected.clear();
+    render();
+  };
+  $('waveCancelSelect').onclick = () => {
+    selecting = false;
+    selected.clear();
+    render();
+  };
+  $('waveSelectAll').onchange = () => {
+    for (const t of shown) $('waveSelectAll').checked ? selected.add(t.id) : selected.delete(t.id);
+    render();
+  };
+  $('waveDeleteSelected').onclick = () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    dialog(
+      'Удалить выбранные треки?',
+      (box) =>
+        box.append(
+          make('p', `${ids.length} треков будут удалены из библиотеки, плейлистов и с сервера.`)
+        ),
+      async () => {
+        await change({action: 'delete.many', ids});
+        selected.clear();
+        selectionPaint();
+      },
+      'Удалить'
+    );
+  };
+  function uploadState() {
+    const transfer = host()?.transfer?.();
+    if (transfer?.message) status(transfer.message);
+    $('waveUploadButton').disabled = Boolean(transfer?.running);
+  }
+  async function startUpload(files) {
+    if (!files.length) return;
+    try {
+      if (!host()?.upload) throw Error('Открой «Волну» через главную страницу хаба.');
+      await host().upload(files);
+      await load();
+    } catch (e) {
+      status(e.message);
+    } finally {
+      uploadState();
+    }
+  }
   const views = [
     ['overview', 'Обзор'],
     ['artists', 'Артисты'],
     ['albums', 'Альбомы'],
+    ['singles', 'Синглы'],
     ['tracks', 'Треки'],
     ['favorite', 'Избранное'],
     ['playlists', 'Плейлисты']
@@ -106,6 +283,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
   function go(view, id = '') {
     history.pushState(null, '', url(view, id));
     readRoute();
+    selecting = false;
+    selected.clear();
     limit = 100;
     $('waveSearch').value = '';
     $('waveSort').value = 'default';
@@ -144,7 +323,7 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       .filter(Boolean);
     const card = link('', type, group.key || group.id, 'wave-card');
     card.append(
-      artwork(tracks, type === 'artist' ? 'artist' : ''),
+      type === 'artist' ? artistArt(group) : artwork(tracks),
       make('strong', group.name),
       make('span', type === 'album' ? group.artist : tracks.length + ' треков')
     );
@@ -155,7 +334,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     const section = make('section', undefined, 'wave-section'),
       heading = make('div', undefined, 'wave-section-head'),
       grid = make('div', undefined, 'wave-card-grid');
-    if (!['artists', 'albums', 'playlists'].includes(route.view)) heading.append(make('h3', title));
+    if (!['artists', 'albums', 'singles', 'playlists'].includes(route.view))
+      heading.append(make('h3', title));
     if (view) heading.append(link('Все →', view));
     grid.append(...groups.slice(0, max).map((g) => groupCard(g, type)));
     section.append(heading, grid);
@@ -165,7 +345,7 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     library = catalog(data.tracks);
     const playlist = currentPlaylist(),
       artist = library.artists.find((a) => a.key === route.id),
-      album = library.albums.find((a) => a.key === route.id);
+      album = library.releases.find((a) => a.key === route.id);
     const q = $('waveSearch').value.trim().toLocaleLowerCase('ru');
     const matches = (t) =>
       [t.title, t.artist, t.album].join(' ').toLocaleLowerCase('ru').includes(q);
@@ -200,12 +380,12 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       tracks = artist?.tracks || [];
       title = artist?.name || 'Артист не найден';
       subtitle = 'Артист';
-      art = artwork(tracks, 'artist');
+      art = artistArt(artist || {key: route.id, name: '?'});
     }
     if (route.view === 'album') {
       tracks = album?.tracks || [];
-      title = album?.name || 'Альбом не найден';
-      subtitle = album?.artist || 'Альбом';
+      title = album?.name || 'Релиз не найден';
+      subtitle = (album?.type === 'single' ? 'Сингл' : 'Альбом') + ' · ' + (album?.artist || '');
       art = artwork(tracks);
     }
     if (route.view === 'playlist') {
@@ -222,13 +402,22 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     }
     if (route.view === 'overview') {
       title = 'Твоя музыка';
-      subtitle = `${library.artists.length} артистов · ${library.albums.length} альбомов`;
+      subtitle = `${library.artists.length} артистов · ${library.albums.length} альбомов · ${library.singles.length} синглов`;
     }
     const hero = make('div', undefined, 'wave-hero'),
       heading = make('div', undefined, 'wave-hero-text');
     if (art) hero.append(art);
     if (subtitle) heading.append(make('span', subtitle, 'wave-muted'));
     heading.append(make('h2', title));
+    if (route.view === 'artist' && artist) {
+      const profile = (data.artistProfiles || []).find((p) => p.key === artist.key);
+      if (profile?.bio) heading.append(make('p', profile.bio, 'wave-artist-bio'));
+      const actions = make('div', undefined, 'wave-hero-actions');
+      actions.append(button('Редактировать профиль', () => editArtist(artist)));
+      heading.append(actions);
+    }
+    if (route.view === 'album' && album)
+      heading.append(button('Тип релиза', () => editRelease(album)));
     hero.append(heading);
     $('waveHero').append(hero);
     shown = tracks.filter(matches);
@@ -242,7 +431,7 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       );
     else if (sort === 'name' || !['album', 'playlist'].includes(route.view))
       shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-    const browsing = ['artists', 'albums', 'playlists'].includes(route.view);
+    const browsing = ['artists', 'albums', 'singles', 'playlists'].includes(route.view);
     if (route.view === 'overview') {
       section(
         q ? 'Альбомы' : 'Недавно добавлены',
@@ -264,6 +453,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       section('Артисты', library.artists.filter(groupMatches), 'artist', null, limit);
     if (route.view === 'albums')
       section('Альбомы', library.albums.filter(groupMatches), 'album', null, limit);
+    if (route.view === 'singles')
+      section('Синглы', library.singles.filter(groupMatches), 'album', null, limit);
     if (route.view === 'playlists')
       section('Плейлисты', data.playlists.filter(groupMatches), 'playlist', null, limit);
     if (route.view === 'artist' && artist)
@@ -273,6 +464,15 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
         'album',
         null
       );
+    if (route.view === 'artist' && artist)
+      section(
+        'Синглы',
+        library.singles.filter((a) => artist.albums.has(a.key) && groupMatches(a)),
+        'album',
+        null
+      );
+    if (route.view === 'overview')
+      section('Синглы', library.singles.filter(groupMatches), 'album', 'singles', 4);
     $('waveCount').textContent = shown.length + ' треков · ' + duration(shown);
     $('waveEditPlaylist').hidden = !playlist;
     $('wavePlay').disabled = $('waveMix').disabled = !shown.length;
@@ -286,8 +486,17 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
           ? library.artists
           : route.view === 'albums'
             ? library.albums
-            : data.playlists
+            : route.view === 'singles'
+              ? library.singles
+              : data.playlists
       ).filter(groupMatches).length;
+    if (browsing)
+      $('waveCount').textContent =
+        {artists: 'Артистов', albums: 'Альбомов', singles: 'Синглов', playlists: 'Плейлистов'}[
+          route.view
+        ] +
+        ': ' +
+        count;
     $('waveMore').hidden = route.view === 'overview' || count <= limit;
     if (!count)
       $('waveTracks').append(
@@ -303,6 +512,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
           'wave-empty'
         )
       );
+    $('waveSelect').hidden = browsing || !shown.length;
+    selectionPaint();
     paintPlaying();
   }
   function trackRow(t) {
@@ -328,6 +539,17 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     favorite.setAttribute('aria-pressed', String(t.favorite));
     const menu = button('Действия с треком', () => trackMenu(t), '⋯');
     menu.className = 'wave-track-menu';
+    if (selecting) {
+      const check = make('input');
+      check.type = 'checkbox';
+      check.checked = selected.has(t.id);
+      check.setAttribute('aria-label', 'Выбрать ' + t.title);
+      check.onchange = () => {
+        check.checked ? selected.add(t.id) : selected.delete(t.id);
+        selectionPaint();
+      };
+      row.append(check);
+    }
     row.append(start, info, make('span', clock(t.duration), 'wave-duration'), favorite, menu);
     return row;
   }
@@ -492,7 +714,29 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     limit += 100;
     render();
   };
-  $('waveUploadButton').onclick = () => $('waveUpload').click();
+  $('waveUploadButton').onclick = () =>
+    dialog(
+      'Добавить музыку',
+      (box) => {
+        box.append(
+          button('Выбрать файлы', () => {
+            $('waveDialog').close();
+            $('waveUpload').click();
+          }),
+          button('Выбрать папку', () => {
+            $('waveDialog').close();
+            $('waveFolder').click();
+          }),
+          make(
+            'p',
+            'Можно выбрать сразу несколько файлов. Папка загружается вместе с вложенными папками.',
+            'wave-muted'
+          )
+        );
+      },
+      () => {},
+      'Закрыть'
+    );
   $('wavePlay').onclick = () => Promise.resolve(play(shown[0]?.id)).catch((e) => status(e.message));
   $('waveMix').onclick = () =>
     Promise.resolve(play(shown[Math.floor(Math.random() * shown.length)]?.id, true)).catch((e) =>
@@ -500,6 +744,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     );
   addEventListener('popstate', () => {
     readRoute();
+    selecting = false;
+    selected.clear();
     render();
   });
   addEventListener('message', (e) => {
@@ -509,64 +755,26 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       e.data?.type === 'nexus:wave-state'
     )
       paintPlaying();
+    if (
+      e.origin === location.origin &&
+      e.source === window.parent &&
+      e.data?.type === 'nexus:wave-upload'
+    ) {
+      uploadState();
+      if (!host()?.transfer()?.running) load().catch((e) => status(e.message));
+    }
   });
   readRoute();
-  $('waveUpload').onchange = async () => {
-    const files = [...$('waveUpload').files];
-    $('waveUpload').disabled = $('waveUploadButton').disabled = true;
-    let added = 0,
-      duplicates = 0,
-      errors = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      status(`Загрузка ${i + 1}/${files.length} · ${file.name}`);
-      try {
-        if (file.size > 256 * 1024 * 1024) throw Error('Больше 256 МБ.');
-        await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', '/modules/wave/upload?name=' + encodeURIComponent(file.name));
-          xhr.timeout = 240000;
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable)
-              status(
-                `Загрузка ${i + 1}/${files.length} · ${Math.round((e.loaded / e.total) * 100)}%`
-              );
-          };
-          xhr.upload.onload = () => status(`Чтение тегов и подготовка ${i + 1}/${files.length}…`);
-          xhr.onload = () => {
-            try {
-              const d = JSON.parse(xhr.responseText);
-              if (xhr.status !== 200) throw Error(d.error || 'Ошибка загрузки.');
-              d.duplicate ? duplicates++ : added++;
-              resolve();
-            } catch (e) {
-              reject(e);
-            }
-          };
-          xhr.onerror = () => reject(Error('Нет соединения.'));
-          xhr.ontimeout = () => reject(Error('Превышено время ожидания.'));
-          xhr.send(file);
-        });
-      } catch (e) {
-        errors.push(file.name + ': ' + e.message);
-      }
-    }
-    $('waveUpload').disabled = $('waveUploadButton').disabled = false;
-    $('waveUpload').value = '';
-    const summary =
-      `Добавлено: ${added} · уже есть: ${duplicates}` +
-      (errors.length ? ' · ' + errors.join('; ') : '');
-    try {
-      await load();
-      await host()?.refresh();
-      status(summary);
-    } catch (e) {
-      status(summary + ' · ' + e.message);
-    }
-  };
+  for (const id of ['waveUpload', 'waveFolder'])
+    $(id).onchange = () => {
+      const files = [...$(id).files];
+      $(id).value = '';
+      void startUpload(files);
+    };
   async function load() {
     data = await api('/library');
     render();
+    uploadState();
   }
   load().catch((e) => status(e.message));
 })();

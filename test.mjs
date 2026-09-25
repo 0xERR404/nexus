@@ -6043,3 +6043,115 @@ test('Wave tag edits preserve audio and playlists and survive reopening', async 
   assert.throws(() => store.change({action: 'track.edit', id, title: 'Lost'}), /disk full/);
   assert.deepEqual(store.snapshot(), before);
 });
+
+test('Wave distinguishes singles without guessing from the number of album tracks', async () => {
+  const {catalog, albumKey} = await import('./02-hub/modules/wave/catalog.mjs');
+  const tracks = [
+    {id: 'a', title: 'One', artist: 'Band', album: 'Incomplete album'},
+    {id: 'b', title: 'Single', artist: 'Band', album: ''},
+    {id: 'c', title: 'Side A', artist: 'Band', album: 'Single release', releaseType: 'single'},
+    {id: 'd', title: 'Side B', artist: 'Band', album: 'Single release', releaseType: 'single'}
+  ];
+  const result = catalog(tracks);
+  assert.equal(result.albums.length, 1);
+  assert.equal(result.singles.length, 2);
+  assert.equal(result.singles.find((r) => r.key === albumKey(tracks[2])).tracks.length, 2);
+});
+
+test('Wave deletes batches atomically from playlists and disk, including rollback', async (t) => {
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-batch-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const store = new WaveStore(dir),
+    ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  for (const id of ids) {
+    fs.mkdirSync(path.join(dir, id));
+    fs.writeFileSync(path.join(dir, id, 'original.mp3'), 'fixture');
+    store.data.tracks.push({id, title: 'Song', artist: 'Band', album: ''});
+  }
+  store.data.playlists.push({id: crypto.randomUUID(), name: 'List', tracks: [...ids]});
+  store.persist();
+  const persist = store.persist.bind(store);
+  store.persist = () => {
+    throw Error('full');
+  };
+  assert.throws(() => store.change({action: 'delete.many', ids: ids.slice(0, 2)}), /full/);
+  assert.equal(store.snapshot().tracks.length, 3);
+  assert.ok(fs.existsSync(path.join(dir, ids[0], 'original.mp3')));
+  store.persist = persist;
+  assert.throws(() => store.change({action: 'delete.many', ids: ['../']}));
+  store.change({action: 'delete.many', ids: ids.slice(0, 2)});
+  assert.deepEqual(new WaveStore(dir).snapshot().playlists[0].tracks, [ids[2]]);
+  assert.equal(fs.existsSync(path.join(dir, ids[0])), false);
+  assert.ok(fs.existsSync(path.join(dir, ids[2])));
+});
+
+test('Wave profiles rename metadata safely, and release type changes the whole release', async (t) => {
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const {catalog, albumKey} = await import('./02-hub/modules/wave/catalog.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-profile-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const store = new WaveStore(dir);
+  store.data.tracks = [1, 2].map((i) => ({
+    id: crypto.randomUUID(),
+    title: 'Song ' + i,
+    artist: 'Band',
+    albumArtist: 'Band',
+    album: 'Release'
+  }));
+  store.persist();
+  store.change({action: 'release.type', key: albumKey(store.data.tracks[0]), type: 'single'});
+  assert.equal(catalog(store.data.tracks).singles[0].tracks.length, 2);
+  store.change({action: 'artist.save', key: ' BAND ', name: 'New Band', bio: 'About the group'});
+  const saved = new WaveStore(dir).snapshot();
+  assert.ok(saved.tracks.every((t) => t.artist === 'New Band' && t.albumArtist === 'New Band'));
+  assert.equal(saved.artistProfiles[0].bio, 'About the group');
+  store.data.tracks.push({id: crypto.randomUUID(), title: 'Other', artist: 'Other'});
+  assert.throws(
+    () => store.change({action: 'artist.save', key: 'new band', name: 'Other'}),
+    /уже есть/
+  );
+});
+
+test('Wave artist photos are validated, independent of album art and preserved on failure', async (t) => {
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const {Readable} = await import('node:stream');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-photo-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const store = new WaveStore(dir);
+  store.data.tracks = [
+    {id: crypto.randomUUID(), title: 'Song', artist: 'Band', album: 'Album', cover: true}
+  ];
+  store.persist();
+  const bytes = fs.readFileSync(new URL('./02-hub/public/icon-192.png', import.meta.url));
+  await store.artistPhoto(Readable.from([bytes]), 'band');
+  const before = store.snapshot(),
+    photo = before.artistProfiles[0].photo;
+  assert.equal(
+    store.serveArtistPhoto(photo, {method: 'GET'}).headers.get('content-type'),
+    'image/jpeg'
+  );
+  assert.equal(store.serveArtistPhoto('../library.json', {method: 'GET'}).status, 404);
+  await assert.rejects(
+    () => store.artistPhoto(Readable.from([Buffer.from('<svg></svg>')]), 'band'),
+    /JPEG/
+  );
+  await assert.rejects(
+    () => store.artistPhoto(Readable.from([Buffer.alloc(8 * 1024 * 1024 + 1)]), 'band'),
+    /8 МБ/
+  );
+  assert.deepEqual(store.snapshot(), before);
+  const persist = store.persist.bind(store);
+  store.persist = () => {
+    throw Error('full');
+  };
+  await assert.rejects(() => store.artistPhoto(Readable.from([bytes]), 'band'));
+  assert.deepEqual(store.snapshot(), before);
+  assert.ok(fs.existsSync(path.join(dir, 'artist-' + photo + '.jpg')));
+  assert.equal(fs.readdirSync(dir).filter((n) => n.endsWith('.image')).length, 0);
+  store.persist = persist;
+  store.change({action: 'artist.save', key: 'band', name: 'Band', bio: '', removePhoto: true});
+  assert.equal(store.serveArtistPhoto(photo, {method: 'GET'}).status, 404);
+  assert.equal(fs.existsSync(path.join(dir, 'artist-' + photo + '.jpg')), false);
+  assert.equal(store.snapshot().tracks[0].cover, true);
+});

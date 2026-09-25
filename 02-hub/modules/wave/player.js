@@ -219,7 +219,113 @@
       container.append(row);
     });
   }
+  let transfer = {
+      running: false,
+      total: 0,
+      done: 0,
+      added: 0,
+      duplicates: 0,
+      failed: 0,
+      skipped: 0,
+      percent: 0,
+      name: '',
+      message: '',
+      ids: []
+    },
+    stopUpload = false;
+  function transferPaint() {
+    $('waveTransfer').hidden = !transfer.running;
+    $('waveTransferText').textContent = transfer.message;
+    $('waveTransferStop').disabled = stopUpload;
+    frame.contentWindow?.postMessage({type: 'nexus:wave-upload'}, location.origin);
+  }
+  $('waveTransferStop').onclick = () => {
+    stopUpload = true;
+    transfer.message = 'Остановка после текущего файла…';
+    transferPaint();
+  };
+  async function upload(files) {
+    if (transfer.running) throw Error('Дождись текущей загрузки.');
+    const all = Array.from(files),
+      accepted = all.filter((f) => /\.(mp3|m4a|aac|wav|flac|ogg|opus|webm)$/i.test(f.name));
+    if (!accepted.length) throw Error('В выбранном наборе нет аудиофайлов.');
+    transfer = {
+      running: true,
+      total: accepted.length,
+      done: 0,
+      added: 0,
+      duplicates: 0,
+      failed: 0,
+      skipped: all.length - accepted.length,
+      percent: 0,
+      name: '',
+      message: 'Подготовка загрузки…',
+      ids: []
+    };
+    stopUpload = false;
+    transferPaint();
+    const errors = [];
+    for (const file of accepted) {
+      if (stopUpload || signingOut) break;
+      transfer.name = file.name;
+      transfer.percent = 0;
+      transfer.message = `Загрузка ${transfer.done + 1}/${transfer.total} · ${file.name}`;
+      transferPaint();
+      try {
+        if (file.size > 256 * 1024 * 1024) throw Error('Больше 256 МБ.');
+        const result = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/modules/wave/upload?name=' + encodeURIComponent(file.name));
+          xhr.timeout = 240000;
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              transfer.percent = Math.round((e.loaded / e.total) * 100);
+              transfer.message = `Загрузка ${transfer.done + 1}/${transfer.total} · ${transfer.percent}% · ${file.name}`;
+              transferPaint();
+            }
+          };
+          xhr.upload.onload = () => {
+            transfer.message = `Подготовка ${transfer.done + 1}/${transfer.total} · ${file.name}`;
+            transferPaint();
+          };
+          xhr.onload = () => {
+            try {
+              const value = JSON.parse(xhr.responseText);
+              if (xhr.status !== 200) throw Error(value.error || 'Ошибка загрузки.');
+              resolve(value);
+            } catch (e) {
+              reject(e);
+            }
+          };
+          xhr.onerror = () => reject(Error('Нет соединения.'));
+          xhr.ontimeout = () => reject(Error('Превышено время ожидания.'));
+          xhr.send(file);
+        });
+        if (result.duplicate) transfer.duplicates++;
+        else {
+          transfer.added++;
+          transfer.ids.push(result.track.id);
+        }
+      } catch (e) {
+        transfer.failed++;
+        if (errors.length < 3) errors.push(file.name + ': ' + e.message);
+      }
+      transfer.done++;
+      transferPaint();
+    }
+    transfer.running = false;
+    transfer.message =
+      `Добавлено: ${transfer.added} · уже есть: ${transfer.duplicates} · ошибок: ${transfer.failed}` +
+      (transfer.skipped ? ' · пропущено: ' + transfer.skipped : '') +
+      (transfer.done < transfer.total ? ' · осталось: ' + (transfer.total - transfer.done) : '') +
+      (errors.length ? ' · ' + errors.join('; ') : '');
+    transferPaint();
+    if (!signingOut) await refresh().catch(() => {});
+  }
   window.NexusWave = {
+    upload,
+    transfer: () => ({...transfer, ids: [...transfer.ids]}),
+
     refresh,
     state: () => ({id: loaded, playing: !audio.paused}),
     async playList(ids, id, {shuffle = false} = {}) {

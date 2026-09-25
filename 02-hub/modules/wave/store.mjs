@@ -4,6 +4,7 @@ import {randomUUID, createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {Readable} from 'node:stream';
+import {catalog, nameKey, albumKey} from './catalog.mjs';
 const run = promisify(execFile);
 const limit = 256 * 1024 * 1024;
 const valid = (id) => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id);
@@ -41,6 +42,127 @@ export class WaveStore {
   }
   snapshot() {
     return structuredClone(this.data);
+  }
+  profileKey(key) {
+    const artist = catalog(this.data.tracks).artists.find((a) => a.key === nameKey(key));
+    if (!artist) fail('Артист не найден.', 404);
+    return artist.key;
+  }
+  async artistPhoto(request, key) {
+    key = this.profileKey(key);
+    if (this.photoBusy) fail('Фото уже загружается.', 429);
+    this.photoBusy = true;
+    const id = randomUUID(),
+      temp = path.join(this.directory, id + '.image');
+    const output = path.join(this.directory, 'artist-' + id + '.jpg');
+    try {
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > 8 * 1024 * 1024) fail('Фото — не больше 8 МБ.', 413);
+        chunks.push(chunk);
+      }
+      const bytes = Buffer.concat(chunks);
+      if (
+        !(
+          bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+          (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) ||
+          (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP')
+        )
+      )
+        fail('Нужен JPEG, PNG или WebP.');
+      fs.writeFileSync(temp, bytes, {mode: 0o600});
+      const input = [
+        '-protocol_whitelist',
+        'file,pipe',
+        '-f',
+        'image2',
+        '-pattern_type',
+        'none',
+        '-i',
+        temp
+      ];
+      const info = JSON.parse(
+        (
+          await run('ffprobe', ['-v', 'error', ...input, '-show_streams', '-of', 'json'], {
+            timeout: 10000,
+            maxBuffer: 65536
+          })
+        ).stdout
+      );
+      const image = info.streams?.[0];
+      if (
+        !image ||
+        !['png', 'mjpeg', 'webp'].includes(image.codec_name) ||
+        !image.width ||
+        !image.height ||
+        image.width * image.height > 25000000
+      )
+        fail('Фото слишком большое или повреждено.');
+      await run(
+        'ffmpeg',
+        [
+          '-nostdin',
+          '-v',
+          'error',
+          ...input,
+          '-frames:v',
+          '1',
+          '-vf',
+          'scale=512:512:force_original_aspect_ratio=increase,crop=512:512',
+          '-threads',
+          '1',
+          '-q:v',
+          '3',
+          output
+        ],
+        {timeout: 15000, maxBuffer: 65536}
+      );
+      fs.chmodSync(output, 0o600);
+      const previous = structuredClone(this.data.artistProfiles || []);
+      const profiles = (this.data.artistProfiles ||= []);
+      let profile = profiles.find((p) => p.key === key);
+      if (!profile) profiles.push((profile = {key, bio: ''}));
+      const oldPhoto = profile.photo;
+      profile.photo = id;
+      try {
+        this.persist();
+      } catch (e) {
+        this.data.artistProfiles = previous;
+        throw e;
+      }
+      if (valid(oldPhoto)) {
+        try {
+          fs.rmSync(path.join(this.directory, 'artist-' + oldPhoto + '.jpg'), {force: true});
+        } catch {}
+      }
+      return this.snapshot();
+    } catch (e) {
+      fs.rmSync(output, {force: true});
+      if (e.status) throw e;
+      fail('Не удалось сохранить фото. Проверь файл и свободное место.', 503);
+    } finally {
+      fs.rmSync(temp, {force: true});
+      this.photoBusy = false;
+    }
+  }
+  serveArtistPhoto(id, request) {
+    if (!valid(id) || !(this.data.artistProfiles || []).some((p) => p.photo === id))
+      return new Response(null, {status: 404});
+    let bytes;
+    try {
+      bytes = fs.readFileSync(path.join(this.directory, 'artist-' + id + '.jpg'));
+    } catch {
+      return new Response(null, {status: 404});
+    }
+    return new Response(request.method === 'HEAD' ? null : bytes, {
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': String(bytes.length),
+        'Cache-Control': 'private, no-store'
+      }
+    });
   }
   async upload(request, name) {
     if (this.busy) fail('Загрузка уже идёт. Дождись её завершения.', 429);
@@ -202,6 +324,11 @@ export class WaveStore {
           clean(tags.title) || clean(path.basename(name).replace(/\.[^.]+$/, '')) || 'Без названия',
         artist: clean(tags.artist) || artist || 'Неизвестный исполнитель',
         album: clean(tags.album),
+        releaseType: /\bsingle\b/i.test(
+          tags.releasetype || tags.release_type || tags.musicbrainz_albumtype || ''
+        )
+          ? 'single'
+          : 'album',
         albumArtist: clean(tags.album_artist || tags.albumartist),
         trackNumber: Math.max(0, Math.min(9999, parseInt(tags.track, 10) || 0)),
         discNumber: Math.max(0, Math.min(999, parseInt(tags.disc, 10) || 0)),
@@ -256,12 +383,78 @@ export class WaveStore {
         track.favorite = Boolean(data.favorite);
         break;
       case 'delete':
-        if (!track) fail('Трек не найден.', 404);
-        this.data.tracks = this.data.tracks.filter((t) => t !== track);
-        this.data.playlists.forEach((p) => (p.tracks = p.tracks.filter((id) => id !== track.id)));
-        this.persist();
-        fs.rmSync(path.join(this.directory, track.id), {recursive: true, force: true});
+      case 'delete.many': {
+        const ids = data.action === 'delete' ? [data.id] : data.ids;
+        if (
+          !Array.isArray(ids) ||
+          !ids.length ||
+          ids.length > 10000 ||
+          ids.some((id) => !valid(id))
+        )
+          fail('Некорректный список треков.');
+        const removed = new Set(ids),
+          previous = this.snapshot();
+        this.data.tracks = this.data.tracks.filter((t) => !removed.has(t.id));
+        this.data.playlists.forEach((p) => (p.tracks = p.tracks.filter((id) => !removed.has(id))));
+        try {
+          this.persist();
+        } catch (e) {
+          this.data = previous;
+          throw e;
+        }
+        for (const id of removed)
+          fs.rmSync(path.join(this.directory, id), {recursive: true, force: true});
         return this.snapshot();
+      }
+      case 'release.type': {
+        if (!['album', 'single'].includes(data.type)) fail('Выбери альбом или сингл.');
+        const tracks = this.data.tracks.filter((t) => albumKey(t) === data.key);
+        if (!tracks.length) fail('Релиз не найден.', 404);
+        if (data.type === 'album' && tracks.some((t) => !nameKey(t.album)))
+          fail('Сначала укажи название альбома в данных трека.');
+        const previous = this.snapshot();
+        tracks.forEach((t) => (t.releaseType = data.type));
+        try {
+          this.persist();
+        } catch (e) {
+          this.data = previous;
+          throw e;
+        }
+        return this.snapshot();
+      }
+      case 'artist.save': {
+        if (this.photoBusy) fail('Дождись загрузки фото.', 429);
+        const key = this.profileKey(data.key),
+          name = clean(data.name),
+          next = nameKey(name);
+        if (!name) fail('Укажи имя артиста.');
+        if (
+          next !== key &&
+          (catalog(this.data.tracks).artists.some((a) => a.key === next) ||
+            (this.data.artistProfiles || []).some((p) => p.key === next))
+        )
+          fail('Артист с таким именем уже есть.');
+        const previous = this.snapshot(),
+          profiles = (this.data.artistProfiles ||= []);
+        let profile = profiles.find((p) => p.key === key);
+        if (!profile) profiles.push((profile = {key}));
+        const oldPhoto = profile.photo;
+        Object.assign(profile, {key: next, bio: clean(data.bio, 1000)});
+        if (data.removePhoto) delete profile.photo;
+        for (const track of this.data.tracks) {
+          if (nameKey(track.artist) === key) track.artist = name;
+          if (nameKey(track.albumArtist) === key) track.albumArtist = name;
+        }
+        try {
+          this.persist();
+        } catch (e) {
+          this.data = previous;
+          throw e;
+        }
+        if (data.removePhoto && valid(oldPhoto))
+          fs.rmSync(path.join(this.directory, 'artist-' + oldPhoto + '.jpg'), {force: true});
+        return this.snapshot();
+      }
       case 'playlist.create': {
         const name = clean(data.name, 80);
         if (!name) fail('Укажи название.');
