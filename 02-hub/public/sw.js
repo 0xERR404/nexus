@@ -2,6 +2,7 @@ const CACHE = 'nexus404-shell-__ASSET_HASH__';
 const ASSETS = [
   '/app.css',
   '/app.js',
+  '/ui.js',
   '/intro.js',
   '/intro.css',
   '/manifest.json',

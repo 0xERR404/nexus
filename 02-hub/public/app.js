@@ -1,5 +1,10 @@
 if (window.parent !== window) {
   const send = (data) => window.parent.postMessage(data, location.origin);
+  document.addEventListener(
+    'DOMContentLoaded',
+    () => send({type: 'nexus:ready', url: location.href}),
+    {once: true}
+  );
   const replace = history.replaceState.bind(history);
   const embeddedURL = (value) => {
     const url = new URL(value ?? location.href, location.href);

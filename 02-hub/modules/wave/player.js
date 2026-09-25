@@ -522,17 +522,50 @@
       return null;
     }
   }
+  let navigationTimer,
+    revealTimer,
+    navigationId = 0;
+  const reducedNavigation = matchMedia('(prefers-reduced-motion: reduce)');
+  function showFrame() {
+    clearTimeout(revealTimer);
+    frame.classList.remove('hub-navigating');
+    frame.removeAttribute('aria-busy');
+  }
+  function revealPage() {
+    try {
+      if (safeURL(frame.contentWindow.location.href)?.href !== safeURL(location.href)?.href) return;
+    } catch {
+      return;
+    }
+    showFrame();
+  }
   function navigate(href, push = true) {
     const u = safeURL(href);
     if (!u) return;
+    const id = ++navigationId;
+    clearTimeout(navigationTimer);
+    clearTimeout(revealTimer);
     if (push && u.href !== location.href) history.pushState({}, '', u.pathname + u.search + u.hash);
+    frame.classList.add('hub-navigating');
+    frame.setAttribute('aria-busy', 'true');
     u.searchParams.set('_view', '1');
-    frame.contentWindow.location.replace(u.href);
+    navigationTimer = setTimeout(
+      () => {
+        if (id !== navigationId) return;
+        frame.contentWindow.location.replace(u.href);
+        revealTimer = setTimeout(showFrame, 8000);
+      },
+      reducedNavigation.matches ? 0 : 120
+    );
   }
   addEventListener('message', (event) => {
     if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
     const m = event.data;
     if (m?.type === 'nexus:navigate') navigate(m.url);
+    if (m?.type === 'nexus:ready') {
+      document.title = frame.contentDocument.title;
+      requestAnimationFrame(() => requestAnimationFrame(revealPage));
+    }
     if (m?.type === 'nexus:location') {
       const url = safeURL(m.url);
       if (url && url.href !== location.href)
@@ -573,6 +606,7 @@
   setInterval(checkSession, 60000);
   addEventListener('online', checkSession);
   frame.addEventListener('load', () => {
+    requestAnimationFrame(() => requestAnimationFrame(revealPage));
     try {
       if (frame.contentWindow.location.pathname === '/login') {
         audio.pause();

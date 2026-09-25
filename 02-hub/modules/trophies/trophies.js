@@ -40,7 +40,7 @@
   const mode = () => $('trophyMode')?.value ?? 'soft';
   const selected = () => {
     const value = new URLSearchParams(location.search).get('provider');
-    return ['steam', 'ra'].includes(value) ? value : '';
+    return value === 'all' ? '' : value === 'ra' ? 'ra' : 'steam';
   };
   function renderTabs() {
     for (const a of document.querySelectorAll('[data-trophy-provider]')) {
