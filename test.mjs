@@ -387,6 +387,7 @@ import path from 'node:path';
     assert.equal(calls, 1);
     assert.equal(await f.store.cover(999), null);
     f.store.images.clear();
+    fs.rmSync(f.store.coverCache.directory, {recursive: true, force: true});
     f.intercept = (url) =>
       url.includes('/uploads/')
         ? new Response('<svg/>', {headers: {'Content-Type': 'image/svg+xml'}})
@@ -450,6 +451,7 @@ import path from 'node:path';
     assert.equal(images.filter(Boolean).length, 12);
     assert.equal(peak, 6);
     f.store.images.clear();
+    fs.rmSync(f.store.coverCache.directory, {recursive: true, force: true});
     let calls = 0;
     f.intercept = (url) => {
       calls++;
@@ -4938,6 +4940,7 @@ import path from 'node:path';
     assert.match(f.store.snapshot().games[0].cover, /\?v=/);
     assert.doesNotMatch(JSON.stringify(f.store.snapshot()), /fastly|storeCover/);
     f.store.images.clear();
+    fs.rmSync(f.store.coverCache.directory, {recursive: true, force: true});
     calls.length = 0;
     await f.store.cover('steam', '1');
     assert.deepEqual(calls, [cover]);
@@ -6382,3 +6385,56 @@ test('Wave edits and clears the year for every track in a release without changi
     [1, 2]
   );
 });
+
+// tests/server-cache
+{
+  const {FileCache} = await import('./02-hub/src/cache.mjs');
+  test('server cache survives restart, expires, stays private and prunes by size and count', (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-cache-'));
+    t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+    let now = Date.now();
+    const options = {ttl: 100, retention: 1000, maxEntries: 2, maxBytes: 512, now: () => now};
+    let cache = new FileCache(directory, options);
+    cache.put('https://example.test/one', {type: 'image/png', data: Buffer.from('first')});
+    cache = new FileCache(directory, options);
+    assert.equal(cache.get('https://example.test/one').data.toString(), 'first');
+    assert.equal(cache.get('https://example.test/one').stale, false);
+    assert.equal(fs.statSync(cache.file('https://example.test/one')).mode & 0o777, 0o600);
+    now += 101;
+    assert.equal(cache.get('https://example.test/one').stale, true);
+    cache.put('two', {type: 'image/png', data: Buffer.from('second')});
+    now++;
+    cache.put('three', {type: 'image/png', data: Buffer.from('third')});
+    assert.equal(cache.get('https://example.test/one'), null);
+    cache.put('oversize', {type: 'image/png', data: Buffer.alloc(1024)});
+    assert.equal(cache.get('oversize'), null);
+    now += 1001;
+    cache.prune();
+    assert.equal(fs.readdirSync(directory).length, 0);
+  });
+  test('persistent cover cache serves a restarted module without another remote request', async (t) => {
+    const {TrophiesStore} = await import('./02-hub/modules/trophies/store.mjs');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-cover-restart-'));
+    let store = new TrophiesStore(directory, {
+      fetcher: async () => new Response('image', {headers: {'Content-Type': 'image/png'}})
+    });
+    t.after(async () => {
+      await store.close();
+      fs.rmSync(directory, {recursive: true, force: true});
+    });
+    store.load();
+    const account = {id: 'test'};
+    store.set('steam', account);
+    store.commitGame('steam', account, {
+      id: '1',
+      cover: 'https://shared.akamai.steamstatic.com/steam/apps/1/header.jpg',
+      achievements: []
+    });
+    await store.cover('steam', '1');
+    await store.close();
+    store = new TrophiesStore(directory, {
+      fetcher: async () => assert.fail('Warm cache must not fetch')
+    });
+    assert.equal((await store.cover('steam', '1')).data.toString(), 'image');
+  });
+}
