@@ -25,6 +25,30 @@ export function steamId(input) {
   if (!/^[A-Za-z0-9_-]{2,80}$/.test(value)) throw fail('Некорректный профиль Steam', 400);
   return value;
 }
+export function steamImage(value, id) {
+  try {
+    const u = new URL(value);
+    const hosts = [
+      'shared.akamai.steamstatic.com',
+      'shared.fastly.steamstatic.com',
+      'cdn.akamai.steamstatic.com',
+      'cdn.cloudflare.steamstatic.com',
+      'cdn.fastly.steamstatic.com'
+    ];
+    return u.protocol === 'https:' &&
+      !u.port &&
+      !u.username &&
+      !u.password &&
+      hosts.includes(u.hostname) &&
+      new RegExp(
+        `^/(?:store_item_assets/)?steam/apps/${id}/(?:[a-f0-9]+/)?[a-zA-Z0-9_]+\\.(?:jpg|png|webp)$`
+      ).test(u.pathname)
+      ? u.href
+      : '';
+  } catch {
+    return '';
+  }
+}
 export class Provider {
   constructor(
     kind,
@@ -82,7 +106,7 @@ export class Provider {
         response = await this.fetcher(url, {
           redirect: 'error',
           signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(20000)]),
-          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.20.3'}
+          headers: {Accept: 'application/json', 'User-Agent': 'NEXUS404/0.20.4'}
         });
       } catch {
         throw fail('Сервис не отвечает. Сохранённые данные оставлены.');
@@ -108,15 +132,18 @@ export class Provider {
       }
       if (!response.ok) {
         await response.body?.cancel();
-        throw fail(
-          response.status === 401 || response.status === 403
-            ? useToken
-              ? 'Сессия Steam не даёт доступа к этому запросу. Повтори вход по QR.'
-              : stats
-                ? 'Steam не открыл статистику этой игры. Проверь ключ и приватность игры.'
-                : 'Проверь ключ API и доступность профиля.'
-            : 'API отклонил запрос. Данные оставлены.',
-          [401, 403].includes(response.status) ? (useToken ? 401 : stats ? 502 : 409) : 502
+        throw Object.assign(
+          fail(
+            response.status === 401 || response.status === 403
+              ? useToken
+                ? 'Сессия Steam не даёт доступа к этому запросу. Повтори вход по QR.'
+                : stats
+                  ? 'Steam не открыл статистику этой игры. Проверь ключ и приватность игры.'
+                  : 'Проверь ключ API и доступность профиля.'
+              : 'API отклонил запрос. Данные оставлены.',
+            [401, 403].includes(response.status) ? (useToken ? 401 : stats ? 502 : 409) : 502
+          ),
+          {httpStatus: response.status}
         );
       }
       try {
@@ -261,11 +288,43 @@ export class Provider {
       reviewAt: this.now()
     };
   }
+  async storeInfo(id) {
+    this.storeJobs ??= new Map();
+    const cached = this.storeJobs.get(id);
+    if (cached && this.now() - cached.time < 3600000) return cached.task;
+    {
+      const task = this.get('api/appdetails', {appids: id, cc: 'us', l: 'english'}, 'store')
+        .then((r) => {
+          const entry = r[id];
+          if (!entry || typeof entry.success !== 'boolean')
+            throw fail('Данные магазина Steam временно недоступны');
+          const d = entry.success && entry.data;
+          if (!d || String(d.steam_appid) !== String(id)) return {};
+          const categories =
+            Array.isArray(d.categories) &&
+            d.categories.length &&
+            d.categories.every((c) => integer(c.id));
+          const hasAchievements =
+            Number(d.achievements?.total) > 0 ||
+            (categories && d.categories.some((c) => c.id === 22))
+              ? true
+              : categories
+                ? false
+                : null;
+          return {data: d, storeCover: steamImage(d.header_image, id), hasAchievements};
+        })
+        .catch((e) => {
+          if (this.storeJobs.get(id)?.task === task) this.storeJobs.delete(id);
+          throw e;
+        });
+      if (this.storeJobs.size >= 256) this.storeJobs.delete(this.storeJobs.keys().next().value);
+      this.storeJobs.set(id, {task, time: this.now()});
+    }
+    return this.storeJobs.get(id).task;
+  }
   async price(id) {
-    const r = await this.get('api/appdetails', {appids: id, cc: 'us', l: 'english'}, 'store');
-    const entry = r[id];
-    if (!entry || typeof entry.success !== 'boolean') throw fail('Цена Steam временно недоступна');
-    const d = entry.data,
+    const info = await this.storeInfo(id),
+      d = info.data,
       price = d?.price_overview;
     return {
       priceUsd:
@@ -274,7 +333,8 @@ export class Provider {
           : price?.currency === 'USD' && integer(price.initial)
             ? price.initial / 100
             : null,
-      priceAt: this.now()
+      priceAt: this.now(),
+      ...(info.storeCover ? {storeCover: info.storeCover} : {})
     };
   }
   async game(game, cached = {}) {
@@ -318,13 +378,33 @@ export class Provider {
       rarity = cached.rarity,
       rarityAt = cached.rarityAt;
     if (!schema || this.now() - schemaAt > 30 * 86400000) {
-      const r = await this.get('ISteamUserStats/GetSchemaForGame/v2/', {
-        appid: game.id,
-        l: 'russian'
-      });
-      if (!r.game || typeof r.game !== 'object' || !Object.keys(r.game).length)
-        throw fail('Схема достижений Steam недоступна');
-      schema = r.game.availableGameStats?.achievements ?? [];
+      let r;
+      try {
+        r = await this.get('ISteamUserStats/GetSchemaForGame/v2/', {appid: game.id, l: 'russian'});
+      } catch (e) {
+        if (![400, 404].includes(e.httpStatus)) throw e;
+      }
+      if (
+        !r?.game ||
+        typeof r.game !== 'object' ||
+        Array.isArray(r.game) ||
+        !Object.keys(r.game).length ||
+        r.game.error ||
+        (!Object.hasOwn(r.game, 'availableGameStats') &&
+          typeof r.game.gameName !== 'string' &&
+          typeof r.game.gameVersion !== 'string' &&
+          !Number.isFinite(r.game.gameVersion))
+      ) {
+        const info = await this.storeInfo(game.id);
+        if (info.hasAchievements !== false || cached.achievements?.length)
+          throw fail('Схема достижений Steam недоступна');
+        schema = [];
+      } else {
+        const stats = r.game.availableGameStats;
+        if (stats != null && (typeof stats !== 'object' || Array.isArray(stats)))
+          throw fail('Неожиданная схема Steam');
+        schema = stats && Object.hasOwn(stats, 'achievements') ? stats.achievements : [];
+      }
       if (
         !Array.isArray(schema) ||
         schema.some((a) => typeof a.name !== 'string') ||

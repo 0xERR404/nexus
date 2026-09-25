@@ -4810,6 +4810,177 @@ import path from 'node:path';
     assert.equal(summary.state, 'warning');
     assert.equal(summary.items.find((x) => x.label === 'Открыто').value, 1);
   });
+  test('Steam confirms games without stats using store categories and shares the metadata request', async () => {
+    for (const status of [200, 400, 404]) {
+      let calls = 0;
+      const p = new Provider(
+        'steam',
+        {key: 'key'},
+        {
+          sleep: async () => {},
+          fetcher: async (u) => {
+            if (u.pathname.includes('GetSchemaForGame'))
+              return status === 200 ? Response.json({game: {}}) : new Response(null, {status});
+            assert.equal(u.pathname, '/api/appdetails');
+            calls++;
+            return Response.json({
+              1: {success: true, data: {steam_appid: 1, categories: [{id: 2}], is_free: true}}
+            });
+          }
+        }
+      );
+      const game = await p.game({id: '1'});
+      assert.deepEqual(game.achievements, []);
+      assert.equal(game.error, null);
+      assert.equal((await p.price('1')).priceUsd, 0);
+      assert.equal(calls, 1);
+      p.close();
+    }
+  });
+  test('Steam empty or denied responses cannot erase known achievements or become false zeroes', async () => {
+    for (const data of [
+      undefined,
+      {steam_appid: 1},
+      {steam_appid: 1, categories: [{id: 22}]},
+      {steam_appid: 1, categories: [{id: 2}], achievements: {total: 3}}
+    ]) {
+      const p = new Provider(
+        'steam',
+        {key: 'key'},
+        {
+          sleep: async () => {},
+          fetcher: async (u) =>
+            Response.json(
+              u.pathname.includes('GetSchemaForGame') ? {game: {}} : {1: {success: true, data}}
+            )
+        }
+      );
+      await assert.rejects(p.game({id: '1'}));
+      p.close();
+    }
+    const p = new Provider(
+      'steam',
+      {key: 'key'},
+      {
+        sleep: async () => {},
+        fetcher: async (u) =>
+          Response.json(
+            u.pathname.includes('GetSchemaForGame')
+              ? {game: {}}
+              : {1: {success: true, data: {steam_appid: 1, categories: [{id: 2}]}}}
+          )
+      }
+    );
+    await assert.rejects(p.game({id: '1'}, {achievements: [{id: 'earned', soft: true}]}));
+    p.close();
+    const denied = new Provider(
+      'steam',
+      {key: 'key'},
+      {
+        sleep: async () => {},
+        fetcher: async (u) => {
+          assert.match(u.pathname, /GetSchemaForGame/);
+          return new Response(null, {status: 403});
+        }
+      }
+    );
+    await assert.rejects(denied.game({id: '1'}), (e) => e.httpStatus === 403);
+    denied.close();
+  });
+  test('Steam unsupported stats do not count as sync errors after independent confirmation', async (t) => {
+    const f = fixture(t);
+    f.store.options.fetcher = async (u) =>
+      u.pathname.includes('GetSchemaForGame')
+        ? Response.json({game: {}})
+        : u.pathname === '/api/appdetails'
+          ? Response.json({
+              [u.searchParams.get('appids')]: {
+                success: true,
+                data: {
+                  steam_appid: Number(u.searchParams.get('appids')),
+                  categories: [{id: 2}],
+                  is_free: true
+                }
+              }
+            })
+          : u.pathname.startsWith('/appreviews/')
+            ? Response.json({success: 1, query_summary: {total_reviews: 0, total_positive: 0}})
+            : f.fetcher(u);
+    await f.store.sync('steam');
+    assert.equal(f.store.config().steam.error, null);
+    assert.ok(f.store.config().steam.lastSync);
+    assert.ok(f.store.snapshot().games.every((g) => g.available && g.total === 0));
+  });
+  test('Steam hashed covers are resolved, saved and kept through later achievement updates', async (t) => {
+    const f = fixture(t);
+    await f.store.sync('steam');
+    const calls = [],
+      cover =
+        'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1/abcdef123/header.jpg?t=1';
+    f.store.options.fetcher = async (u) => {
+      calls.push(u.href);
+      if (u.pathname === '/api/appdetails')
+        return Response.json({1: {success: true, data: {steam_appid: 1, header_image: cover}}});
+      return u.href === cover
+        ? new Response('image', {headers: {'content-type': 'image/jpeg'}})
+        : new Response(null, {status: 404});
+    };
+    assert.equal((await f.store.cover('steam', '1')).type, 'image/jpeg');
+    assert.equal(calls.length, 4);
+    assert.equal(f.store.rows('steam', f.account.id).find((g) => g.id === '1').storeCover, cover);
+    f.store.commitGame('steam', f.account, {
+      id: '1',
+      title: 'Game',
+      cover: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1/header.jpg',
+      achievements: []
+    });
+    assert.equal(f.store.rows('steam', f.account.id).find((g) => g.id === '1').storeCover, cover);
+    assert.match(f.store.snapshot().games[0].cover, /\?v=/);
+    assert.doesNotMatch(JSON.stringify(f.store.snapshot()), /fastly|storeCover/);
+    f.store.images.clear();
+    calls.length = 0;
+    await f.store.cover('steam', '1');
+    assert.deepEqual(calls, [cover]);
+  });
+  test('Steam cover metadata cannot redirect the server outside the approved CDN and game', async (t) => {
+    const {steamImage} = await import('./02-hub/modules/trophies/providers.mjs');
+    for (const value of [
+      'http://shared.fastly.steamstatic.com/steam/apps/1/header.jpg',
+      'https://127.0.0.1/steam/apps/1/header.jpg',
+      'https://shared.fastly.steamstatic.com.evil.test/steam/apps/1/header.jpg',
+      'https://user:pass@shared.fastly.steamstatic.com/steam/apps/1/header.jpg',
+      'https://shared.fastly.steamstatic.com/steam/apps/2/header.jpg'
+    ])
+      assert.equal(steamImage(value, '1'), '');
+    const f = fixture(t);
+    await f.store.sync('steam');
+    let calls = 0;
+    f.store.options.fetcher = async (u) => {
+      calls++;
+      assert.notEqual(u.hostname, '127.0.0.1');
+      return u.pathname === '/api/appdetails'
+        ? Response.json({
+            1: {success: true, data: {steam_appid: 1, header_image: 'https://127.0.0.1/secret'}}
+          })
+        : new Response(null, {status: 404});
+    };
+    assert.equal(await f.store.cover('steam', '1'), null);
+    assert.equal(calls, 3);
+  });
+  test('Steam reports the actual partial failure and retains previous unlocks', async (t) => {
+    const f = fixture(t);
+    f.unlocked = true;
+    await f.store.sync('steam');
+    f.advance();
+    f.store.options.fetcher = async (u) =>
+      u.pathname.includes('GetPlayerAchievements')
+        ? new Response(null, {status: 403})
+        : f.fetcher(u);
+    await f.store.sync('steam', 'full');
+    assert.match(f.store.config().steam.error, /Не обновлено игр: 2/);
+    assert.match(f.store.config().steam.error, /приватность/);
+    assert.equal(f.store.detail('steam', '1').achievements[0].soft, true);
+  });
   test('trophies covers fall back to a second Steam CDN and cache the result', async (t) => {
     const f = fixture(t);
     await f.store.sync('steam');

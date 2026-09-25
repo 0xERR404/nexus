@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {Provider, fail} from './providers.mjs';
+import {Provider, fail, steamImage} from './providers.mjs';
 import {SteamAuth, qrSVG} from './steam-auth.mjs';
 const kinds = ['steam', 'ra'];
 export function atomicJSON(file, data) {
@@ -27,7 +27,7 @@ export function atomicJSON(file, data) {
   }
 }
 const clean = (g) => {
-  const {schema, schemaAt, rarity, rarityAt, achievements, ...rest} = g;
+  const {schema, schemaAt, rarity, rarityAt, achievements, storeCover, ...rest} = g;
   return {
     ...rest,
     soft: achievements?.filter((a) => a.soft).length ?? null,
@@ -276,7 +276,9 @@ export class TrophiesStore {
         ...this.rows(k, a.id).map((g) => ({
           ...clean(g),
           provider: k,
-          cover: g.cover ? `/modules/trophies/cover/${k}/${g.id}` : ''
+          cover: g.cover
+            ? `/modules/trophies/cover/${k}/${g.id}${g.storeCover ? '?v=' + createHash('sha256').update(g.storeCover).digest('hex').slice(0, 12) : ''}`
+            : ''
         }))
       );
       awards.push(...(a.awards ?? []).map((x) => ({...x, provider: k})));
@@ -316,7 +318,8 @@ export class TrophiesStore {
         'reviewAt',
         'priceUsd',
         'priceAt',
-        'metadataError'
+        'metadataError',
+        'storeCover'
       ])
         if (Object.hasOwn(previous, field)) game[field] = previous[field];
     this.atomic(() => {
@@ -424,6 +427,7 @@ export class TrophiesStore {
           (b.lastPlayed || 0) - (a.lastPlayed || 0) ||
           (old.get(a.id)?.checkedAt || 0) - (old.get(b.id)?.checkedAt || 0)
       );
+      const reasons = new Map();
       let errors = 0,
         count = 0,
         cursor = 0,
@@ -470,6 +474,8 @@ export class TrophiesStore {
             this.commitGame(kind, account, game);
           } catch (e) {
             errors++;
+            const reason = e.status ? e.message : 'Не удалось загрузить достижения';
+            reasons.set(reason, (reasons.get(reason) || 0) + 1);
             const row = this.db
               .prepare('SELECT data FROM games WHERE provider=? AND account=? AND id=?')
               .get(kind, account.id, base.id);
@@ -537,7 +543,11 @@ export class TrophiesStore {
               .prepare('DELETE FROM games WHERE provider=? AND account=? AND id=?')
               .run(kind, account.id, id);
         account.error = errors
-          ? `Не обновлено игр: ${errors}. Предыдущие данные сохранены.`
+          ? `Не обновлено игр: ${errors}. ${[...reasons]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 2)
+              .map(([reason, n]) => `${reason} (${n})`)
+              .join('; ')}. Предыдущие данные сохранены.`
           : metadataErrors
             ? 'Достижения обновлены. Часть отзывов или цен недоступна.'
             : null;
@@ -625,38 +635,65 @@ export class TrophiesStore {
     const task = (async () => {
       const sources =
         kind === 'steam'
-          ? [url, new URL(`https://cdn.akamai.steamstatic.com/steam/apps/${id}/header.jpg`)]
-          : [url];
-      let r, type;
-      for (const source of sources) {
+          ? [
+              ...new Set(
+                [
+                  steamImage(g.storeCover, id),
+                  url.href,
+                  `https://cdn.akamai.steamstatic.com/steam/apps/${id}/header.jpg`
+                ].filter(Boolean)
+              )
+            ]
+          : [url.href];
+      const fetchImage = async (source) => {
+        let response;
         try {
-          r = await (this.options.fetcher ?? fetch)(source, {
+          response = await (this.options.fetcher ?? fetch)(new URL(source), {
             redirect: 'error',
             signal: AbortSignal.timeout(8000)
           });
-          type = r.headers.get('content-type')?.split(';')[0];
-          if (r.ok && ['image/jpeg', 'image/png', 'image/webp'].includes(type)) break;
-          await r.body?.cancel();
-          r = null;
+          const type = response.headers.get('content-type')?.split(';')[0];
+          if (!response.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(type)) {
+            await response.body?.cancel();
+            return null;
+          }
+          const reader = response.body.getReader(),
+            chunks = [];
+          let size = 0;
+          while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            size += value.length;
+            if (size > 2 * 1024 * 1024) {
+              await reader.cancel();
+              return null;
+            }
+            chunks.push(Buffer.from(value));
+          }
+          return size ? {data: Buffer.concat(chunks), type, time: this.now()} : null;
         } catch {
-          r = null;
-        }
-      }
-      if (!r) return null;
-      const reader = r.body.getReader(),
-        chunks = [];
-      let size = 0;
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        size += value.length;
-        if (size > 1024 * 1024) {
-          await reader.cancel();
           return null;
         }
-        chunks.push(Buffer.from(value));
+      };
+      let image;
+      for (const source of sources) {
+        image = await fetchImage(source);
+        if (image) break;
       }
-      const image = {data: Buffer.concat(chunks), type, time: this.now()};
+      if (!image && kind === 'steam' && !this.closed) {
+        this.coverProvider ??= this.provider('steam', {});
+        const info = await this.coverProvider.storeInfo(id);
+        if (info.storeCover && !sources.includes(info.storeCover)) {
+          image = await fetchImage(info.storeCover);
+          if (image && !this.closed && this.account(kind)?.id === a.id)
+            this.db
+              .prepare(
+                "UPDATE games SET data=json_set(data,'$.storeCover',?) WHERE provider=? AND account=? AND id=?"
+              )
+              .run(info.storeCover, kind, a.id, id);
+        }
+      }
+      if (!image) return null;
       while (
         this.images.size &&
         (this.images.size >= 128 ||
@@ -689,9 +726,11 @@ export class TrophiesStore {
   async close() {
     this.closed = true;
     this.steamAuth.close();
+    this.coverProvider?.close();
     clearInterval(this.timer);
     for (const c of this.clients.values()) c.close();
     await Promise.allSettled([...this.jobs.values()]);
+    await Promise.allSettled(this.imageJobs?.values() ?? []);
     this.db?.close();
     this.db = null;
   }

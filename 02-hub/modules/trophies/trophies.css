@@ -26,3 +26,5 @@
 .trophy-grid,.trophy-overview{gap:var(--card-gap)}
 
 #trophiesPage .trophy-card>strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.35;min-height:2.7em;max-height:2.7em;overflow:hidden;flex-shrink:0}.trophy-card-stats{display:flex;flex-direction:column;gap:6px;margin-top:auto;width:100%;min-width:0}.trophy-card-stats progress{flex-shrink:0}
+
+.trophy-art{display:grid;position:relative;aspect-ratio:460/215;width:100%;flex-shrink:0;overflow:hidden;border-radius:4px;background:linear-gradient(135deg,#182432,#0a1018)}.trophy-art>*{grid-area:1/1}.trophy-art-fallback{display:grid;place-items:center;color:#63768b;font-size:36px}.trophy-art-fallback[hidden]{display:none}#trophiesPage .trophy-card .trophy-art img{position:absolute;inset:0;align-self:center;aspect-ratio:auto;width:100%;height:100%;object-fit:contain}#trophiesPage .trophy-card[data-provider=ra] .trophy-art{aspect-ratio:2/1}

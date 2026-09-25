@@ -144,6 +144,11 @@
         const b = el('button', undefined, 'trophy-card');
         b.type = 'button';
         b.dataset.provider = g.provider;
+        const art = el('span', undefined, 'trophy-art');
+        const fallback = el('span', '◇', 'trophy-art-fallback');
+        fallback.setAttribute('aria-hidden', 'true');
+        art.append(fallback);
+        b.append(art);
         if (g.cover) {
           const image = el('img');
           image.src = g.cover;
@@ -151,17 +156,22 @@
           image.loading = 'lazy';
           image.decoding = 'async';
           let retries = 0;
+          image.addEventListener('load', () => {
+            fallback.hidden = true;
+          });
           image.addEventListener('error', () => {
             if (!retries++)
               setTimeout(() => {
-                image.src = g.cover + '?retry=1';
+                const url = new URL(g.cover, location.origin);
+                url.searchParams.set('retry', '1');
+                image.src = url.href;
               }, 1500);
             else {
               image.hidden = true;
               b.classList.add('cover-missing');
             }
           });
-          b.append(image);
+          art.append(image);
         }
         const title = el('strong', g.title);
         title.title = g.title;
@@ -199,7 +209,9 @@
               'small',
               n === null
                 ? 'Прогресс недоступен'
-                : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
+                : g.total === 0
+                  ? 'Без достижений'
+                  : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
             )
           );
           if (g.total > 0 && n !== null) {
