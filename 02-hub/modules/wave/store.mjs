@@ -202,6 +202,10 @@ export class WaveStore {
           clean(tags.title) || clean(path.basename(name).replace(/\.[^.]+$/, '')) || 'Без названия',
         artist: clean(tags.artist) || artist || 'Неизвестный исполнитель',
         album: clean(tags.album),
+        albumArtist: clean(tags.album_artist || tags.albumartist),
+        trackNumber: Math.max(0, Math.min(9999, parseInt(tags.track, 10) || 0)),
+        discNumber: Math.max(0, Math.min(999, parseInt(tags.disc, 10) || 0)),
+        year: clean(tags.date || tags.year, 4),
         duration,
         extension,
         cover,
@@ -227,6 +231,26 @@ export class WaveStore {
     const track = this.data.tracks.find((t) => t.id === data.id),
       playlist = this.data.playlists.find((p) => p.id === data.id);
     switch (data.action) {
+      case 'track.edit': {
+        if (!track) fail('Трек не найден.', 404);
+        const title = clean(data.title);
+        if (!title) fail('Укажи название трека.');
+        const previous = {...track};
+        Object.assign(track, {
+          title,
+          artist: clean(data.artist) || 'Неизвестный исполнитель',
+          album: clean(data.album),
+          albumArtist: clean(data.albumArtist),
+          trackNumber: Math.max(0, Math.min(9999, parseInt(data.trackNumber, 10) || 0))
+        });
+        try {
+          this.persist();
+        } catch (e) {
+          Object.assign(track, previous);
+          throw e;
+        }
+        return this.snapshot();
+      }
       case 'favorite':
         if (!track) fail('Трек не найден.', 404);
         track.favorite = Boolean(data.favorite);

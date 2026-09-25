@@ -29,6 +29,7 @@ const assets = [
   'sw.js',
   'icon-192.png',
   'icon.svg',
+  'mark.svg',
   'icon-512.png',
   'apple-touch-icon.png',
   'fonts/jetbrains-mono.woff2',

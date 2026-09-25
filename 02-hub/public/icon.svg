@@ -1,9 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#1c2638"/><stop offset="1" stop-color="#070a10"/></linearGradient><linearGradient id="silver" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset=".52" stop-color="#d8e7fa"/><stop offset="1" stop-color="#7f9bbf"/></linearGradient></defs>
-<rect width="512" height="512" fill="#0b101a"/>
-<rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
-<circle cx="256" cy="256" r="164" fill="none" stroke="#657e9f" stroke-opacity=".38" stroke-width="2"/>
-<path d="M107 195a164 164 0 0 1 234-78M405 317a164 164 0 0 1-234 78" fill="none" stroke="url(#silver)" stroke-width="5" stroke-linecap="round"/>
-<path d="M180 337V175l152 162V175" fill="none" stroke="url(#silver)" stroke-width="28" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="118" cy="345" r="7" fill="#c4d8ef"/><circle cx="394" cy="167" r="7" fill="#e3efff"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="silver" x1="0" y1="0" x2=".4" y2="1"><stop stop-color="#f1f5f8"/><stop offset=".55" stop-color="#d6dee5"/><stop offset="1" stop-color="#9aabb9"/></linearGradient><linearGradient id="light"><stop stop-color="#2e5669" stop-opacity="0"/><stop offset=".5" stop-color="#b8e9ff" stop-opacity=".8"/><stop offset="1" stop-color="#2e5669" stop-opacity="0"/></linearGradient><linearGradient id="panel" x2="1" y2="1"><stop stop-color="#1c2229"/><stop offset="1" stop-color="#070a10"/></linearGradient></defs><rect width="512" height="512" fill="#080c12"/><rect x="12" y="12" width="488" height="488" rx="108" fill="url(#panel)" stroke="#6f7d8940" stroke-width="2"/><g transform="translate(77 146) scale(1.2)"><path fill="url(#silver)" fill-rule="evenodd" d="M10 108 88 26H104V156H87V125H10ZM31 107H87V53ZM194 26H210L288 108V125H211V156H194ZM211 53V107H267Z"/><path fill="url(#light)" d="M121 39H177V146H121Z"/><path fill="url(#silver)" d="M118 32 132 41V141L118 153ZM180 32 166 41V141L180 153Z"/></g></svg>

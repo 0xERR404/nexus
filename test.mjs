@@ -5951,3 +5951,95 @@ test('Wave HTTP routes require login and same-origin writes; shell permits only 
     401
   );
 });
+
+test('Wave catalog groups old libraries, separates namesakes and orders compilation discs', async () => {
+  const {catalog, nameKey} = await import('./02-hub/modules/wave/catalog.mjs');
+  const tracks = [
+    {id: 'a', title: 'Second', artist: 'Artist One', album: 'Night', trackNumber: 2, discNumber: 1},
+    {
+      id: 'b',
+      title: 'First',
+      artist: ' artist  one ',
+      album: ' NIGHT ',
+      trackNumber: 1,
+      discNumber: 1
+    },
+    {id: 'c', title: 'Other', artist: 'Artist Two', album: 'Night'},
+    {
+      id: 'd',
+      title: 'Disc 2',
+      artist: 'Artist One',
+      album: 'Mix',
+      albumArtist: 'Various',
+      trackNumber: 1,
+      discNumber: 2
+    },
+    {
+      id: 'e',
+      title: 'Disc 1',
+      artist: 'Artist Two',
+      album: 'Mix',
+      albumArtist: 'Various',
+      trackNumber: 2,
+      discNumber: 1
+    },
+    {id: 'f', title: 'Single', artist: 'Artist One', album: ''}
+  ];
+  const before = structuredClone(tracks),
+    data = catalog(tracks);
+  assert.equal(data.artists.length, 2);
+  assert.equal(data.albums.length, 3);
+  assert.deepEqual(
+    data.albums
+      .find((a) => a.name === 'Night' && a.artist === 'Artist One')
+      .tracks.map((t) => t.id),
+    ['b', 'a']
+  );
+  assert.deepEqual(
+    data.albums.find((a) => a.name === 'Mix').tracks.map((t) => t.id),
+    ['e', 'd']
+  );
+  assert.equal(data.artists.find((a) => a.key === nameKey('Artist One')).tracks.length, 4);
+  assert.deepEqual(tracks, before);
+});
+
+test('Wave tag edits preserve audio and playlists and survive reopening', async (t) => {
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-edit-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const store = new WaveStore(dir),
+    id = crypto.randomUUID();
+  store.data.tracks.push({
+    id,
+    title: 'Old',
+    artist: 'Unknown',
+    album: '',
+    favorite: true,
+    hash: 'original',
+    duration: 35
+  });
+  store.data.playlists.push({id: crypto.randomUUID(), name: 'Saved', tracks: [id]});
+  store.persist();
+  assert.throws(() => store.change({action: 'track.edit', id, title: '  '}), /название/);
+  store.change({
+    action: 'track.edit',
+    id,
+    title: ' New ',
+    artist: 'Artist',
+    album: 'Album',
+    albumArtist: 'Various',
+    trackNumber: '2/12'
+  });
+  const saved = new WaveStore(dir).snapshot();
+  assert.equal(saved.tracks[0].title, 'New');
+  assert.equal(saved.tracks[0].trackNumber, 2);
+  assert.equal(saved.tracks[0].hash, 'original');
+  assert.equal(saved.tracks[0].favorite, true);
+  assert.deepEqual(saved.playlists[0].tracks, [id]);
+  const before = store.snapshot();
+  store.persist = () => {
+    throw Error('disk full');
+  };
+  assert.throws(() => store.change({action: 'track.edit', id, title: 'Lost'}), /disk full/);
+  assert.deepEqual(store.snapshot(), before);
+});

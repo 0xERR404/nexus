@@ -44,6 +44,7 @@
   }
   function paint() {
     const t = track();
+    frame.contentWindow?.postMessage({type: 'nexus:wave-state'}, location.origin);
     $('wavePlayer').hidden = !t;
     $('waveTrackTitle').textContent = t?.title || 'Волна';
     $('waveTrackArtist').textContent = t?.artist || '';
@@ -179,6 +180,7 @@
     state.queue = state.queue.filter((id) => library.tracks.some((t) => t.id === id));
     state.index = Math.max(0, state.queue.indexOf(current));
     if (loaded && !library.tracks.some((t) => t.id === loaded)) await select(false);
+    if (loaded) metadata();
     paint();
     renderQueue();
     return library;
@@ -219,9 +221,11 @@
   }
   window.NexusWave = {
     refresh,
-    async playList(ids, id) {
+    state: () => ({id: loaded, playing: !audio.paused}),
+    async playList(ids, id, {shuffle = false} = {}) {
       if (!ready) await initialize;
       await refresh();
+      state.shuffle = shuffle;
       state.queue = [...new Set(ids)]
         .filter((id) => library.tracks.some((t) => t.id === id))
         .slice(0, 10000);

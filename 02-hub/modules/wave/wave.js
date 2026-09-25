@@ -1,3 +1,4 @@
+import {catalog, nameKey, albumKey} from './catalog.mjs';
 (() => {
   const $ = (id) => document.getElementById(id),
     make = (tag, text, cls) => {
@@ -37,11 +38,14 @@
     b.type = 'button';
     b.title = label;
     b.setAttribute('aria-label', label);
-    b.onclick = () =>
-      Promise.resolve(handler()).catch((e) => {
+    b.onclick = async () => {
+      try {
+        await handler();
+      } catch (e) {
         if ($('waveDialog').open) $('waveDialogError').textContent = e.message;
         else status(e.message);
-      });
+      }
+    };
     return b;
   }
   function dialog(title, build, action, label = 'Сохранить') {
@@ -66,84 +70,295 @@
       $('waveDialogSubmit').disabled = false;
     }
   };
-  function render() {
-    const selected = $('waveFilter').value;
-    const options = [
-      new Option('Все треки', 'all'),
-      new Option('Избранное', 'favorite'),
-      ...data.playlists.map((p) => new Option(p.name, p.id))
-    ];
-    $('waveFilter').replaceChildren(...options);
-    $('waveFilter').value = options.some((o) => o.value === selected) ? selected : 'all';
-    const playlist = data.playlists.find((p) => p.id === $('waveFilter').value),
-      q = $('waveSearch').value.toLocaleLowerCase();
-    shown = data.tracks.filter(
-      (t) =>
-        (!playlist || playlist.tracks.includes(t.id)) &&
-        ($('waveFilter').value !== 'favorite' || t.favorite) &&
-        [t.title, t.artist, t.album].join(' ').toLocaleLowerCase().includes(q)
+  const views = [
+    ['overview', 'Обзор'],
+    ['artists', 'Артисты'],
+    ['albums', 'Альбомы'],
+    ['tracks', 'Треки'],
+    ['favorite', 'Избранное'],
+    ['playlists', 'Плейлисты']
+  ];
+  let route,
+    library,
+    limit = 100;
+  const clock = (n) =>
+    Math.floor((n || 0) / 60) + ':' + String(Math.floor((n || 0) % 60)).padStart(2, '0');
+  const duration = (tracks) => {
+    const minutes = Math.round(tracks.reduce((sum, t) => sum + t.duration, 0) / 60);
+    return minutes >= 60
+      ? Math.floor(minutes / 60) + ' ч ' + (minutes % 60) + ' мин'
+      : minutes + ' мин';
+  };
+  const currentPlaylist = () =>
+    route.view === 'playlist' ? data.playlists.find((p) => p.id === route.id) : null;
+  function readRoute() {
+    const p = new URLSearchParams(location.search);
+    route = {view: p.get('view') || 'overview', id: p.get('id') || ''};
+    if (![...views.map((v) => v[0]), 'artist', 'album', 'playlist'].includes(route.view))
+      route.view = 'overview';
+  }
+  function url(view, id = '') {
+    const u = new URL('/modules/wave/', location.origin);
+    if (view !== 'overview') u.searchParams.set('view', view);
+    if (id) u.searchParams.set('id', id);
+    return u;
+  }
+  function go(view, id = '') {
+    history.pushState(null, '', url(view, id));
+    readRoute();
+    limit = 100;
+    $('waveSearch').value = '';
+    $('waveSort').value = 'default';
+    render();
+  }
+  function link(title, view, id = '', cls = '') {
+    const a = make('a', title, cls);
+    a.href = url(view, id).pathname + url(view, id).search;
+    a.dataset.waveNav = '';
+    a.onclick = (e) => {
+      if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      go(view, id);
+    };
+    return a;
+  }
+  function artwork(tracks, kind = '') {
+    const box = make('div', undefined, 'wave-art ' + kind),
+      cover = tracks.find((t) => t.cover);
+    if (cover) {
+      const img = make('img');
+      img.src = '/modules/wave/cover/' + cover.id;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = () => {
+        img.remove();
+        box.textContent = '♫';
+      };
+      box.append(img);
+    } else box.append(make('span', kind === 'artist' ? '◉' : '♫'));
+    return box;
+  }
+  function groupCard(group, type) {
+    const tracks = group.tracks
+      .map((t) => (typeof t === 'string' ? data.tracks.find((x) => x.id === t) : t))
+      .filter(Boolean);
+    const card = link('', type, group.key || group.id, 'wave-card');
+    card.append(
+      artwork(tracks, type === 'artist' ? 'artist' : ''),
+      make('strong', group.name),
+      make('span', type === 'album' ? group.artist : tracks.length + ' треков')
     );
-    if (playlist)
-      shown.sort((a, b) => playlist.tracks.indexOf(a.id) - playlist.tracks.indexOf(b.id));
-    else shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-    $('waveEditPlaylist').hidden = !playlist;
-    $('waveCount').textContent = shown.length + ' треков';
-    $('wavePlay').disabled = !shown.length;
-    $('waveTracks').replaceChildren(
-      ...shown.map((t) => {
-        const row = make('article', undefined, 'wave-track'),
-          cover = make('div', undefined, 'wave-cover');
-        if (t.cover) {
-          const img = make('img');
-          img.src = '/modules/wave/cover/' + t.id;
-          img.alt = '';
-          img.loading = 'lazy';
-          cover.append(img);
-        } else cover.textContent = '♫';
-        const info = button('Воспроизвести ' + t.title, () => play(t.id), '');
-        info.className = 'wave-track-info';
-        info.append(
-          make('strong', t.title),
-          make('span', [t.artist, t.album].filter(Boolean).join(' · '))
-        );
-        const length = make(
-          'span',
-          Math.floor(t.duration / 60) + ':' + String(Math.floor(t.duration % 60)).padStart(2, '0'),
-          'wave-duration'
-        );
-        const favorite = button(
-          t.favorite ? 'Убрать из избранного' : 'В избранное',
-          () => change({action: 'favorite', id: t.id, favorite: !t.favorite}),
-          t.favorite ? '♥' : '♡'
-        );
-        favorite.setAttribute('aria-pressed', String(t.favorite));
-        const menu = button('Действия с треком', () => trackMenu(t), '⋯');
-        row.append(cover, info, length, favorite, menu);
-        return row;
+    return card;
+  }
+  function section(title, groups, type, view, max = groups.length) {
+    if (!groups.length) return;
+    const section = make('section', undefined, 'wave-section'),
+      heading = make('div', undefined, 'wave-section-head'),
+      grid = make('div', undefined, 'wave-card-grid');
+    if (!['artists', 'albums', 'playlists'].includes(route.view)) heading.append(make('h3', title));
+    if (view) heading.append(link('Все →', view));
+    grid.append(...groups.slice(0, max).map((g) => groupCard(g, type)));
+    section.append(heading, grid);
+    $('waveBrowse').append(section);
+  }
+  function render() {
+    library = catalog(data.tracks);
+    const playlist = currentPlaylist(),
+      artist = library.artists.find((a) => a.key === route.id),
+      album = library.albums.find((a) => a.key === route.id);
+    const q = $('waveSearch').value.trim().toLocaleLowerCase('ru');
+    const matches = (t) =>
+      [t.title, t.artist, t.album].join(' ').toLocaleLowerCase('ru').includes(q);
+    const groupMatches = (g) =>
+      [g.name, g.artist].join(' ').toLocaleLowerCase('ru').includes(q) ||
+      g.tracks.some((t) =>
+        matches(typeof t === 'string' ? data.tracks.find((x) => x.id === t) || {} : t)
+      );
+    $('waveNav').replaceChildren(
+      ...views.map(([value, title]) => {
+        const a = link(title, value);
+        if (route.view === value || route.view === value.slice(0, -1))
+          a.setAttribute('aria-current', 'page');
+        return a;
       })
     );
-    if (!shown.length)
+    $('wavePlaylists').replaceChildren(
+      ...data.playlists.map((p) => {
+        const a = link(p.name, 'playlist', p.id);
+        if (playlist === p) a.setAttribute('aria-current', 'page');
+        return a;
+      })
+    );
+    if (!data.playlists.length) $('wavePlaylists').append(make('span', 'Пока пусто', 'wave-muted'));
+    $('waveHero').replaceChildren();
+    $('waveBrowse').replaceChildren();
+    let tracks = data.tracks,
+      title = views.find((v) => v[0] === route.view)?.[1] || '',
+      subtitle = '',
+      art = null;
+    if (route.view === 'artist') {
+      tracks = artist?.tracks || [];
+      title = artist?.name || 'Артист не найден';
+      subtitle = 'Артист';
+      art = artwork(tracks, 'artist');
+    }
+    if (route.view === 'album') {
+      tracks = album?.tracks || [];
+      title = album?.name || 'Альбом не найден';
+      subtitle = album?.artist || 'Альбом';
+      art = artwork(tracks);
+    }
+    if (route.view === 'playlist') {
+      tracks = (playlist?.tracks || [])
+        .map((id) => data.tracks.find((t) => t.id === id))
+        .filter(Boolean);
+      title = playlist?.name || 'Плейлист не найден';
+      subtitle = 'Плейлист';
+      art = artwork(tracks);
+    }
+    if (route.view === 'favorite') {
+      tracks = tracks.filter((t) => t.favorite);
+      subtitle = 'Твоя коллекция';
+    }
+    if (route.view === 'overview') {
+      title = 'Твоя музыка';
+      subtitle = `${library.artists.length} артистов · ${library.albums.length} альбомов`;
+    }
+    const hero = make('div', undefined, 'wave-hero'),
+      heading = make('div', undefined, 'wave-hero-text');
+    if (art) hero.append(art);
+    if (subtitle) heading.append(make('span', subtitle, 'wave-muted'));
+    heading.append(make('h2', title));
+    hero.append(heading);
+    $('waveHero').append(hero);
+    shown = tracks.filter(matches);
+    const sort = $('waveSort').value;
+    if (sort === 'recent' || (sort === 'default' && route.view === 'overview'))
+      shown.sort((a, b) => b.added - a.added);
+    else if (sort === 'duration') shown.sort((a, b) => b.duration - a.duration);
+    else if (sort === 'artist')
+      shown.sort(
+        (a, b) => a.artist.localeCompare(b.artist, 'ru') || a.title.localeCompare(b.title, 'ru')
+      );
+    else if (sort === 'name' || !['album', 'playlist'].includes(route.view))
+      shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+    const browsing = ['artists', 'albums', 'playlists'].includes(route.view);
+    if (route.view === 'overview') {
+      section(
+        q ? 'Альбомы' : 'Недавно добавлены',
+        library.albums
+          .filter(groupMatches)
+          .sort(
+            (a, b) =>
+              Math.max(...b.tracks.map((t) => t.added)) - Math.max(...a.tracks.map((t) => t.added))
+          ),
+        'album',
+        'albums',
+        4
+      );
+      section('Артисты', library.artists.filter(groupMatches), 'artist', 'artists', 4);
+      if (shown.length)
+        $('waveBrowse').append(make('h3', q ? 'Треки' : 'Новые треки', 'wave-list-title'));
+    }
+    if (route.view === 'artists')
+      section('Артисты', library.artists.filter(groupMatches), 'artist', null, limit);
+    if (route.view === 'albums')
+      section('Альбомы', library.albums.filter(groupMatches), 'album', null, limit);
+    if (route.view === 'playlists')
+      section('Плейлисты', data.playlists.filter(groupMatches), 'playlist', null, limit);
+    if (route.view === 'artist' && artist)
+      section(
+        'Альбомы',
+        library.albums.filter((a) => artist.albums.has(a.key) && groupMatches(a)),
+        'album',
+        null
+      );
+    $('waveCount').textContent = shown.length + ' треков · ' + duration(shown);
+    $('waveEditPlaylist').hidden = !playlist;
+    $('wavePlay').disabled = $('waveMix').disabled = !shown.length;
+    $('wavePlay').hidden = $('waveMix').hidden = $('waveSort').hidden = browsing;
+    const visible = browsing ? [] : shown.slice(0, route.view === 'overview' ? 8 : limit);
+    $('waveTracks').replaceChildren(...visible.map(trackRow));
+    let count = shown.length;
+    if (browsing)
+      count = (
+        route.view === 'artists'
+          ? library.artists
+          : route.view === 'albums'
+            ? library.albums
+            : data.playlists
+      ).filter(groupMatches).length;
+    $('waveMore').hidden = route.view === 'overview' || count <= limit;
+    if (!count)
       $('waveTracks').append(
         make(
           'p',
           data.tracks.length
-            ? 'Треки не найдены.'
+            ? route.view === 'albums'
+              ? 'Альбомов нет. Добавь название альбома в данных трека.'
+              : route.view === 'playlists'
+                ? 'Создай первый плейлист кнопкой +.'
+                : 'Ничего не найдено.'
             : 'Загрузи музыку или сохрани трек из FlowMusic.',
           'wave-empty'
         )
       );
+    paintPlaying();
   }
-  function play(id) {
+  function trackRow(t) {
+    const row = make('article', undefined, 'wave-track');
+    row.dataset.track = t.id;
+    const start = button('Воспроизвести ' + t.title, () => play(t.id), '');
+    start.className = 'wave-track-start';
+    start.append(artwork([t]), make('span', '▶', 'wave-track-play'));
+    const info = make('div', undefined, 'wave-track-info'),
+      title = button('Воспроизвести ' + t.title, () => play(t.id), t.title),
+      meta = make('div', undefined, 'wave-track-meta');
+    title.className = 'wave-track-title';
+    meta.append(link(t.artist, 'artist', nameKey(t.artist)));
+    if (t.album)
+      meta.append(make('span', '·'), link(t.album, 'album', albumKey(t), 'wave-album-link'));
+    info.append(title, meta);
+    const favorite = button(
+      t.favorite ? 'Убрать из избранного' : 'В избранное',
+      () => change({action: 'favorite', id: t.id, favorite: !t.favorite}),
+      t.favorite ? '♥' : '♡'
+    );
+    favorite.className = 'wave-favorite';
+    favorite.setAttribute('aria-pressed', String(t.favorite));
+    const menu = button('Действия с треком', () => trackMenu(t), '⋯');
+    menu.className = 'wave-track-menu';
+    row.append(start, info, make('span', clock(t.duration), 'wave-duration'), favorite, menu);
+    return row;
+  }
+  function paintPlaying() {
+    const state = host()?.state?.();
+    document.querySelectorAll('.wave-track').forEach((row) => {
+      const current = row.dataset.track === state?.id;
+      row.classList.toggle('is-current', current);
+      row.querySelector('.wave-track-play').textContent = current && state.playing ? 'Ⅱ' : '▶';
+      row
+        .querySelector('.wave-track-start')
+        .setAttribute('aria-label', current && state.playing ? 'Пауза' : 'Воспроизвести');
+    });
+  }
+  function play(id, shuffle = false) {
     if (!host()) throw Error('Открой «Волну» через главную страницу хаба.');
+    if (!shuffle && host().state?.().id === id && host().state().playing) {
+      host().pause();
+      return;
+    }
     return host().playList(
       shown.map((t) => t.id),
-      id
+      id,
+      {shuffle}
     );
   }
   function trackMenu(t) {
     dialog(
       t.title,
       (box) => {
+        box.append(button('Изменить данные трека', () => editTrack(t)));
         box.append(
           button('Добавить в очередь', async () => {
             await host()?.enqueue(t.id);
@@ -162,7 +377,7 @@
             $('waveDialog').close();
           })
         );
-        const current = data.playlists.find((p) => p.id === $('waveFilter').value);
+        const current = currentPlaylist();
         if (current)
           box.append(
             button('Убрать из плейлиста', async () => {
@@ -181,6 +396,45 @@
       'Удалить трек'
     );
   }
+  function editTrack(t) {
+    dialog(
+      'Данные трека',
+      (box) => {
+        for (const [key, title] of [
+          ['title', 'Название'],
+          ['artist', 'Артист'],
+          ['album', 'Альбом'],
+          ['albumArtist', 'Артист альбома'],
+          ['trackNumber', 'Номер трека']
+        ]) {
+          const label = make('label', title),
+            input = make('input');
+          input.id = 'waveEdit-' + key;
+          input.value = t[key] || '';
+          input.maxLength = 180;
+          input.required = key === 'title';
+          if (key === 'trackNumber') {
+            input.type = 'number';
+            input.min = '0';
+            input.max = '9999';
+          }
+          label.append(input);
+          box.append(label);
+        }
+      },
+      () =>
+        change({
+          action: 'track.edit',
+          id: t.id,
+          ...Object.fromEntries(
+            ['title', 'artist', 'album', 'albumArtist', 'trackNumber'].map((key) => [
+              key,
+              $('waveEdit-' + key).value
+            ])
+          )
+        })
+    );
+  }
   $('waveCreate').onclick = () =>
     dialog(
       'Новый плейлист',
@@ -193,10 +447,15 @@
         input.required = true;
         box.append(input);
       },
-      () => change({action: 'playlist.create', name: $('wavePlaylistName').value})
+      async () => {
+        const before = new Set(data.playlists.map((p) => p.id));
+        await change({action: 'playlist.create', name: $('wavePlaylistName').value});
+        const created = data.playlists.find((p) => !before.has(p.id));
+        if (created) go('playlist', created.id);
+      }
     );
   $('waveEditPlaylist').onclick = () => {
-    const p = data.playlists.find((p) => p.id === $('waveFilter').value);
+    const p = currentPlaylist();
     dialog(
       'Плейлист',
       (box) => {
@@ -212,7 +471,10 @@
             dialog(
               'Удалить плейлист?',
               (b) => b.append(make('p', 'Треки останутся в библиотеке.')),
-              () => change({action: 'playlist.delete', id: p.id}),
+              async () => {
+                await change({action: 'playlist.delete', id: p.id});
+                go('playlists');
+              },
               'Удалить'
             );
           })
@@ -221,12 +483,37 @@
       () => change({action: 'playlist.rename', id: p.id, name: $('wavePlaylistName').value})
     );
   };
-  $('waveSearch').oninput = render;
-  $('waveFilter').onchange = render;
-  $('wavePlay').onclick = () => play(shown[0]?.id).catch((e) => status(e.message));
+  $('waveSearch').oninput = () => {
+    limit = 100;
+    render();
+  };
+  $('waveSort').onchange = render;
+  $('waveMore').onclick = () => {
+    limit += 100;
+    render();
+  };
+  $('waveUploadButton').onclick = () => $('waveUpload').click();
+  $('wavePlay').onclick = () => Promise.resolve(play(shown[0]?.id)).catch((e) => status(e.message));
+  $('waveMix').onclick = () =>
+    Promise.resolve(play(shown[Math.floor(Math.random() * shown.length)]?.id, true)).catch((e) =>
+      status(e.message)
+    );
+  addEventListener('popstate', () => {
+    readRoute();
+    render();
+  });
+  addEventListener('message', (e) => {
+    if (
+      e.origin === location.origin &&
+      e.source === window.parent &&
+      e.data?.type === 'nexus:wave-state'
+    )
+      paintPlaying();
+  });
+  readRoute();
   $('waveUpload').onchange = async () => {
     const files = [...$('waveUpload').files];
-    $('waveUpload').disabled = true;
+    $('waveUpload').disabled = $('waveUploadButton').disabled = true;
     let added = 0,
       duplicates = 0,
       errors = [];
@@ -264,14 +551,18 @@
         errors.push(file.name + ': ' + e.message);
       }
     }
-    $('waveUpload').disabled = false;
+    $('waveUpload').disabled = $('waveUploadButton').disabled = false;
     $('waveUpload').value = '';
-    await load();
-    status(
+    const summary =
       `Добавлено: ${added} · уже есть: ${duplicates}` +
-        (errors.length ? ' · ' + errors.join('; ') : '')
-    );
-    await host()?.refresh();
+      (errors.length ? ' · ' + errors.join('; ') : '');
+    try {
+      await load();
+      await host()?.refresh();
+      status(summary);
+    } catch (e) {
+      status(summary + ' · ' + e.message);
+    }
   };
   async function load() {
     data = await api('/library');

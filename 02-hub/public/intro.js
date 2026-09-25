@@ -145,7 +145,7 @@
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Приветствие NEXUS404');
     overlay.innerHTML =
-      '<canvas class="intro-stars" aria-hidden="true"></canvas><div class="intro-center"><div class="intro-headline"><span class="intro-brand">NEXUS404</span><span class="intro-online">NEXUS ONLINE</span></div><div class="intro-welcome">WELCOME BACK</div><div class="intro-progress" aria-hidden="true"><div class="intro-track"><span></span></div><span class="intro-percent">0%</span></div></div><span class="sr-only intro-announcement" role="status" aria-live="polite">Приветствие</span><button class="intro-skip" type="button">Пропустить</button>';
+      '<canvas class="intro-stars" aria-hidden="true"></canvas><div class="intro-center"><img class="intro-emblem" src="/mark.svg" alt=""><div class="intro-headline"><span class="intro-brand">NEXUS404</span><span class="intro-online">NEXUS ONLINE</span></div><div class="intro-welcome">WELCOME BACK</div><div class="intro-progress" aria-hidden="true"><div class="intro-track"><span></span></div><span class="intro-percent">0%</span></div></div><span class="sr-only intro-announcement" role="status" aria-live="polite">Приветствие</span><button class="intro-skip" type="button">Пропустить</button>';
     const previous = document.activeElement,
       siblings = [...document.body.children]
         .filter((e) => !['SCRIPT', 'LINK', 'STYLE'].includes(e.tagName))

@@ -33,7 +33,7 @@ const icons = {
 };
 const icon = (name) =>
   `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name] ?? icons.module}</svg>`;
-const brand = `<span class="brand-name">NEXUS404</span><span class="brand-dots" aria-hidden="true"><i></i><i></i></span>`;
+const brand = `<img class="brand-mark" src="/mark.svg" alt="" width="40" height="25"><span class="brand-name">NEXUS404</span>`;
 const header = (username, title) =>
   `<header class="header"><div class="header-top"><a class="brand" href="/" aria-label="NEXUS404 — главная">${brand}</a><div class="status-badge"><span class="dot-status" id="statusDot"></span><span id="statusText">online</span></div><a class="header-settings" href="/settings/" aria-label="Настройки" title="Настройки">${icon('settings')}</a><form method="post" action="/api/auth/logout"><button class="logout" type="submit" aria-label="Выйти" title="Выйти">${icon('logout')}</button></form></div><div class="header-bottom"><div class="prompt">${escape(username)} <span>/</span> ${title ? escape(title) : 'home'}</div>${title ? `<a class="back-link" href="/">${icon('back')}В хаб</a>` : install}</div></header>`;
 const footer = `<footer class="page-foot"><span>NEXUS404 · v${escape(version)}</span></footer>`;
