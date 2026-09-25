@@ -6155,3 +6155,59 @@ test('Wave artist photos are validated, independent of album art and preserved o
   assert.equal(fs.existsSync(path.join(dir, 'artist-' + photo + '.jpg')), false);
   assert.equal(store.snapshot().tracks[0].cover, true);
 });
+
+test('Wave release years sort newest first, ignore invalid dates and keep album track order', async () => {
+  const {catalog, releaseYear} = await import('./02-hub/modules/wave/catalog.mjs');
+  const result = catalog([
+    {id: 'a', title: 'Second', artist: 'Band', album: 'New', year: '2024', trackNumber: 2},
+    {id: 'b', title: 'First', artist: 'Band', album: 'New', year: '2024-05-01', trackNumber: 1},
+    {id: 'c', title: 'Old', artist: 'Band', album: 'Old', year: '2001'},
+    {id: 'd', title: 'Unknown', artist: 'Band', album: 'A no year', year: 'garbage'},
+    {id: 'e', title: 'Single', artist: 'Band', album: '', year: '2025'}
+  ]);
+  assert.deepEqual(
+    result.albums.map((a) => a.year),
+    [2024, 2001, 0]
+  );
+  assert.deepEqual(
+    result.albums[0].tracks.map((t) => t.id),
+    ['b', 'a']
+  );
+  assert.equal(result.releases[0].type, 'single');
+  assert.equal(releaseYear('0000'), 0);
+  assert.equal(releaseYear('2024junk'), 0);
+});
+
+test('Wave edits and clears the year for every track in a release without changing its order', async (t) => {
+  const {WaveStore} = await import('./02-hub/modules/wave/store.mjs');
+  const {albumKey} = await import('./02-hub/modules/wave/catalog.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-year-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const store = new WaveStore(dir);
+  store.data.tracks = [1, 2].map((n) => ({
+    id: crypto.randomUUID(),
+    title: 'Track ' + n,
+    artist: 'Band',
+    album: 'Release',
+    year: '2000',
+    trackNumber: n
+  }));
+  store.persist();
+  const key = albumKey(store.data.tracks[0]);
+  const before = store.snapshot();
+  assert.throws(
+    () => store.change({action: 'release.type', key, type: 'single', year: '2026abc'}),
+    /четыре/
+  );
+  assert.deepEqual(store.snapshot(), before);
+  store.change({action: 'release.type', key, type: 'album', year: '2021'});
+  assert.ok(new WaveStore(dir).snapshot().tracks.every((t) => t.year === '2021'));
+  store.change({action: 'release.type', key, type: 'single'});
+  assert.ok(store.snapshot().tracks.every((t) => t.year === '2021'));
+  store.change({action: 'release.type', key, type: 'album', year: ''});
+  assert.ok(store.snapshot().tracks.every((t) => t.year === ''));
+  assert.deepEqual(
+    store.snapshot().tracks.map((t) => t.trackNumber),
+    [1, 2]
+  );
+});

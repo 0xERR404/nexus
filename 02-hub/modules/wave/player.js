@@ -8,6 +8,28 @@
   const $ = (id) => document.getElementById(id),
     audio = $('waveAudio'),
     frame = $('hubFrame');
+  const player = $('wavePlayer'),
+    mobile = matchMedia('(max-width:600px), (max-height:500px) and (max-width:1000px)');
+  const shapes = {
+    play: '<path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none"/>',
+    pause: '<path d="M8 5v14M16 5v14" stroke-width="4"/>',
+    prev: '<path d="M5 5v14M19 5 8 12l11 7Z"/>',
+    next: '<path d="M19 5v14M5 5l11 7-11 7Z"/>',
+    shuffle:
+      '<path d="M3 6h3c5 0 7 12 12 12h3m-4-4 4 4-4 4M3 18h3c2 0 4-2 5-5m2-3c1-2 3-4 5-4h3m-4-4 4 4-4 4"/>',
+    repeat:
+      '<path d="m16 2 4 4-4 4M4 11V9a3 3 0 0 1 3-3h13M8 22l-4-4 4-4m12-1v2a3 3 0 0 1-3 3H4"/>',
+    up: '<path d="m6 15 6-6 6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    volume: '<path d="M3 9h4l5-4v14l-5-4H3Zm13-1a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>'
+  };
+  const symbol = (name) =>
+    `<svg class="wave-control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name]}</svg>`;
+  $('wavePrev').innerHTML = symbol('prev');
+  $('waveNext').innerHTML = symbol('next');
+  $('waveExpand').innerHTML = symbol('up');
+  $('waveShuffle').innerHTML = symbol('shuffle');
+  $('waveVolumeIcon').innerHTML = symbol('volume');
   const key = 'nexus-wave-v1';
   let library = {tracks: [], playlists: []},
     state = {queue: [], index: 0, position: 0, repeat: 'off', shuffle: false, volume: 1},
@@ -48,10 +70,11 @@
     $('wavePlayer').hidden = !t;
     $('waveTrackTitle').textContent = t?.title || 'Волна';
     $('waveTrackArtist').textContent = t?.artist || '';
-    $('waveToggle').textContent = audio.paused ? '▶' : 'Ⅱ';
+    $('waveToggle').innerHTML = symbol(audio.paused ? 'play' : 'pause');
     $('waveToggle').setAttribute('aria-label', audio.paused ? 'Воспроизвести' : 'Пауза');
     $('waveToggle').setAttribute('aria-pressed', String(!audio.paused));
-    $('waveRepeat').textContent = state.repeat === 'one' ? '↻ 1' : '↻';
+    $('waveRepeat').innerHTML =
+      symbol('repeat') + (state.repeat === 'one' ? '<span class="wave-repeat-one">1</span>' : '');
     $('waveRepeat').setAttribute('aria-pressed', String(state.repeat !== 'off'));
     $('waveRepeat').title =
       'Повтор: ' + {off: 'выключен', all: 'очередь', one: 'трек'}[state.repeat];
@@ -60,7 +83,12 @@
     $('waveQueueCount').textContent = state.queue.length + ' в очереди';
     const cover = $('wavePlayerCover');
     cover.hidden = !t?.cover;
+    $('waveCoverFallback').hidden = Boolean(t?.cover);
     if (t?.cover) cover.src = '/modules/wave/cover/' + t.id;
+    if (!t) {
+      $('waveQueueDialog').close();
+      if (player.classList.contains('expanded')) expanded(false);
+    }
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
     }
@@ -84,7 +112,8 @@
         });
       } catch {}
     }
-    $('waveTime').textContent = clock(audio.currentTime) + ' / ' + clock(duration);
+    $('waveElapsed').textContent = clock(audio.currentTime);
+    $('waveDuration').textContent = clock(duration);
     if (Date.now() - lastSave > 5000) {
       save();
       lastSave = Date.now();
@@ -379,18 +408,47 @@
     save();
   };
   audio.volume = state.volume;
-  $('waveExpand').onclick = () => {
-    $('wavePlayer').classList.toggle('expanded');
-    $('waveExpand').setAttribute(
-      'aria-expanded',
-      String($('wavePlayer').classList.contains('expanded'))
-    );
-    $('waveExpand').textContent = $('wavePlayer').classList.contains('expanded') ? '⌄' : '⌃';
-  };
+  let overlayHistory = false;
+  function expanded(value, record = true) {
+    if (value && player.hidden) return;
+    if (!value && record && overlayHistory) {
+      history.back();
+      return;
+    }
+    player.classList.toggle('expanded', value);
+    $('waveExpand').innerHTML = symbol(value ? 'down' : 'up');
+    $('waveExpand').setAttribute('aria-expanded', String(value));
+    $('waveExpand').setAttribute('aria-label', value ? 'Свернуть плеер' : 'Раскрыть плеер');
+    $('waveArtworkToggle').disabled = $('waveOpenTrack').disabled = value;
+    const modal = value && mobile.matches;
+    frame.inert = $('waveTransfer').inert = modal;
+    if (modal) {
+      player.setAttribute('role', 'dialog');
+      player.setAttribute('aria-modal', 'true');
+    } else {
+      player.removeAttribute('role');
+      player.removeAttribute('aria-modal');
+    }
+    if (value && record && mobile.matches && !overlayHistory) {
+      history.pushState({...history.state, nexusWavePlayer: true}, '');
+      overlayHistory = true;
+    }
+    if (!value) $('waveQueueDialog').close();
+    if (modal) $('waveExpand').focus();
+    else if (!value && !player.hidden) $('waveExpand').focus();
+  }
+  $('waveExpand').onclick = () => expanded(!player.classList.contains('expanded'));
+  $('waveArtworkToggle').onclick = $('waveOpenTrack').onclick = () => expanded(true);
+  mobile.addEventListener('change', () => expanded(player.classList.contains('expanded'), false));
   $('waveQueueToggle').onclick = () => {
-    $('waveQueue').hidden = !$('waveQueue').hidden;
-    $('waveQueueToggle').setAttribute('aria-expanded', String(!$('waveQueue').hidden));
+    $('waveQueueDialog').showModal();
+    $('waveQueueToggle').setAttribute('aria-expanded', 'true');
   };
+  $('waveQueueClose').onclick = () => $('waveQueueDialog').close();
+  $('waveQueueDialog').addEventListener('close', () => {
+    $('waveQueueToggle').setAttribute('aria-expanded', 'false');
+    $('waveQueueToggle').focus();
+  });
   audio.addEventListener('loadedmetadata', () => {
     if (restoring) {
       audio.currentTime = Math.min(restoring, Math.max(0, audio.duration - 0.1));
@@ -494,7 +552,15 @@
       fetch('/api/auth/logout', {method: 'POST'}).finally(() => location.replace('/login'));
     }
   });
-  addEventListener('popstate', () => navigate(location.href, false));
+  addEventListener('popstate', () => {
+    if ($('waveQueueDialog').open) $('waveQueueDialog').close();
+    if (overlayHistory || history.state?.nexusWavePlayer) {
+      overlayHistory = Boolean(history.state?.nexusWavePlayer);
+      expanded(overlayHistory, false);
+      return;
+    }
+    navigate(location.href, false);
+  });
   async function checkSession() {
     try {
       const response = await fetch('/api/health', {signal: AbortSignal.timeout(5000)});
@@ -522,10 +588,39 @@
   addEventListener('keydown', (e) => {
     if (e.key === 'Backspace' && !e.target.closest('input,textarea,select,[contenteditable]')) {
       e.preventDefault();
-      history.back();
+      if (player.classList.contains('expanded')) expanded(false);
+      else history.back();
     }
-    if (e.key === 'Escape' && $('wavePlayer').classList.contains('expanded'))
+    if (
+      e.key === 'Tab' &&
+      mobile.matches &&
+      player.classList.contains('expanded') &&
+      !$('waveQueueDialog').open
+    ) {
+      const nodes = [
+          ...player.querySelectorAll('button:not(:disabled),input:not(:disabled)')
+        ].filter((el) => el.getClientRects().length),
+        first = nodes[0],
+        last = nodes.at(-1);
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      }
+      if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    }
+    if (
+      e.key === 'Escape' &&
+      !$('waveQueueDialog').open &&
+      $('wavePlayer').classList.contains('expanded')
+    )
       $('waveExpand').click();
   });
+  $('wavePlayerCover').onerror = () => {
+    $('wavePlayerCover').hidden = true;
+    $('waveCoverFallback').hidden = false;
+  };
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

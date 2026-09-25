@@ -412,8 +412,14 @@ export class WaveStore {
         if (!tracks.length) fail('Релиз не найден.', 404);
         if (data.type === 'album' && tracks.some((t) => !nameKey(t.album)))
           fail('Сначала укажи название альбома в данных трека.');
+        const year = String(data.year ?? '').trim();
+        if (data.year !== undefined && year && !/^[1-9]\d{3}$/.test(year))
+          fail('Год — четыре цифры или пустое поле.');
         const previous = this.snapshot();
-        tracks.forEach((t) => (t.releaseType = data.type));
+        tracks.forEach((t) => {
+          t.releaseType = data.type;
+          if (data.year !== undefined) t.year = year;
+        });
         try {
           this.persist();
         } catch (e) {

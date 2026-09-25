@@ -1,4 +1,4 @@
-import {catalog, nameKey, albumKey} from './catalog.mjs';
+import {catalog, nameKey, albumKey, trackYearOrder} from './catalog.mjs';
 (() => {
   const $ = (id) => document.getElementById(id),
     make = (tag, text, cls) => {
@@ -171,7 +171,7 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
   }
   function editRelease(release) {
     dialog(
-      'Тип релиза',
+      'Данные релиза',
       (box) => {
         box.append(make('p', release.name));
         const label = make('label', 'Тип'),
@@ -180,9 +180,25 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
         select.append(new Option('Альбом', 'album'), new Option('Сингл', 'single'));
         select.value = release.type;
         label.append(select);
-        box.append(label);
+        const yearLabel = make('label', 'Год релиза'),
+          year = make('input');
+        year.id = 'waveReleaseYear';
+        year.type = 'number';
+        year.min = '1000';
+        year.max = '9999';
+        year.step = '1';
+        year.placeholder = 'Не указан';
+        year.value = release.year || '';
+        yearLabel.append(year);
+        box.append(label, yearLabel);
       },
-      () => change({action: 'release.type', key: release.key, type: $('waveReleaseType').value})
+      () =>
+        change({
+          action: 'release.type',
+          key: release.key,
+          type: $('waveReleaseType').value,
+          year: $('waveReleaseYear').value
+        })
     );
   }
   let selecting = false;
@@ -325,7 +341,12 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     card.append(
       type === 'artist' ? artistArt(group) : artwork(tracks),
       make('strong', group.name),
-      make('span', type === 'album' ? group.artist : tracks.length + ' треков')
+      make(
+        'span',
+        type === 'album'
+          ? [group.year || 'Год не указан', group.artist].join(' · ')
+          : tracks.length + ' треков'
+      )
     );
     return card;
   }
@@ -385,7 +406,13 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     if (route.view === 'album') {
       tracks = album?.tracks || [];
       title = album?.name || 'Релиз не найден';
-      subtitle = (album?.type === 'single' ? 'Сингл' : 'Альбом') + ' · ' + (album?.artist || '');
+      subtitle = [
+        album?.type === 'single' ? 'Сингл' : 'Альбом',
+        album?.year || 'Год не указан',
+        album?.artist
+      ]
+        .filter(Boolean)
+        .join(' · ');
       art = artwork(tracks);
     }
     if (route.view === 'playlist') {
@@ -417,13 +444,19 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       heading.append(actions);
     }
     if (route.view === 'album' && album)
-      heading.append(button('Тип релиза', () => editRelease(album)));
+      heading.append(button('Изменить релиз', () => editRelease(album)));
     hero.append(heading);
     $('waveHero').append(hero);
     shown = tracks.filter(matches);
     const sort = $('waveSort').value;
-    if (sort === 'recent' || (sort === 'default' && route.view === 'overview'))
-      shown.sort((a, b) => b.added - a.added);
+    $('waveSort').options[0].textContent = ['album', 'playlist'].includes(route.view)
+      ? 'По порядку'
+      : 'По году релиза';
+    $('waveSort').querySelector('[value=year]').hidden = !['album', 'playlist'].includes(
+      route.view
+    );
+    if (sort === 'year' || (sort === 'default' && !['album', 'playlist'].includes(route.view)))
+      shown.sort(trackYearOrder);
     else if (sort === 'duration') shown.sort((a, b) => b.duration - a.duration);
     else if (sort === 'artist')
       shown.sort(
@@ -433,21 +466,8 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
       shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
     const browsing = ['artists', 'albums', 'singles', 'playlists'].includes(route.view);
     if (route.view === 'overview') {
-      section(
-        q ? 'Альбомы' : 'Недавно добавлены',
-        library.albums
-          .filter(groupMatches)
-          .sort(
-            (a, b) =>
-              Math.max(...b.tracks.map((t) => t.added)) - Math.max(...a.tracks.map((t) => t.added))
-          ),
-        'album',
-        'albums',
-        4
-      );
+      section('Альбомы', library.albums.filter(groupMatches), 'album', 'albums', 4);
       section('Артисты', library.artists.filter(groupMatches), 'artist', 'artists', 4);
-      if (shown.length)
-        $('waveBrowse').append(make('h3', q ? 'Треки' : 'Новые треки', 'wave-list-title'));
     }
     if (route.view === 'artists')
       section('Артисты', library.artists.filter(groupMatches), 'artist', null, limit);
@@ -476,8 +496,9 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
     $('waveCount').textContent = shown.length + ' треков · ' + duration(shown);
     $('waveEditPlaylist').hidden = !playlist;
     $('wavePlay').disabled = $('waveMix').disabled = !shown.length;
-    $('wavePlay').hidden = $('waveMix').hidden = $('waveSort').hidden = browsing;
-    const visible = browsing ? [] : shown.slice(0, route.view === 'overview' ? 8 : limit);
+    $('wavePlay').hidden = $('waveMix').hidden = browsing;
+    $('waveSort').hidden = browsing || route.view === 'overview';
+    const visible = browsing || route.view === 'overview' ? [] : shown.slice(0, limit);
     $('waveTracks').replaceChildren(...visible.map(trackRow));
     let count = shown.length;
     if (browsing)
@@ -512,7 +533,7 @@ import {catalog, nameKey, albumKey} from './catalog.mjs';
           'wave-empty'
         )
       );
-    $('waveSelect').hidden = browsing || !shown.length;
+    $('waveSelect').hidden = browsing || route.view === 'overview' || !shown.length;
     selectionPaint();
     paintPlaying();
   }

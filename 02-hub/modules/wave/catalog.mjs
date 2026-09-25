@@ -8,6 +8,16 @@ export const albumKey = (track) =>
   nameKey(track.album)
     ? JSON.stringify([nameKey(track.albumArtist || track.artist), nameKey(track.album)])
     : 'single:' + track.id;
+export const releaseYear = (value) => {
+  const match = /^([1-9]\d{3})(?:$|[-/])/.exec(String(value ?? '').trim());
+  return match ? Number(match[1]) : 0;
+};
+export const releaseOrder = (a, b) =>
+  (b.year || 0) - (a.year || 0) || a.name.localeCompare(b.name, 'ru');
+export const trackYearOrder = (a, b) =>
+  releaseYear(b.year) - releaseYear(a.year) ||
+  albumKey(a).localeCompare(albumKey(b), 'ru') ||
+  albumOrder(a, b);
 export const albumOrder = (a, b) =>
   (a.discNumber || 1) - (b.discNumber || 1) ||
   (a.trackNumber || 9999) - (b.trackNumber || 9999) ||
@@ -35,18 +45,16 @@ export function catalog(tracks) {
   }
   for (const group of albums.values()) {
     group.tracks.sort(albumOrder);
+    const years = group.tracks.map((t) => releaseYear(t.year)).filter(Boolean);
+    group.year = years.length ? Math.min(...years) : 0;
     group.type = group.tracks.some((t) => t.releaseType === 'single' || !nameKey(t.album))
       ? 'single'
       : 'album';
   }
   return {
     artists: [...artists.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
-    releases: [...albums.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
-    albums: [...albums.values()]
-      .filter((a) => a.type === 'album')
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
-    singles: [...albums.values()]
-      .filter((a) => a.type === 'single')
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    releases: [...albums.values()].sort(releaseOrder),
+    albums: [...albums.values()].filter((a) => a.type === 'album').sort(releaseOrder),
+    singles: [...albums.values()].filter((a) => a.type === 'single').sort(releaseOrder)
   };
 }
