@@ -1,4 +1,10 @@
 (() => {
+  if (window.parent !== window) {
+    const url = new URL(location.href);
+    url.searchParams.set('_view', '1');
+    location.replace(url.href);
+    return;
+  }
   const $ = (id) => document.getElementById(id),
     audio = $('waveAudio'),
     frame = $('hubFrame');

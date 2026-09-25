@@ -1,9 +1,15 @@
 if (window.parent !== window) {
   const send = (data) => window.parent.postMessage(data, location.origin);
   const replace = history.replaceState.bind(history);
+  const embeddedURL = (value) => {
+    const url = new URL(value ?? location.href, location.href);
+    if (url.origin === location.origin) url.searchParams.set('_view', '1');
+    return url.href;
+  };
+  replace(history.state, '', embeddedURL());
   for (const method of ['pushState', 'replaceState'])
     history[method] = (state, title, url) => {
-      replace(state, title, url);
+      replace(state, title, embeddedURL(url));
       send({type: 'nexus:location', url: location.href, replace: method === 'replaceState'});
     };
   document.addEventListener(
