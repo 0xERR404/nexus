@@ -52,7 +52,8 @@ function merge(intervals) {
 }
 export function summarize(day, zone, rows, sources, now = Date.now()) {
   const [from, to] = bounds(day, zone),
-    rank = new Map(sources.map((s) => [s.id, s.priority]));
+    rank = new Map(sources.map((s) => [s.id, s.priority])),
+    huawei = new Set(sources.filter(s => s.name?.startsWith("Huawei Band 11 · ")).map(s => s.id));
   const sorted = rows
     .filter((r) => !r.deleted)
     .sort(
@@ -74,6 +75,7 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
     sleepSource = null,
     sleepEstimated = false,
     sleepSeen = false,
+    unknownSleep = [],
     sleepComplete = true;
   const sleepStageIntervals = {light: [], deep: [], rem: [], awake: []};
   const usedSources = new Set(),
@@ -128,7 +130,10 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
           sleep.push([r.start, r.end]);
           sleepEstimated = true;
         } else {
-          for (const s of stages) if ([2, 4, 5, 6].includes(s.stage)) sleep.push([s.start, s.end]);
+          for (const s of stages) {
+            if ([2, 4, 5, 6].includes(s.stage)) sleep.push([s.start, s.end]);
+            if (s.stage === 0) unknownSleep.push([s.start, s.end]);
+          }
           if (
             stages.some((s) => s.stage === 0) ||
             merge(stages.map((s) => [s.start, s.end])).reduce((n, [a, b]) => n + b - a, 0) <
@@ -147,7 +152,7 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
           const duration = covered([a, b], movementCoverage[key]);
           if (duration) {
             movement[key] =
-              (movement[key] ?? 0) + (r.data.metrics[key] * duration) / (r.end - r.start);
+              (movement[key] ?? 0) + (r.data.metrics[key] * duration) / (r.end - r.start) / (key === "calories" && huawei.has(r.source) ? 1000 : 1);
             movementCoverage[key] = merge([...movementCoverage[key], [a, b]]);
             usedSources.add(r.source);
           }
@@ -214,7 +219,7 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
   const values = [...minutes.values()].map(
     (v) => v.values.reduce((a, b) => a + b, 0) / v.values.length
   );
-  const sleepMinutes = sleepSeen
+  const sleepMinutes = sleepSeen && (sleep.length > 0 || unknownSleep.length === 0)
     ? Math.round(merge(sleep).reduce((n, [a, b]) => n + b - a, 0) / 60000)
     : null;
   const o2 = [...oxygen.values()],
@@ -242,7 +247,7 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
         }
       : null;
   for (const key of Object.keys(movement))
-    if (movement[key] !== null) movement[key] = Math.round(movement[key]);
+    if (movement[key] !== null) movement[key] = Math.round(movement[key] * (key === "calories" ? 100 : 1)) / (key === "calories" ? 100 : 1);
   const sportValues = [...sportPoints.values()],
     sportHeart = sportValues.map((p) => p.heart).filter(Number.isFinite),
     sportSpeeds = sportValues.map((p) => p.speed).filter(Number.isFinite);
@@ -287,8 +292,10 @@ export function summarize(day, zone, rows, sources, now = Date.now()) {
         }
       : null,
     sleepMinutes,
+    sleepReceived: sleepSeen,
+    unknownSleepMinutes: Math.round(merge(unknownSleep).reduce((n, [a, b]) => n + b - a, 0) / 60000),
     sleepEstimated,
-    sleepComplete: sleepSeen && sleepComplete,
+    sleepComplete: sleepSeen && sleepComplete && unknownSleep.length === 0,
     sleepEnd,
     activityMinutes: active.length
       ? Math.round(merge(active).reduce((n, [a, b]) => n + b - a, 0) / 60000)

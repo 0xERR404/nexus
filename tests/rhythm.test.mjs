@@ -60,7 +60,7 @@ test('rhythm dashboard and settings run without retired DB controls', async t =>
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(elements.get('rtStatus').textContent,'');
   if(elements.has('rtZone'))assert.equal(elements.get('rtZone').value,'UTC');
-  else assert.equal(elements.get('rtCards').children.length,4);
+  else assert.equal(elements.get('rtCards').children.length,6);
  }
 });
 
@@ -132,4 +132,43 @@ test('empty high-priority sleep metrics do not hide available lower-priority met
  store.priority(store.sources().find(s=>s.name==='First').id,0);
  assert.equal(store.daily(day).sleepMetrics.score,80);
  assert.throws(()=>store.exportDay('2026-02-30'),{status:400});
+});
+
+test('Band 11 minute energy is converted from cal to kcal without rewriting received data', t => {
+ const {store,dev}=fixture(t);
+ store.ingest(dev,{records:[row('energy',{type:'movement',source:'Huawei Band 11 · fixture',metrics:{calories:12000,distance:100}})],deleted:[]});
+ assert.equal(store.daily(day).movement.calories,12);
+ assert.equal(store.daily(day).movement.distance,100);
+ assert.equal(store.exportDay(day)[0].metrics.calories,12000);
+});
+test('unknown sleep stages do not become zero minutes or a completed sleep', t => {
+ const {store,dev}=fixture(t);
+ store.ingest(dev,{records:[row('unknown-night',{type:'sleep',complete:true,stages:[{start:base+hour,end:base+2*hour,stage:0}]})],deleted:[]});
+ const d=store.daily(day);
+ assert.equal(d.sleepMinutes,null);
+ assert.equal(d.sleepReceived,true);
+ assert.equal(d.unknownSleepMinutes,60);
+ assert.equal(d.sleepComplete,false);
+ assert.equal(d.ready,false);
+});
+test('all received types are available in the authenticated record viewer', async t => {
+ const {root}=fixture(t), app=createModule(path.join(root,'viewer'));
+ t.after(()=>app.close());
+ const html=await (await app.handle({request:{method:'GET'},path:'/',user:{username:'test'}})).text();
+ assert.match(html,/id="rtShowData"/);assert.match(html,/id="rtData"/);
+ assert.equal((await app.handle({request:{method:'GET'},path:'/api/export',authorized:()=>false})).status,401);
+ const {runInNewContext}=await import('node:vm');
+ const make=(tag,text)=>({tag,textContent:text||'',value:'',children:[],append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},setAttribute(){}});
+ const elements=new Map([...html.matchAll(/id="([^"]+)"/g)].map(m=>[m[1],make('div')]));
+ const data=await (await app.handle({request:{method:'GET'},path:'/api',user:{username:'test'}})).json();
+ const records=['band','steps','movement','heart','spo2','sleep','stress','activity','sport'].map(type=>({type,start:base,end:base+hour,metrics:{score:88},deviceFields:{aa:'ABCD'}}));
+ runInNewContext(fs.readFileSync(new URL('../02-hub/modules/rhythm/rhythm.js',import.meta.url),'utf8'),{
+  document:{getElementById:id=>elements.get(id)||null},Nexus:{node:make,request:async route=>route.includes('/api/export')?records:data}
+ });
+ await new Promise(r=>setImmediate(r));
+ await elements.get('rtShowData').onclick();
+ assert.equal(elements.get('rtStatus').textContent,'');
+ const groups=elements.get('rtData').children.filter(x=>x.tag==='details');
+ assert.equal(groups.length,9);
+ for(const group of groups){group.open=true;group.ontoggle();const record=group.children[1].children[0];record.open=true;record.ontoggle();assert.ok(record.children.length>1);}
 });

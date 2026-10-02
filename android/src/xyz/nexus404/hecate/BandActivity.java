@@ -363,6 +363,11 @@ public final class BandActivity extends Activity {
     hubKey.setTextColor(0xffd5dde8);
     hubKey.setTextSize(13);
     settings.addView(hubKey);
+    CheckBox transferQueue = new CheckBox(this);
+    transferQueue.setText("Отправить накопленную очередь с новым ключом на этот же хаб");
+    transferQueue.setTextColor(0xffd5dde8);
+    transferQueue.setTextSize(13);
+    settings.addView(transferQueue);
     button(
         settings,
         "Проверить и сохранить",
@@ -386,6 +391,8 @@ public final class BandActivity extends Activity {
                 || !u.getPath().isEmpty()
                 || !key.matches("[A-Za-z0-9_-]{43}")) throw new Exception();
             JSONObject cfg = new JSONObject().put("origin", origin).put("token", key);
+            boolean transfer = transferQueue.isChecked();
+            QueueRoute.prepare(old, cfg, BandUpload.files(this).length > 0, transfer);
             if (uploadCall != null) uploadCall.cancel();
             uploadCall = new HubHttp.Call();
             HubHttp.Call task = uploadCall;
@@ -401,14 +408,15 @@ public final class BandActivity extends Activity {
                         if (task.stopped) return;
                         cfg.put("bandExtended", answer.optBoolean("bandExtended"))
                             .put("bandMetrics", answer.optBoolean("bandMetrics"));
-                        BandUpload.saveConfig(this, cfg);
+                        BandUpload.saveConfig(this, cfg, transfer);
                         main.post(
                             () -> {
                               hubKey.setText("");
+                              transferQueue.setChecked(false);
                               hubKey.setHint("Ключ сохранён");
                               note("Асклепий подключён. Теперь можно читать браслет.");
                             });
-                        BandUpload.schedule(this, true);
+                        BandUpload.manual(this);
                       } catch (Exception e) {
                         main.post(
                             () ->
@@ -423,7 +431,7 @@ public final class BandActivity extends Activity {
                     "band-config")
                 .start();
           } catch (Exception e) {
-            note("Нужны HTTPS-адрес хаба без пути и ключ источника");
+            note(e instanceof java.io.IOException ? e.getMessage() : "Нужны HTTPS-адрес хаба без пути и ключ источника");
           }
         });
     button(

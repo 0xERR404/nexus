@@ -46,12 +46,17 @@ public final class BandUpload extends JobService {
     Vault.prefs(c).edit().putString("bandUploadStatus", s).apply();
   }
 
-  static synchronized void saveConfig(Context c, JSONObject cfg) throws Exception {
-    JSONObject old = config(c);
-    if (files(c).length > 0 && (old == null || !target(old).equals(target(cfg))))
-      throw new IOException("Сначала отправь или явно удали старую очередь");
-    if (!Vault.prefs(c).edit().putString("bandConnection", Vault.seal(cfg.toString())).commit())
-      throw new IOException("Настройки не сохранены");
+  static synchronized void saveConfig(Context c, JSONObject cfg, boolean transfer) throws Exception {
+    if (BandService.enabled(c)) throw new IOException("Сначала нажми «Остановить связь»");
+    if (!running.compareAndSet(false, true))
+      throw new IOException("Дождись завершения отправки и повтори сохранение");
+    try {
+      JSONObject saved = QueueRoute.prepare(config(c), cfg, files(c).length > 0, transfer);
+      if (!Vault.prefs(c).edit().putString("bandConnection", Vault.seal(saved.toString())).commit())
+        throw new IOException("Настройки не сохранены");
+    } finally {
+      running.set(false);
+    }
   }
 
   static synchronized void enqueue(
@@ -159,7 +164,7 @@ public final class BandUpload extends JobService {
             byte[] bytes = read(in, 2000000);
             item = new JSONObject(Vault.open(new String(bytes, StandardCharsets.UTF_8)));
           }
-          if (!destination.equals(item.getString("target"))
+          if (!QueueRoute.accepts(cfg, item.getString("target"))
               || !destination.equals(target(config(c))))
             throw new IOException("Адрес очереди отличается; отправка остановлена");
         }

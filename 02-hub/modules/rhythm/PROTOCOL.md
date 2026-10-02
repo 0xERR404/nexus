@@ -58,3 +58,9 @@ steps ≤1000000, duration в секундах ≤604800, kind 0–255; толь
 ## Band metrics (0.35.74)
 
 hello.bandMetrics=true разрешает movement (metrics.calories/distance), sleep.metrics, sleep.dictionary (до 128 числовых полей 700013xxx), sport (workout, extensionMask, samples до 512 отсчётов). Страницы спорта не суммируются с дневными калориями/шагами и длительностью тренировок. Исходные поля activity/stress доступны в deviceFields: ограниченные hex-данные, без предположений об их значении. Они не входят в AI-сводку. Новые типы отправляются лишь после согласования возможностей приёмника. GET /modules/rhythm/api/export?day=YYYY-MM-DD выдаёт записи дня после входа, без кэширования.
+
+## Отображение 0.35.77
+
+Для источника `Huawei Band 11 · …` поле `movement.metrics.calories` хранит калории (cal), не килокалории. Сводка переводит в kcal делением на 1000; исходный JSON и база не переписываются. Проверено по `FitnessData` (bitmap 0x04 → calories), генератору HuaweiActivitySample (`getActiveCalories → getCalories`) и контракту ActivitySample (`getActiveCalories` в calories) проекта Gadgetbridge; это ссылка на описание формата, не зависимость приложения.
+
+Сон только с неизвестными стадиями даёт `sleepMinutes: null`, `sleepReceived: true`, `unknownSleepMinutes`; не считается завершённым. Просмотр всех записей использует авторизованный `/api/export`.

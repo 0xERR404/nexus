@@ -110,3 +110,6 @@
   font-size: var(--ui-small-size);
   color: var(--muted);
 }
+#rtData { margin-top: 10px; overflow-wrap: anywhere; }
+#rtData details details { margin-left: 12px; }
+#rtData p { margin: 4px 0; font-size: var(--ui-small-size); }
