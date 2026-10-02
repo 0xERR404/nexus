@@ -23,6 +23,40 @@ public final class BandService extends Service {
   private static final int READING_FILES = 10;
   private static final int SETTING_MONITOR = 11;
   private BandMonitor monitor;
+  private BandHub hub;
+  private String remoteId;
+  private boolean demandHistory, demandFiles, demandPending;
+  private long lastDemand;
+
+  boolean economy() { return Vault.prefs(this).getBoolean("bandEconomy",true); }
+  void powerPreferencesChanged() {
+    main.post(()->{ if(active && phase==IDLE) { main.removeCallbacks(poll); long delay=BandPolicy.poll(economy()); scheduleAlarm(delay); main.postDelayed(poll,delay); } });
+  }
+  void remotePreferencesChanged() {
+    boolean on=enabled(this) && Vault.prefs(this).getBoolean("bandRemote",true);
+    if(!on && hub!=null) {hub.close();hub=null;}
+    if(on && hub==null)hub=new BandHub(this,main,this::remoteRefresh);
+    if(!on)Vault.prefs(this).edit().putString("bandRemoteStatus","Сигнал хаба отключён").apply();
+  }
+  void remoteRefresh(String id) {
+    if(stopping || !enabled(this) || id.equals(remoteId))return;
+    long now=SystemClock.elapsedRealtime();
+    if(remoteId!=null || (lastDemand>0 && now-lastDemand<60000)) {BandHub.ack(this,id,"failed");return;}
+    remoteId=id;lastDemand=now;demandPending=true;
+    BandHub.ack(this,id,"reading");note("Хаб запросил обновление при открытии Асклепия");
+    if(active && phase==IDLE)pumpNotices();
+    else if(!active){main.removeCallbacks(retry);attempt();}
+  }
+  void remoteFinished(boolean ok) {
+    if(remoteId==null)return;
+    String id=remoteId; remoteId=null;
+    BandHub.ack(this,id,ok?"queued":"failed");
+    if(ok) {
+      Vault.prefs(this).edit().putString("bandRefreshReceipt",id).apply();
+      BandUpload.manual(this);
+    }
+  }
+
 
   static volatile BandService instance;
   static final int NOTICE = 71;
@@ -247,6 +281,7 @@ public final class BandService extends Service {
         main.removeCallbacks(retry);
         attempt();
       }
+      remotePreferencesChanged();
       return enabled(this) ? START_STICKY : START_NOT_STICKY;
     } catch (Exception e) {
       pause("Не удалось запустить связь с браслетом · " + e.getClass().getSimpleName());
@@ -413,6 +448,7 @@ public final class BandService extends Service {
   }
 
   void startReading() throws Exception {
+    if(demandPending) {demandPending=false;demandHistory=true;demandFiles=true;}
     historyIncomplete = false;
     phase = READING_BATTERY;
     state("Чтение измерений");
@@ -446,9 +482,9 @@ public final class BandService extends Service {
             BandPolicy.advanceHistory(readingHistory, history.finished, historyIncomplete) ? history.until : Vault.prefs(this).getLong(keySlot + ".readAt", 0))
         .apply();
     state("Подключён · данные обновляются автоматически");
-    scheduleAlarm(BandPolicy.POLL);
+    scheduleAlarm(BandPolicy.poll(economy()));
     main.removeCallbacks(poll);
-    main.postDelayed(poll, BandPolicy.POLL);
+    main.postDelayed(poll, BandPolicy.poll(economy()));
     BandUpload.schedule(this, true);
     refreshMediaBridge();
     if (!beginMonitor() && !beginFiles()) pumpNotices();
@@ -559,6 +595,7 @@ public final class BandService extends Service {
   }
 
   void note(String s) {
+    AppDiagnostics.event(this,"Bluetooth",s);
     report
         .append(new java.text.SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new Date()))
         .append(" · ")
@@ -571,6 +608,8 @@ public final class BandService extends Service {
   }
 
   void pause(String s) {
+    remoteFinished(false);
+    demandPending=demandHistory=demandFiles=false;
     if (phase == READING_FILES) BandEvidence.attempt(this, true, false);
     else if (phase == READING_HISTORY || phase == READING_SNAPSHOT)
       BandEvidence.attempt(this, false, false);
@@ -585,6 +624,8 @@ public final class BandService extends Service {
   }
 
   void finish(String s) {
+    remoteFinished(false);
+    demandPending=demandHistory=demandFiles=false;
     if (phase == READING_FILES) BandEvidence.attempt(this, true, false);
     else if (phase == READING_HISTORY) BandEvidence.attempt(this, false, false);
     BandUpload.schedule(this, true);
@@ -629,6 +670,8 @@ public final class BandService extends Service {
   }
 
   public void onDestroy() {
+    if(hub!=null){hub.close();hub=null;}
+    remoteFinished(false);
     if (mediaWatch != null) mediaWatch.close();
     if (enabled(this))
       Vault.prefs(this)
@@ -1025,7 +1068,8 @@ public final class BandService extends Service {
             metrics && !Vault.prefs(this).getBoolean(keySlot + ".metricsBackfill", false);
         history = new BandHistory(device, BandPolicy.historyFrom(until, last, backfill || forceFiles), until);
         history.metricsEnabled = metrics;
-        readingHistory = forceFiles || backfill || BandPolicy.due(until, last, BandPolicy.HISTORY);
+        readingHistory = demandHistory || forceFiles || backfill || BandPolicy.due(until, last, BandPolicy.history(economy()));
+        demandHistory=false;
         long stamp = until / 60000 * 60000;
         JSONObject snapshot =
             history
@@ -1288,6 +1332,11 @@ public final class BandService extends Service {
   boolean beginMonitor() {
     if (!active || phase != IDLE || !sessionVerified || monitor != null || keySlot == null) return false;
     android.content.SharedPreferences prefs = Vault.prefs(this);
+    if (!prefs.contains(keySlot + ".monitor.revision")) {
+      if(!prefs.edit().putInt(keySlot+".monitor.heart",1).putInt(keySlot+".monitor.oxygen",1)
+          .putLong(keySlot+".monitor.revision",1).putBoolean(keySlot+".monitor.pending",true).commit())return false;
+      note("Автоматическая настройка: пульс и SpO₂, если команды поддерживаются браслетом");
+    }
     if (!prefs.getBoolean(keySlot + ".monitor.pending", false)) return false;
     try {
       monitor = new BandMonitor(prefs.getInt(keySlot + ".monitor.heart", -1),
@@ -1325,7 +1374,7 @@ public final class BandService extends Service {
     if (setup == null || history == null) return false;
     long now = System.currentTimeMillis(),
         last = Vault.prefs(this).getLong(keySlot + ".filesAt", 0);
-    return forceFiles || last <= 0 || now < last || now - last >= BandPolicy.FILES;
+    return demandFiles || forceFiles || last <= 0 || now < last || now - last >= BandPolicy.files(economy());
   }
 
   boolean beginFiles() {
@@ -1333,6 +1382,7 @@ public final class BandService extends Service {
       if (!filesDue()) return false;
       long now = System.currentTimeMillis();
       forceFiles = false;
+      demandFiles = false;
       Vault.prefs(this).edit().putLong(keySlot + ".filesAt", now).apply();
       JSONObject cfg = BandUpload.config(this);
       files =
@@ -1592,6 +1642,11 @@ public final class BandService extends Service {
   void pumpNotices() {
     if (!active || phase != IDLE || !configured || !sessionVerified || stopping) return;
     if (beginMonitor()) return;
+    if(demandPending) {
+      try {cancelAlarm();startReading();}catch(Exception e){finish("Не удалось начать обновление по сигналу хаба");}
+      return;
+    }
+    if(remoteId!=null && !demandHistory && !demandFiles)remoteFinished(true);
     if (alarmDue > 0 && SystemClock.elapsedRealtime() >= alarmDue) {
       tick("Чтение перед передачей на браслет");
       return;

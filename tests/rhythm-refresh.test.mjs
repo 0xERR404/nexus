@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Refresh} from '../02-hub/modules/rhythm/refresh.mjs';
+const decode = part => JSON.parse(new TextDecoder().decode(part.value));
+test('refresh coalesces opens, isolates receipts and never confuses upload time with command receipt',async t=>{
+ let now=1000000;
+ const devices=[{id:'a',name:'Phone',last_sync:now},{id:'b',name:'Other',last_sync:null}];
+ const broker=new Refresh({devices:()=>devices},()=>now);t.after(()=>broker.close());
+ const stream=broker.watch(devices[0],()=>{}).body.getReader();
+ assert.equal(decode(await stream.read()).type,'ready');
+ let state=broker.request();assert.equal(state[0].state,'requested');assert.equal(state[1].state,'requested');
+ const later=broker.watch(devices[1],()=>{}).body.getReader();await later.read();assert.equal(decode(await later.read()).type,'refresh');await later.cancel();
+ const command=decode(await stream.read());assert.equal(command.type,'refresh');
+ broker.request();assert.equal(broker.requests.get('a').id,command.id);
+ assert.equal(broker.acknowledge(devices[1],{id:command.id,state:'delivered'}).ok,false);
+ assert.equal(broker.acknowledge(devices[0],{id:'wrong',state:'delivered'}).ok,false);
+ for(const status of ['reading','queued','delivered'])assert.equal(broker.acknowledge(devices[0],{id:command.id,state:status}).ok,true);
+ broker.acknowledge(devices[0],{id:command.id,state:'queued'});assert.equal(broker.status()[0].state,'delivered');
+ now+=61000;broker.request();const second=decode(await stream.read());assert.notEqual(second.id,command.id);
+ now+=180001;assert.equal(broker.status()[0].state,'timeout');
+ assert.equal(broker.acknowledge(devices[0],{id:second.id,state:'delivered'}).ok,false);
+ await stream.cancel();assert.equal(broker.status()[0].online,false);
+});
+test('refresh replaces old stream, cancels on revocation and checks authentication before commands',async t=>{
+ const device={id:'a',name:'Phone'},broker=new Refresh({devices:()=>[device]});t.after(()=>broker.close());
+ let allowed=true;
+ const first=broker.watch(device,()=>{}).body.getReader();await first.read();
+ const second=broker.watch(device,()=>{if(!allowed)throw Error('revoked');}).body.getReader();await second.read();
+ assert.equal((await first.read()).done,true);
+ allowed=false;broker.request();assert.equal((await second.read()).done,true);assert.equal(broker.status()[0].online,false);
+ const third=broker.watch(device,()=>{}).body.getReader();await third.read();await third.read();broker.revoke('a');assert.equal((await third.read()).done,true);
+});

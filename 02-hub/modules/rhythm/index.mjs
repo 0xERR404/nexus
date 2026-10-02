@@ -4,17 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {modulePage} from '../../src/views.mjs';
 import {Rhythm, fail} from './store.mjs';
+import {Refresh} from './refresh.mjs';
 import {Reports} from './reports.mjs';
 import {dayName} from './summary.mjs';
 const assetsHTML = `<link rel="stylesheet" href="/modules/rhythm/rhythm.css"><script src="/modules/rhythm/rhythm.js" defer></script>`;
-const html = `${assetsHTML}<section id="rhythm"><div class="rt-toolbar"><input type="date" id="rtDate" aria-label="Дата"><button id="rtRefresh">Обновить</button><a id="rtExport" download>Скачать измерения</a><button id="rtReport">Сформировать отчёт</button></div><p id="rtStatus" role="status"></p><div id="rtCards"></div><p id="rtCoverage"></p><section class="rt-panel"><h2>Все полученные данные</h2><p>Записи, принятые хабом за выбранную дату. Отсутствие записей не означает нулевое значение.</p><button id="rtShowData">Показать записи</button><div id="rtData"></div></section><section class="rt-panel"><h2>Суточный отчёт</h2><p id="rtReportState"></p><button id="rtConfirmSleep" hidden>Подтвердить завершение сна</button><div id="rtReportText"></div><button id="rtRetry" hidden>Повторить платный запрос</button></section></section>`;
+const html = `${assetsHTML}<section id="rhythm"><div class="rt-toolbar"><input type="date" id="rtDate" aria-label="Дата"><button id="rtRefresh">Обновить</button><a id="rtExport" download>Скачать измерения</a><button id="rtReport">Сформировать отчёт</button></div><p id="rtStatus" role="status"></p><p id="rtSyncState" role="status"></p><div id="rtCards"></div><p id="rtCoverage"></p><section class="rt-panel"><h2>Все полученные данные</h2><p>Записи, принятые хабом за выбранную дату. Отсутствие записей не означает нулевое значение.</p><button id="rtShowData">Показать записи</button><div id="rtData"></div></section><section class="rt-panel"><h2>Суточный отчёт</h2><p id="rtReportState"></p><button id="rtConfirmSleep" hidden>Подтвердить завершение сна</button><div id="rtReportText"></div><button id="rtRetry" hidden>Повторить платный запрос</button></section></section>`;
 export const settings = {
   title: 'Асклепий',
-  content: `${assetsHTML}<section id="rhythmSettings"><p id="rtStatus" role="status"></p><section class="rt-panel"><h3>Band 11 · Геката</h3><p>Создай ключ ниже и сохрани в Геката → Band 11 → Настройки подключения вместе с HTTPS-адресом хаба. Подтверди сопряжение на телефоне и браслете.</p><p>Снимок: 5 минут · история: 15 минут · подробный сон, стресс и сводки тренировок: час, при поддержке формата. Отправка автоматическая; Android может задерживать работу. Полный экспорт всех данных не поддерживается.</p><p>Счётчик шагов не прибавляется к истории. Неизвестные стадии сна не угадываются. Перед включением автоматических отчётов проверь реальный сон. Huawei-аккаунт и Health Connect не нужны.</p></section><form id="rtConfig"><label>Часовой пояс <input id="rtZone" required placeholder="Europe/Moscow"></label><label><input id="rtAuto" type="checkbox"> Автоматические платные отчёты DeepSeek (до одного на дату)</label><p>Отправляется числовая сводка. Ключ и модель берутся из настроек Оракула. Отчёт доступен после завершённых суток, сна и последующей синхронизации.</p><button>Сохранить настройки</button></form><h3>Подключения источников</h3><p>Существующие ключи JSON-приёма можно отозвать. Ключ вставляется в Гекату → Асклепий → Настройки подключения. Создание ключа само по себе не запускает передачу.</p><button id="rtAdd">Создать ключ Гекаты</button><p id="rtToken" role="status"></p><div id="rtDevices"></div><h3>Источники измерений</h3><p>Меньшее число — выше приоритет при пересечениях. Сохранённая история остаётся доступна.</p><div id="rtSources"></div></section>`
+  content: `${assetsHTML}<section id="rhythmSettings"><p id="rtStatus" role="status"></p><section class="rt-panel"><h3>Band 11 · Геката</h3><p>Создай ключ ниже и сохрани в Геката → Band 11 → Настройки подключения вместе с HTTPS-адресом хаба. Подтверди сопряжение на телефоне и браслете.</p><p>Экономия в Гекате: снимок каждые 15 минут · история: 30 минут · подробные файлы: 2 часа. Обычный режим — снимок: 5 минут · история: 15 минут · файлы: час, при поддержке формата. Открытие Асклепия запрашивает свежий обмен, если Геката на связи (APK 0.1.45+). Отправка автоматическая; Android может задерживать работу. Полный экспорт всех данных не поддерживается.</p><p>Счётчик шагов не прибавляется к истории. Неизвестные стадии сна не угадываются. Перед включением автоматических отчётов проверь реальный сон. Huawei-аккаунт и Health Connect не нужны.</p></section><form id="rtConfig"><label>Часовой пояс <input id="rtZone" required placeholder="Europe/Moscow"></label><label><input id="rtAuto" type="checkbox"> Автоматические платные отчёты DeepSeek (до одного на дату)</label><p>Отправляется числовая сводка. Ключ и модель берутся из настроек Оракула. Отчёт доступен после завершённых суток, сна и последующей синхронизации.</p><button>Сохранить настройки</button></form><h3>Подключения источников</h3><p>Существующие ключи JSON-приёма можно отозвать. Ключ вставляется в Гекату → Асклепий → Настройки подключения. Создание ключа само по себе не запускает передачу.</p><button id="rtAdd">Создать ключ Гекаты</button><p id="rtToken" role="status"></p><div id="rtDevices"></div><h3>Источники измерений</h3><p>Меньшее число — выше приоритет при пересечениях. Сохранённая история остаётся доступна.</p><div id="rtSources"></div></section>`
 };
 export function createModule(directory, options = {}) {
   const store = new Rhythm(directory),
     reports = new Reports(store, options);
+  const refresh = new Refresh(store);
   let timer,
     busy = false;
   const counts = new Map();
@@ -38,6 +40,7 @@ export function createModule(directory, options = {}) {
     },
     close() {
       clearInterval(timer);
+      refresh.close();
     },
     async summary() {
       const day = store.daily(dayName(Date.now(), store.config().zone));
@@ -62,6 +65,8 @@ export function createModule(directory, options = {}) {
         counts.set(device.id, counter);
         const data = await readJSON(request, 2 * 1024 * 1024);
         store.authenticate(request.headers.authorization?.replace(/^Bearer /, ''));
+        if (data.type === 'watch') return refresh.watch(device,()=>store.authenticate(request.headers.authorization?.replace(/^Bearer /, '')));
+        if (data.type === 'refreshAck') return Response.json(refresh.acknowledge(device,data));
         if (data.type === 'hello')
           return Response.json({
             state: 'ready',
@@ -69,6 +74,7 @@ export function createModule(directory, options = {}) {
             name: device.name,
             format: 'json',
             maxRecords: 500,
+            bandRefresh: true,
             bandSnapshot: true,
             bandExtended: true,
             bandMetrics: true
@@ -111,6 +117,7 @@ export function createModule(directory, options = {}) {
               }
             });
           }
+          if (route === '/api/refresh') return Response.json(refresh.status());
           if (route === '/api')
             return Response.json({
               config: store.config(),
@@ -122,10 +129,12 @@ export function createModule(directory, options = {}) {
         if (request.method === 'POST') {
           const v = await readJSON(request, 2 * 1024 * 1024);
           if (!authorized()) throw fail('Сессия завершена', 401);
+          if (route === '/api/refresh') return Response.json(refresh.request());
           if (route === '/api/config') return Response.json(store.configure(v));
           if (route === '/api/device') return Response.json(store.addDevice(v.name));
           if (route === '/api/revoke') {
             store.revoke(v.id);
+            refresh.revoke(v.id);
             return Response.json({ok: true});
           }
           if (route === '/api/source') {

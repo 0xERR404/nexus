@@ -3,6 +3,10 @@ package xyz.nexus404.hecate;
 final class BandPolicy {
   static final long POLL = 5 * 60000L, HISTORY = 15 * 60000L, FILES = 60 * 60000L;
 
+  static long poll(boolean economy) { return economy ? 15*60000L : POLL; }
+  static long history(boolean economy) { return economy ? 30*60000L : HISTORY; }
+  static long files(boolean economy) { return economy ? 120*60000L : FILES; }
+
   static boolean due(long now, long last, long interval) {
     return last <= 0 || now < last || now - last >= interval;
   }

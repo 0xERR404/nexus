@@ -39,6 +39,14 @@ test('rhythm integrates with hub routing: bearer can only sync, UI and settings 
  const login=await fetch(baseURL+'/api/auth/login',{method:'POST',redirect:'manual',headers:{Origin:config.origin,'Content-Type':'application/x-www-form-urlencoded'},body:'username=admin&password=test-password-for-rhythm'});
  const cookie=login.headers.get('set-cookie').split(';')[0];const response=await fetch(baseURL+'/modules/rhythm/api?day='+day,{headers:{Cookie:cookie}});assert.equal(response.status,200);assert.equal((await response.json()).day.steps,1000);
  assert.equal((await fetch(baseURL+'/modules/rhythm/api/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).status,403);
+ const watched=await fetch(baseURL+'/api/rhythm/sync',{method:'POST',headers,body:JSON.stringify({type:'watch'})});
+ assert.equal(watched.headers.get('content-type'),'application/x-ndjson');
+ const reader=watched.body.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/ready/);
+ const commanded=await fetch(baseURL+'/modules/rhythm/api/refresh',{method:'POST',headers:{Cookie:cookie,Origin:config.origin,'Content-Type':'application/json'},body:'{}'});
+ assert.equal(commanded.status,200);assert.equal((await commanded.json())[0].state,'requested');
+ assert.match(new TextDecoder().decode((await reader.read()).value),/refresh/);
+ await reader.cancel();mod.close();
+
 });
 
 test('rhythm dashboard and settings run without retired DB controls', async t => {
@@ -49,14 +57,14 @@ test('rhythm dashboard and settings run without retired DB controls', async t =>
  const html=await (await app.handle({request:{method:'GET'},path:'/',user:{username:'test'}})).text();
  assert.doesNotMatch(html,/id="rtConfig"|id="rtAdd"|id="rtSources"/);
  assert.match(settings.content,/id="rtConfig"/);assert.doesNotMatch(settings.content,/id="rtImport"/);
- assert.doesNotMatch(settings.content,/rtSync|type="file"/);assert.match(settings.content,/Huawei-аккаунт и Health Connect не нужны/);assert.match(settings.content,/Снимок: 5 минут/);
+ assert.doesNotMatch(settings.content,/rtSync|type="file"/);assert.match(settings.content,/Huawei-аккаунт и Health Connect не нужны/);assert.match(settings.content,/снимок: 5 минут/);
  assert.doesNotMatch(html,/rtHistory|rtImport|История за 30 дней|Импорт базы/);
  const data=await (await app.handle({request:{method:'GET'},path:'/api',user:{username:'test'}})).json();
  const source=fs.readFileSync(new URL('../02-hub/modules/rhythm/rhythm.js',import.meta.url),'utf8');
  for(const content of [html,settings.content]){
   const make=(tag,text)=>({tag,textContent:text||'',value:'',children:[],get options(){return this.children;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},setAttribute(){}});
   const elements=new Map([...content.matchAll(/id="([^"]+)"/g)].map(match=>[match[1],make('div')]));
-  runInNewContext(source,{window:{top:{addEventListener(){},removeEventListener(){}}},addEventListener(){},document:{getElementById:id=>elements.get(id)||null},Nexus:{node:make,request:async()=>data},Option:function(label,value){return {label,value};},TextDecoder,location:{origin:'https://hub.test'}});
+  runInNewContext(source,{setTimeout:()=>0,clearTimeout(){},window:{top:{addEventListener(){},removeEventListener(){}}},addEventListener(){},document:{getElementById:id=>elements.get(id)||null},Nexus:{node:make,request:async()=>data},Option:function(label,value){return {label,value};},TextDecoder,location:{origin:'https://hub.test'}});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(elements.get('rtStatus').textContent,'');
   if(elements.has('rtZone'))assert.equal(elements.get('rtZone').value,'UTC');
@@ -163,6 +171,7 @@ test('all received types are available in the authenticated record viewer', asyn
  const data=await (await app.handle({request:{method:'GET'},path:'/api',user:{username:'test'}})).json();
  const records=['band','steps','movement','heart','spo2','sleep','stress','activity','sport'].map(type=>({type,start:base,end:base+hour,metrics:{score:88},deviceFields:{aa:'ABCD'}}));
  runInNewContext(fs.readFileSync(new URL('../02-hub/modules/rhythm/rhythm.js',import.meta.url),'utf8'),{
+  setTimeout:()=>0,clearTimeout(){},addEventListener(){},
   document:{getElementById:id=>elements.get(id)||null},Nexus:{node:make,request:async route=>route.includes('/api/export')?records:data}
  });
  await new Promise(r=>setImmediate(r));

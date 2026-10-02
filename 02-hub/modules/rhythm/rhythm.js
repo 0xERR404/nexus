@@ -191,7 +191,7 @@ if (settings) {
   };
 } else {
   $('ShowData').onclick = action(showData);
-  $('Refresh').onclick = action(load);
+  $('Refresh').onclick = action(async()=>{await load();await requestRefresh();});
   $('Date').onchange = action(load);
   async function generate(retry) {
     if (
@@ -224,7 +224,37 @@ if (settings) {
     }
   });
 }
-action(load)();
+let syncTimer, syncStarted=0, syncBusy=false, pageClosed=false;
+function renderSync(rows) {
+  if(!$('SyncState') || !Array.isArray(rows))return false;
+  const labels={requested:'запрос отправлен',reading:'телефон запрашивает браслет',queued:'прочитанное сохранено на телефоне, ожидается доставка',delivered:'доступные данные доставлены; полнота зависит от протокола браслета',failed:'телефон не завершил чтение',timeout:'нет подтверждения за 3 минуты',idle:'ожидание'};
+  $('SyncState').textContent=rows.length?rows.map(r=>r.name+': '+(r.state==='requested' && !r.online?'ожидание Гекаты · служба должна работать':r.online || r.at?labels[r.state]:'Геката не на связи · проверь службу и интернет')+(r.lastSync?' · приём '+stamp(r.lastSync):'')).join(' · '):'Нет подключённых источников';
+  return rows.some(r=>['requested','reading','queued'].includes(r.state));
+}
+function visible() {return !pageClosed && document.visibilityState!=='hidden';}
+async function requestRefresh() {
+  if(settings || !visible() || syncBusy)return;
+  syncBusy=true;clearTimeout(syncTimer);
+  try {
+    const rows=await api('/api/refresh',{});syncStarted=Date.now();
+    if(renderSync(rows))syncTimer=setTimeout(pollRefresh,3000);
+  } catch(e) {if($('SyncState'))$('SyncState').textContent='Не удалось запросить телефон: '+e.message;}
+  finally {syncBusy=false;}
+}
+async function pollRefresh() {
+  if(!visible() || Date.now()-syncStarted>185000)return;
+  try {
+    const pending=renderSync(await api('/api/refresh'));
+    await load();
+    if(pending && visible())syncTimer=setTimeout(pollRefresh,3000);
+  } catch(e) {if($('SyncState'))$('SyncState').textContent='Проверка обновления прервана: '+e.message;}
+}
+if(!settings) {
+  addEventListener('visibilitychange',()=>{if(visible())requestRefresh();else clearTimeout(syncTimer);});
+  addEventListener('pagehide',()=>{pageClosed=true;clearTimeout(syncTimer);});
+  addEventListener('pageshow',()=>{if(pageClosed){pageClosed=false;requestRefresh();}});
+}
+action(async()=>{await load();if(!settings)await requestRefresh();})();
 
 const fieldNames = {
   id: 'ID записи', source: 'Источник', type: 'Тип', start: 'Начало', end: 'Конец',

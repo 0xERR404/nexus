@@ -243,6 +243,15 @@ export function createApp({
         const result = handler
           ? await handler({request})
           : new Response('Не найдено', {status: 404});
+        if (result.headers.get('Content-Type') === 'application/x-ndjson') {
+          response.writeHead(result.status, Object.fromEntries(result.headers));
+          response.flushHeaders();
+          const stream = Readable.fromWeb(result.body);
+          stream.on('error', () => response.destroy());
+          response.on('close', () => stream.destroy());
+          stream.pipe(response);
+          return;
+        }
         return send(result.status, await result.text(), 'application/json');
       }
       const publicInstall = /^\/install\/([A-Za-z0-9_-]{43})\/(script|archive)$/.exec(url.pathname);

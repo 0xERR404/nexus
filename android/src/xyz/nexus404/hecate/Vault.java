@@ -100,6 +100,7 @@ final class Vault {
   }
 
   static void status(Context c, String message) {
+    AppDiagnostics.event(c,"Банк",message);
     prefs(c).edit().putString("status", message).apply();
   }
 

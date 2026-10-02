@@ -43,6 +43,7 @@ public final class BandUpload extends JobService {
   }
 
   static void status(Context c, String s) {
+    AppDiagnostics.event(c,"Доставка браслета",s);
     Vault.prefs(c).edit().putString("bandUploadStatus", s).apply();
   }
 
@@ -52,7 +53,7 @@ public final class BandUpload extends JobService {
       throw new IOException("Дождись завершения отправки и повтори сохранение");
     try {
       JSONObject saved = QueueRoute.prepare(config(c), cfg, files(c).length > 0, transfer);
-      if (!Vault.prefs(c).edit().putString("bandConnection", Vault.seal(saved.toString())).commit())
+      if (!Vault.prefs(c).edit().putString("bandConnection", Vault.seal(saved.toString())).remove("bandRefreshReceipt").commit())
         throw new IOException("Настройки не сохранены");
     } finally {
       running.set(false);
@@ -183,15 +184,31 @@ public final class BandUpload extends JobService {
         status(c, "Хаб подтвердил записей: " + sent + " · пакетов осталось: " + files(c).length);
       }
       progress(c, files(c).length == 0 ? 6 : 7);
-      if (files(c).length == 0) status(c, "Очередь отправлена · ожидающих пакетов нет");
+      if (files(c).length == 0) {
+        status(c, "Очередь отправлена · ожидающих пакетов нет");
+
+      }
     } catch (Exception e) {
       Vault.prefs(c).edit().putInt("bandUploadError", call.stopped ? 7 : UploadDiagnostic.error(e)).apply();
       status(c, UploadDiagnostic.reason(call.stopped ? 7 : UploadDiagnostic.error(e)) + " · очередь сохранена");
     } finally {
       Vault.prefs(c).edit().putInt("bandUploadHttp", call.responseCode).apply();
       running.set(false);
+      finishRefreshReceipt(c);
       schedule(c, false);
     }
+  }
+
+  static void finishRefreshReceipt(Context c) {
+    try {
+      String receipt=Vault.prefs(c).getString("bandRefreshReceipt","");
+      if(!BandHub.validId(receipt) || files(c).length!=0)return;
+      JSONObject cfg=config(c);
+      if(cfg==null)return;
+      new HubHttp.Call().send(cfg,new JSONObject().put("type","refreshAck").put("id",receipt).put("state","delivered"));
+      if(receipt.equals(Vault.prefs(c).getString("bandRefreshReceipt","")))
+        Vault.prefs(c).edit().remove("bandRefreshReceipt").apply();
+    } catch(Exception e) { AppDiagnostics.event(c,"Сигнал хаба","Подтверждение обновления отложено"); }
   }
 
   static byte[] read(InputStream in, int max) throws IOException {

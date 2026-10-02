@@ -18,6 +18,8 @@ public final class BandActivity extends Activity {
   private BluetoothLeScanner scanner;
   private BluetoothDevice pendingDevice;
   private LinearLayout layout, devices;
+  private SwipePages pages;
+  private Button automatic;
   private TextView status, feedback, bridgeStatus;
   private boolean scanning, connectingServer, rebindRequested, pendingRenew, connectionStarting;
   private TextView uploadStatus, connectionStatus, dataStatus, monitorStatus;
@@ -45,76 +47,54 @@ public final class BandActivity extends Activity {
       pendingRenew = state.getBoolean("bandPendingRenew");
       pendingDevice = state.getParcelable("bandPendingDevice");
     }
-    ScrollView scroll = new ScrollView(this);
-    scroll.setFitsSystemWindows(true);
-    scroll.setBackground(new HubBackground());
-    layout = new LinearLayout(this);
-    layout.setOrientation(1);
-    layout.setPadding(dp(14), dp(12), dp(14), dp(24));
-    scroll.addView(layout);
-    setContentView(scroll);
-    text("АСКЛЕПИЙ / BAND 11", 19).setTypeface(Typeface.MONOSPACE);
-    text("Связь, уведомления и музыка телефона", 13);
-    serverSettings();
-    connectionStatus = text("", 13);
-    feedback = text("", 12);
-    dataStatus = text("", 12);
-    dataStatus.setVisibility(android.view.View.GONE);
-    button(layout, "Полученные данные", () -> dataStatus.setVisibility(dataStatus.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE));
-    button(layout, "Подключить", this::connectSaved);
-    button(
-        layout,
-        "Прочитать сейчас",
-        () -> {
-          try {
-            if (BandService.enabled(this)) {
-              startForegroundService(new Intent(this, BandService.class).setAction("read"));
-              note("Запрос чтения передан службе · состояние связи показано выше");
-            } else note("Сначала подключи браслет");
-          } catch (RuntimeException e) {
-            note("Android не разрешил запуск связи");
-          }
-        });
+    pages = new SwipePages(this, "ГЕКАТА · BAND 11", "Обзор", "Измерения", "Телефон", "Настройки", "Журнал");
+    layout = pages.page(0);
+    connectionStatus = text("", 14);
+    feedback = pages.feedback;
+    automatic = button(layout, "Включить автоматическую работу", () -> {
+      if (BandService.enabled(this)) { connectionStarting=false; stopScan(); BandService.stop(this); note("Автоматическая работа остановлена"); }
+      else connectSaved();
+      refreshUpload();
+    });
+    button(layout, "Обновить данные сейчас", () -> {
+      try {
+        if (BandService.enabled(this)) {
+          startForegroundService(new Intent(this, BandService.class).setAction("read"));
+          note("Запрошено полное чтение · обычное обновление выполняется автоматически");
+        } else note("Сначала включи автоматическую работу");
+      } catch (RuntimeException e) { note("Android не разрешил запуск связи"); }
+    });
+    uploadStatus = text("",12);
+    text("После настройки подключение, чтение и доставка работают автоматически. Свайпай влево и вправо или нажимай вкладки.",12);
+    layout=pages.page(1);
+    text("Измерения",18);
+    dataStatus=text("",13);
     monitorSettings();
-    devices = new LinearLayout(this);
-    devices.setOrientation(1);
-    layout.addView(devices);
-    status = text("Подключи хаб и выбери браслет.", 13);
-    status.setTextIsSelectable(true);
-    status.setVisibility(android.view.View.GONE);
-    button(
-        layout,
-        "Диагностика",
-        () ->
-            status.setVisibility(
-                status.getVisibility() == android.view.View.GONE
-                    ? android.view.View.VISIBLE
-                    : android.view.View.GONE));
-    button(
-        layout,
-        "Скопировать безопасный отчёт",
-        () -> {
-          ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
-              .setPrimaryClip(ClipData.newPlainText("Band 11", BandEvidence.report(this)));
-          Toast.makeText(this, "Диагностика скопирована", Toast.LENGTH_SHORT).show();
-        });
-    button(
-        layout,
-        "Остановить связь",
-        () -> {
-          connectionStarting = false;
-          stopScan();
-          BandService.stop(this);
-          note("Остановлено");
-        });
+    layout=pages.page(2);
+    text("Уведомления и музыка",18);
+    BandMedia.settings(this,layout); BandNotices.settings(this,layout);
+    bridgeStatus=text("",12);
+    layout=pages.page(3);
+    serverSettings();
+    devices=new LinearLayout(this);devices.setOrientation(1);layout.addView(devices);
+    layout=pages.page(4);
+    button(layout,"Скопировать все журналы",()->AppDiagnostics.copy(this));
+    text("Последние сохранённые события и состояния всех подсистем собраны вместе. Ключи и тексты банковских сообщений не включаются.",12);
+    status=text("",12);
+    button(layout,"Скопировать краткий отчёт",()-> {
+      ((ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Геката",BandEvidence.report(this)));
+      Toast.makeText(this,"Краткий отчёт скопирован",Toast.LENGTH_SHORT).show();
+    });
+    layout=pages.page(0);
+    pages.onChanged=this::refreshUpload;
+    pages.show(state == null ? 0 : state.getInt("bandTab",0));
+    refreshUpload();
   }
 
   void monitorSettings() {
     LinearLayout panel = new LinearLayout(this);
     panel.setOrientation(1);
-    panel.setVisibility(android.view.View.GONE);
-    button(layout, "Мониторинг пульса и SpO₂", () -> panel.setVisibility(
-        panel.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE));
+    text("Режимы измерений",16);
     layout.addView(panel);
     TextView hint = new TextView(this);
     hint.setText("Настройки измерений браслета. SpO₂ измеряется автоматически в покое. Постоянный пульс увеличивает расход батареи. Выбранные значения применяются кнопкой ниже.");
@@ -124,7 +104,12 @@ public final class BandActivity extends Activity {
         new String[] {"Пульс: не менять", "Пульс: выключить", "Пульс: автоматический", "Пульс: реальное время"}));
     oxygen.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
         new String[] {"SpO₂: не менять", "SpO₂: выключить", "SpO₂: автоматически"}));
-    heart.setSelection(3); oxygen.setSelection(2);
+    heart.setSelection(2); oxygen.setSelection(2);
+    try {
+      String slot=BandService.monitorSlot(this);
+      heart.setSelection(Vault.prefs(this).getInt(slot+".monitor.heart",1)+1);
+      oxygen.setSelection(Vault.prefs(this).getInt(slot+".monitor.oxygen",1)+1);
+    } catch(Exception ignored) {}
     panel.addView(heart); panel.addView(oxygen);
     button(panel, "Применить к браслету", () -> {
       try {
@@ -141,7 +126,7 @@ public final class BandActivity extends Activity {
           throw new IllegalStateException();
         if (BandService.enabled(this))
           startForegroundService(new Intent(this, BandService.class).setAction("monitor"));
-        else note("Настройки сохранены для выбранного браслета. Нажми «Подключить»");
+        else note("Настройки сохранены для выбранного браслета. Включи автоматическую работу");
         refreshUpload();
       } catch (Exception e) { note("Не удалось поставить настройки в очередь. Проверь, что браслет выбран"); }
     });
@@ -223,6 +208,7 @@ public final class BandActivity extends Activity {
       return;
     }
     stopScan();
+    pages.show(3);
     BandService.stop(this);
     report.setLength(0);
     report
@@ -349,18 +335,20 @@ public final class BandActivity extends Activity {
   }
 
   void serverSettings() {
-    LinearLayout settings = new LinearLayout(this);
-    settings.setOrientation(1);
-    settings.setVisibility(android.view.View.GONE);
-    button(
-        layout,
-        "Настройки подключения к Асклепию",
-        () ->
-            settings.setVisibility(
-                settings.getVisibility() == android.view.View.GONE
-                    ? android.view.View.VISIBLE
-                    : android.view.View.GONE));
-    layout.addView(settings);
+    LinearLayout settings = pages.page(3);
+    text("Подключение и питание",18);
+    CheckBox economy = new CheckBox(this);
+    economy.setText("Экономия аккумулятора"); economy.setTextColor(0xffd5dde8);
+    economy.setChecked(Vault.prefs(this).getBoolean("bandEconomy",true));settings.addView(economy);
+    text("Экономия: счётчик каждые 15 минут, история каждые 30 минут, подробные файлы раз в 2 часа. Измерения браслета продолжаются. Без экономии: 5 / 15 / 60 минут.",12);
+    CheckBox remote=new CheckBox(this); remote.setText("Обновлять при открытии Асклепия в хабе"); remote.setTextColor(0xffd5dde8); remote.setChecked(Vault.prefs(this).getBoolean("bandRemote",true)); settings.addView(remote);
+    remote.setOnCheckedChangeListener((v,on)->{ Vault.prefs(this).edit().putBoolean("bandRemote",on).apply(); if(BandService.instance!=null)BandService.instance.remotePreferencesChanged(); });
+    text("Телефон ожидает сигнал хаба по защищённому соединению. Нужны интернет и работающая служба; Android может задержать запрос. Канал использует сеть даже в режиме экономии.",12);
+    economy.setOnCheckedChangeListener((v,on)-> {
+      Vault.prefs(this).edit().putBoolean("bandEconomy",on).apply();
+      if(BandService.instance!=null) BandService.instance.powerPreferencesChanged();
+      note(on?"Экономия включена":"Обычная частота обновления включена");
+    });
     button(
         settings,
         "Фоновая работа · настройки Android",
@@ -385,12 +373,7 @@ public final class BandActivity extends Activity {
             note("Открой Bluetooth в настройках телефона");
           }
         });
-    BandMedia.settings(this, settings);
-    BandNotices.settings(this, settings);
-    bridgeStatus = new TextView(this);
-    bridgeStatus.setTextColor(0xffa9b8c9);
-    bridgeStatus.setTextSize(12);
-    settings.addView(bridgeStatus);
+    text("Приёмник Асклепия",16);
     hubOrigin = new EditText(this);
     hubOrigin.setHint("https://твой-хаб");
     hubOrigin.setSingleLine(true);
@@ -481,7 +464,7 @@ public final class BandActivity extends Activity {
         "Восстановить сопряжение",
         () -> {
           if (BandService.enabled(this)) {
-            note("Сначала нажми «Остановить», затем восстановление");
+            note("Сначала останови автоматическую работу на странице «Обзор»");
             return;
           }
           scan(true);
@@ -521,19 +504,20 @@ public final class BandActivity extends Activity {
           note("Отправка запрошена · результат появится в статусе и безопасном отчёте");
           refreshUpload();
         });
-    uploadStatus = text("", 12);
+
     try {
       JSONObject cfg = BandUpload.config(this);
       if (cfg != null) {
         hubOrigin.setText(cfg.getString("origin"));
         hubKey.setHint("Ключ сохранён");
-      } else settings.setVisibility(android.view.View.VISIBLE);
+      } else pages.message("Открой «Настройки»: укажи адрес и ключ Асклепия");
     } catch (Exception ignored) {
     }
     refreshUpload();
   }
 
   void refreshUpload() {
+    if(automatic!=null)automatic.setText(BandService.enabled(this)?"Остановить автоматическую работу":"Включить автоматическую работу");
     if (monitorStatus != null) monitorStatus.setText(BandService.monitorStatus(this));
     if (dataStatus != null) dataStatus.setText(BandEvidence.data(this));
     if (bridgeStatus != null)
@@ -544,17 +528,14 @@ public final class BandActivity extends Activity {
               + "\n"
               + Vault.prefs(this).getString("bandFilesStatus", ""));
     if (connectionStatus != null) {
-      connectionStatus.setText(BandService.linkState(this) + "\n" + Vault.prefs(this).getString("bandState", "Связь не запущена") + "\n" + BandEvidence.delivery(this));
+      connectionStatus.setText(BandService.linkState(this) + "\n" + Vault.prefs(this).getString("bandState", "Связь не запущена")
+          + "\nПрочитано: " + BandEvidence.time(Vault.prefs(this).getLong("bandReadAt",0))
+          + "\nХаб принял: " + BandEvidence.time(Vault.prefs(this).getLong("bandUploaded",0))
+          + "\n" + Vault.prefs(this).getString("bandRemoteStatus","Сигнал хаба ещё не подключён")
+          + "\nРежим: " + (Vault.prefs(this).getBoolean("bandEconomy",true)?"экономия":"обычный"));
     }
 
-    if (status != null) {
-      String saved = Vault.prefs(this).getString("bandReport", "");
-      if (!saved.isEmpty()) {
-        report.setLength(0);
-        report.append(saved);
-        status.setText(saved);
-      }
-    }
+    if (status != null && pages.selected==4) status.setText(AppDiagnostics.report(this));
     if (uploadStatus != null)
       uploadStatus.setText(Vault.prefs(this).getString("bandUploadStatus", "Очередь пуста"));
   }
@@ -562,7 +543,7 @@ public final class BandActivity extends Activity {
   private final Runnable render = this::refreshUpload;
   private final android.content.SharedPreferences.OnSharedPreferenceChangeListener uploadChanged =
       (p, key) -> {
-        if (key != null && key.startsWith("band")) {
+        if (key != null && (key.startsWith("band") || key.equals("appJournal"))) {
           main.removeCallbacks(render);
           main.postDelayed(render, 250);
         }
@@ -579,9 +560,10 @@ public final class BandActivity extends Activity {
   }
 
   void note(String s) {
-    if (feedback != null) feedback.setText(s);
+    if (pages != null) pages.message(s);
+    AppDiagnostics.event(this,"Экран браслета",s);
     report.append(s).append('\n');
-    if (status != null) status.setText(report.toString());
+    if (status != null && pages.selected==4) status.setText(AppDiagnostics.report(this));
   }
 
   public void onRequestPermissionsResult(int code, String[] p, int[] r) {
@@ -602,6 +584,7 @@ public final class BandActivity extends Activity {
   }
 
   protected void onSaveInstanceState(Bundle out) {
+    out.putInt("bandTab",pages.selected);
     out.putBoolean("bandRenew", rebindRequested);
     out.putBoolean("bandPendingRenew", pendingRenew);
     out.putParcelable("bandPendingDevice", pendingDevice);
@@ -631,7 +614,7 @@ public final class BandActivity extends Activity {
     return t;
   }
 
-  void button(LinearLayout parent, String title, Runnable action) {
+  Button button(LinearLayout parent, String title, Runnable action) {
     Button b = new Button(this);
     b.setText(title);
     b.setTextSize(13);
@@ -649,5 +632,6 @@ public final class BandActivity extends Activity {
     p.setMargins(0, dp(4), 0, dp(4));
     parent.addView(b, p);
     b.setOnClickListener(v -> action.run());
+    return b;
   }
 }

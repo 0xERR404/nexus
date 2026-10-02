@@ -63,6 +63,7 @@ final class AppUpdate {
       final String text = message, target = url;
       activity.runOnUiThread(() -> {
         if (!task.stopped && !activity.isDestroyed()) {
+          AppDiagnostics.event(activity,"Обновление APK",text);
           status.setText(text);
           download = target;
         }

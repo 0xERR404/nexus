@@ -33,6 +33,7 @@ final class BandNotices {
   }
 
   static void status(Context c, String s) {
+    if(!s.equals(Vault.prefs(c).getString(STATUS,"")))AppDiagnostics.event(c,"Уведомления",s);
     Vault.prefs(c).edit().putString(STATUS, s).apply();
   }
 

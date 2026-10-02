@@ -26,9 +26,10 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
   private final android.content.SharedPreferences.OnSharedPreferenceChangeListener changes =
       (prefs, key) -> {
-        if (key != null && !key.startsWith("band")) runOnUiThread(() -> renderStatus());
+        if (key != null) runOnUiThread(() -> renderStatus());
       };
   private LinearLayout layout;
+  private SwipePages pages;
   private EditText origin, token;
   private TextView status, bankLabel, bankSummary;
   private Button connect, pause;
@@ -44,23 +45,13 @@ public final class MainActivity extends Activity {
     super.onCreate(state);
     Vault.retireExtras(this);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-    ScrollView scroll = new ScrollView(this);
-    scroll.setFillViewport(true);
-    scroll.setFitsSystemWindows(true);
-    layout = new LinearLayout(this);
-    layout.setOrientation(LinearLayout.VERTICAL);
-    layout.setPadding(dp(12), dp(12), dp(12), dp(20));
-    scroll.setBackground(new HubBackground());
-    scroll.addView(layout);
-    setContentView(scroll);
-    label("NEXUS404", 21, Color.WHITE).setTypeface(android.graphics.Typeface.MONOSPACE);
-    label("ГЕКАТА · деньги и браслет · " + Vault.version(this), 11, 0xff9ba8b9);
+    pages = new SwipePages(this,"ГЕКАТА · " + Vault.version(this),"Обзор","Банк","Настройки","Журнал");
+    layout = pages.page(0);
+    label("Браслет и банковские операции работают в фоне после первоначальной настройки. Переключай страницы свайпом или вкладками.",13,0xff9ba8b9);
     LinearLayout home = layout;
     LinearLayout updatePanel = new LinearLayout(this);
     updatePanel.setOrientation(LinearLayout.VERTICAL);
-    updatePanel.setVisibility(View.GONE);
-    action("Версия и обновление", () -> updatePanel.setVisibility(updatePanel.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
-    home.addView(updatePanel);
+    pages.page(2).addView(updatePanel);
     layout = updatePanel;
     TextView versionStatus = label("Установлена " + Vault.version(this), 12, 0xff9ba8b9);
     updates = new AppUpdate(this, versionStatus);
@@ -68,18 +59,14 @@ public final class MainActivity extends Activity {
     action("Скачать обновление", updates::download);
     layout = home;
     bandPanel();
+    action("Банковские операции",()->pages.show(1));
     LinearLayout root = layout;
-    layout = card(root);
+    layout = card(pages.page(1));
     label("ПЛУТОС / операции", 15, 0xffd5dde8);
     LinearLayout bankCard = layout, bankOptions = new LinearLayout(this);
     bankOptions.setOrientation(LinearLayout.VERTICAL);
-    bankOptions.setVisibility(View.GONE);
-    action(
-        "Настроить банк",
-        () ->
-            bankOptions.setVisibility(
-                bankOptions.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
-    layout.addView(bankOptions);
+    pages.page(2).addView(bankOptions);
+    action("Настройки банка",()->pages.show(2));
     layout = bankOptions;
     label(
         "Сбер: «Стандарт» · покупки автоматически · зарплата и возвраты по настройке источника в"
@@ -114,11 +101,10 @@ public final class MainActivity extends Activity {
     action("Канал операций: пуши / SMS", () -> smsSettings());
     layout = bankCard;
     bankSummary = label("", 12, 0xffd5dde8);
-    status = label("", 12, 0xffd5dde8);
-    status.setVisibility(View.GONE);
-    action(
-        "Диагностика банка",
-        () -> status.setVisibility(status.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
+    layout=pages.page(3);
+    action("Скопировать все журналы",()->AppDiagnostics.copy(this));
+    status=label("",12,0xffd5dde8);
+    layout=bankCard;
     action("Проверить текущие уведомления банка", () -> BankListener.inspectCurrent(this));
     action("Отправить очередь / проверить связь", () -> check());
     pause =
@@ -198,7 +184,11 @@ public final class MainActivity extends Activity {
     } catch (Exception e) {
       Vault.status(this, "Нужно подключить источник заново");
     }
+    pages.onChanged=this::renderStatus;
+    pages.show(state==null?0:state.getInt("mainTab",0));
   }
+
+  protected void onSaveInstanceState(Bundle out) { out.putInt("mainTab",pages.selected); super.onSaveInstanceState(out); }
 
   protected void onStart() {
     super.onStart();
@@ -273,24 +263,13 @@ public final class MainActivity extends Activity {
 
   void message(String text) {
     Vault.status(this, text);
+    pages.message(text);
     renderStatus();
   }
 
   void renderStatus() {
     if (status == null) return;
     try (Queue q = new Queue(this)) {
-      String granted =
-          Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
-      boolean permission = false;
-      if (granted != null)
-        for (String part : granted.split(":"))
-          if (new ComponentName(this, BankListener.class)
-              .equals(ComponentName.unflattenFromString(part))) permission = true;
-      String last =
-          Vault.prefs(this).getLong("last", 0) == 0
-              ? "ещё не было"
-              : java.text.DateFormat.getDateTimeInstance()
-                  .format(new java.util.Date(Vault.prefs(this).getLong("last", 0)));
       bankSummary.setText(
           (Vault.active(this) ? "Приём включён" : "Приём на паузе")
               + " · "
@@ -301,35 +280,7 @@ public final class MainActivity extends Activity {
               + q.count("blocked")
               + "\n"
               + Vault.prefs(this).getString("status", "Подключи банк в настройках"));
-      status.setText(
-          (Vault.active(this) ? "Приём включён" : "Приём на паузе")
-              + "\nКанал: "
-              + (BankSms.enabled(this) ? "SMS" : "пуши")
-              + "\nРазрешение SMS: "
-              + (checkSelfPermission(android.Manifest.permission.RECEIVE_SMS)
-                      == android.content.pm.PackageManager.PERMISSION_GRANTED
-                  ? "есть"
-                  : "нет")
-              + " · SMS банка: "
-              + Vault.prefs(this).getLong("smsEvents", 0)
-              + "\nДоступ к уведомлениям: "
-              + (permission ? "разрешён" : "не разрешён")
-              + "\nСлушатель Android: "
-              + (BankListener.connected() ? "подключён" : "НЕ подключён")
-              + "\nУведомления банка: "
-              + Vault.prefs(this).getLong("bankEvents", 0)
-              + "\nОбработка: "
-              + Vault.prefs(this).getString("capture", "уведомления банка ещё не получены")
-              + "\nОжидают: "
-              + q.count("pending")
-              + " · Отклонены: "
-              + q.count("blocked")
-              + "\nПропущено / не распознано: "
-              + Vault.prefs(this).getLong("skipped", 0)
-              + "\nПоследняя доставка: "
-              + last
-              + "\n"
-              + Vault.prefs(this).getString("status", ""));
+      if(pages.selected==3) status.setText(AppDiagnostics.report(this));
       pause.setText(Vault.active(this) ? "Приостановить приём" : "Возобновить приём");
     } catch (Exception e) {
       status.setText("Не удалось открыть очередь");
