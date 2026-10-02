@@ -1,0 +1,43 @@
+name: nexus404-shell
+services:
+  hub:
+    build: .
+    image: nexus404-shell:local
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      AUTH_FILE: /app/config/auth.json
+      DATA_DIR: /app/data
+      MODULES_DIR: /app/modules
+      TRUST_PROXY: "1"
+    volumes:
+      - ./config/auth.json:/app/config/auth.json:ro
+      - ./data:/app/data
+      - ./modules:/app/modules:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      default:
+        aliases:
+          - nexus404-hub
+networks:
+  default:
+    name: nexus404
+    external: true

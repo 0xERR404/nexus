@@ -1,0 +1,4 @@
+-dontobfuscate
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
+-keep class xyz.nexus404.hecate.** { *; }
+-keepclassmembers class * implements android.os.Parcelable { public static final android.os.Parcelable$Creator CREATOR; }

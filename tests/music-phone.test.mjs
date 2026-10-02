@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {MusicPhones} from '../02-hub/modules/wave/phone.mjs';
+import {WaveStore} from '../02-hub/modules/wave/store.mjs';
+function fixture(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'apollo-test-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const store=new WaveStore(dir),phone=new MusicPhones(dir,()=>store),id=randomUUID();store.data.tracks.push({id,title:'Трек',artist:'Артист',bytes:999999,duration:3});fs.mkdirSync(path.join(dir,id));fs.writeFileSync(path.join(dir,id,'play.mp3'),'0123456789');return {dir,store,phone,id};}
+const req=(token,method='GET',headers={})=>({method,headers:{authorization:'Bearer '+token,...headers}});
+test('music phone key is scoped, hashed, revocable and never returned in library',async t=>{const {phone,dir}=fixture(t),device=phone.create('Телефон');assert.equal(device.token.length,43);assert.ok(!fs.readFileSync(path.join(dir,'phones.json'),'utf8').includes(device.token));assert.ok(!JSON.stringify(phone.list()).includes('secret'));assert.equal(phone.handle(req('invalid'),'/library').status,401);assert.equal(phone.handle(req(device.token,'GET',{origin:'https://host'}),'/library').status,401);assert.equal(phone.handle(req(device.token,'POST'),'/library').status,405);assert.equal(phone.handle(req(device.token),'/original/anything').status,404);const data=await phone.handle(req(device.token),'/library').json();assert.equal(data.tracks[0].bytes,10);assert.ok(!JSON.stringify(data).includes(device.token));phone.revoke(device.id);assert.equal(phone.handle(req(device.token),'/library').status,401);});
+test('music phone audio supports exact ranges and head, denies invalid ranges and deleted tracks',async t=>{const {phone,store,id}=fixture(t),device=phone.create('Phone');const partial=phone.handle(req(device.token,'GET',{range:'bytes=2-5'}),'/audio/'+id);assert.equal(partial.status,206);assert.equal(partial.headers.get('content-range'),'bytes 2-5/10');assert.equal(await partial.text(),'2345');const head=phone.handle(req(device.token,'HEAD'),'/audio/'+id);assert.equal(head.headers.get('content-length'),'10');assert.equal(await head.text(),'');assert.equal(phone.handle(req(device.token,'GET',{range:'bytes=100-'}),'/audio/'+id).status,416);assert.equal(phone.handle(req(device.token),'/audio/../../phones.json').status,404);store.data.tracks=[];assert.throws(()=>phone.handle(req(device.token),'/audio/'+id),{status:404});});
+test('music phone connections persist and enforce a bound without replacing previous keys',t=>{const {phone,dir,store}=fixture(t);for(let i=0;i<10;i++)phone.create('Phone '+i);assert.throws(()=>phone.create('Extra'),{status:400});const restored=new MusicPhones(dir,()=>store);assert.equal(restored.list().length,10);restored.revoke(restored.list()[0].id);assert.equal(restored.list().length,9);assert.equal(restored.create('New').token.length,43);});
+test('HTTP music phone integration streams ranges and keeps device management behind login and CSRF',async t=>{
+ const f=fixture(t);f.store.persist();const {createModule}=await import('../02-hub/modules/wave/index.mjs'),{createApp}=await import('../02-hub/src/server.mjs'),{passwordHash}=await import('../02-hub/src/auth.mjs');
+ const module=createModule(f.dir),config={username:'admin',origin:'https://hub.test',...await passwordHash('music-test-password')};const app=createApp({config,dataDirectory:path.join(f.dir,'hub'),modules:new Map([['wave',{...module,id:'wave',title:'Аполлон'}]])});
+ await new Promise(r=>app.listen(0,'127.0.0.1',r));t.after(async()=>{app.closeAllConnections();await new Promise(r=>app.close(r));});const base='http://127.0.0.1:'+app.address().port;
+ assert.equal((await fetch(base+'/api/wave/phone/library')).status,401);
+ assert.equal((await fetch(base+'/modules/wave/phone/create',{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json'},body:'{}',redirect:'manual'})).status,401);
+ const login=await fetch(base+'/api/auth/login',{method:'POST',redirect:'manual',headers:{Origin:config.origin,'Content-Type':'application/x-www-form-urlencoded'},body:'username=admin&password=music-test-password'});const Cookie=login.headers.get('set-cookie').split(';')[0],headers={Cookie,Origin:config.origin,'Content-Type':'application/json'};
+ assert.equal((await fetch(base+'/modules/wave/phone/create',{method:'POST',headers:{...headers,Origin:'https://evil.test'},body:'{}'})).status,403);
+ const device=await (await fetch(base+'/modules/wave/phone/create',{method:'POST',headers,body:'{"name":"Test"}'})).json();assert.equal(device.token.length,43);
+ const audio=await fetch(base+'/api/wave/phone/audio/'+f.id,{headers:{Authorization:'Bearer '+device.token,Range:'bytes=1-4'}});assert.equal(audio.status,206);assert.equal(await audio.text(),'1234');
+ assert.equal((await fetch(base+'/modules/wave/library',{headers:{Authorization:'Bearer '+device.token},redirect:'manual'})).status,303);
+ await fetch(base+'/modules/wave/phone/revoke',{method:'POST',headers,body:JSON.stringify({id:device.id})});assert.equal((await fetch(base+'/api/wave/phone/audio/'+f.id,{headers:{Authorization:'Bearer '+device.token}})).status,401);
+});

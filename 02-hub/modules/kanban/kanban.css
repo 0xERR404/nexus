@@ -1,0 +1,130 @@
+.kb-tools {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--ui-font-size);
+}
+.kb-tools h3 {
+  margin: 0;
+  flex: 1;
+}
+#kbColumns {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  align-items: flex-start;
+  padding-bottom: 1rem;
+}
+.kb-column {
+  flex: 0 0 260px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+}
+.kb-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: var(--ui-meta-size);
+  margin-top: var(--ui-font-size);
+  overflow-wrap: anywhere;
+}
+.kb-card > button {
+  text-align: left;
+  width: 100%;
+  font-weight: 600;
+}
+.kb-card p {
+  white-space: pre-wrap;
+}
+.kb-card small {
+  display: block;
+  margin-bottom: 0.6rem;
+}
+#kbEditor {
+  background: var(--dialog-bg);
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 12px;
+  width: min(650px, 94vw);
+  max-height: 90dvh;
+  padding: 1rem;
+}
+#kbEditor::backdrop {
+  background: #000a;
+}
+#kbForm > label {
+  display: block;
+  margin: 0.6rem 0;
+}
+#kbForm input:not([type='checkbox']),
+#kbForm textarea,
+#kbForm select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+#kbForm textarea {
+  min-height: 80px;
+}
+#kbFiles {
+  max-height: 220px;
+  overflow: auto;
+}
+#kbFiles label {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.4rem;
+}
+#kbStatus,
+#kbEditorStatus {
+  white-space: pre-wrap;
+  color: #e4b979;
+}
+@media (max-width: 600px) {
+  .kb-column {
+    flex-basis: min(260px, 78vw);
+  }
+  #kbEditor {
+    margin: auto;
+    max-height: 90dvh;
+  }
+  .kb-tools input {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+.kb-card {
+  position: relative;
+  padding-top: 10px;
+}
+.kb-card > button {
+  width: calc(100% - 26px);
+  padding: 4px 6px;
+}
+.kb-card p:empty {
+  display: none;
+}
+.kb-grip {
+  float: right;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 32px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  color: var(--muted);
+  font-size: 20px;
+}
+.kb-dragging {
+  opacity: 0.65;
+}
+.kb-drop-target {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}

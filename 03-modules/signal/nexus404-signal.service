@@ -1,0 +1,30 @@
+[Unit]
+Description=NEXUS404 Signal notifications
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nexus404-node --max-old-space-size=96 /opt/nexus404/host/signal.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nexus404-signal /run/lock
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+TasksMax=64
+MemoryMax=256M
+CPUQuota=25%
+
+[Install]
+WantedBy=multi-user.target

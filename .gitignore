@@ -1,0 +1,11 @@
+**/node_modules/
+*.log
+*.class
+*.p12
+*.jks
+*.keystore
+.env
+.env.*
+02-hub/data/
+02-hub/config/
+android/build/

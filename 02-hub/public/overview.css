@@ -1,0 +1,624 @@
+/* Shared black and silver palette. Status colors retain their meaning. */
+:root {
+  --bg: #090909;
+  --surface: #141a2230;
+  --control-bg: #080d141a;
+  --dialog-bg: #101720d9;
+  --surface-raised: #20283280;
+  --line: #444;
+  --text: #eee;
+  --muted: #aaa;
+  --accent: #ddd;
+  --track: #333;
+  --pattern: none;
+  --control-height: 30px;
+}
+html,
+body {
+  background-color: var(--bg);
+  background-image: none;
+}
+body .page {
+  max-width: 1120px;
+}
+body .brand-dots i,
+body .brand-dots i + i {
+  background: #ccc;
+  box-shadow: none;
+}
+body
+  :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) {
+  color: var(--text);
+  background-color: var(--control-bg);
+  border: 1px solid #555;
+  border-radius: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+}
+body :where(button:hover:not(:disabled)) {
+  border-color: #aaa;
+}
+body :where(input[type='checkbox'], input[type='radio']) {
+  accent-color: #ccc;
+}
+body :where(dialog) {
+  background: var(--dialog-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text);
+  border: 1px solid #666;
+  border-radius: 10px;
+  width: min(680px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+}
+body :where(dialog)::backdrop {
+  background: #000b;
+}
+body :where(textarea) {
+  line-height: 1.5;
+}
+body :where(pre) {
+  overflow: auto;
+  max-width: 100%;
+}
+body :where(fieldset) {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+.hub-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+.hub-tools a {
+  color: #ddd;
+  text-decoration: none;
+  border-bottom: 1px solid #666;
+  padding: 5px 0;
+}
+.hub-tools input {
+  flex: 1;
+  min-width: 140px;
+}
+.hub-order-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #444;
+  padding: 10px 0;
+}
+.hub-order-row label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hub-order-row a {
+  font-size: 0.8rem;
+}
+.hub-order-row button {
+  min-width: 38px;
+}
+.hub-table-scroll {
+  overflow: auto;
+  max-width: 100%;
+}
+.hub-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.hub-table th,
+.hub-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #444;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.hub-table td p {
+  margin-top: 5px;
+  font-size: 0.8rem;
+  color: #e9bc79;
+}
+.hub-search-result {
+  padding: 14px;
+  border: 1px solid #444;
+  border-radius: 10px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.hub-search-result > a {
+  display: block;
+  font-size: 1.1rem;
+  margin: 7px 0;
+}
+.hub-search-result p {
+  font-size: 0.9rem;
+  color: #aaa;
+  white-space: pre-wrap;
+}
+#hubState h2 {
+  margin: 20px 0 10px;
+}
+#hubSyncs p,
+#hubStateNote {
+  margin: 10px 0;
+}
+body .kb-column,
+body .rt-panel {
+  background: var(--surface);
+}
+
+@media (max-width: 600px) {
+  :root {
+    --control-height: 36px;
+  }
+  .hub-tools {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .header-bottom {
+    flex-wrap: wrap;
+  }
+  .header-bottom .prompt {
+    max-width: 48%;
+  }
+  .hub-order-row {
+    gap: 6px;
+  }
+  .hub-order-row label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .hub-table {
+    font-size: 0.8rem;
+    min-width: 460px;
+  }
+  body .modules-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body .module-card {
+    min-width: 0;
+  }
+  body :where(button) {
+    touch-action: manipulation;
+  }
+  body :where(dialog) {
+    max-height: calc(100dvh - 24px);
+  }
+  #kbForm .kb-tools button,
+  #rtConfig button {
+    min-height: var(--control-height);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+body .page .storage-upload,
+body .page .storage-toolbar button,
+body .page .storage-row button,
+body .page .storage-row a,
+body .page .projects-upload,
+body .page .projects-toolbar button,
+body .page .project-row button,
+body .page #copyInstall {
+  background: var(--button-bg);
+  border: 1px solid #555;
+  color: #eee;
+  border-radius: var(--button-radius);
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  body .page select,
+  body .page input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    min-height: var(--control-height);
+  }
+  body .page textarea {
+    font-size: 16px;
+  }
+  body .page input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  body .page select {
+    font-size: 16px;
+  }
+}
+
+.storage-row,
+.project-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 6px;
+  margin: 7px 0;
+}
+
+body .nexus-question {
+  width: min(480px, calc(100vw - 24px));
+  box-sizing: border-box;
+  padding: 20px;
+}
+.nexus-question label {
+  display: grid;
+  gap: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nexus-question input,
+.nexus-question textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+.nexus-question textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+.nexus-question-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+.nexus-question-actions button {
+  min-height: var(--control-height);
+}
+
+#hubHomeStatus,
+#hubSearchStatus,
+#hubStateStatus {
+  margin: 10px 0;
+  color: #bbb;
+}
+
+#hubSaveHome {
+  margin-top: 16px;
+}
+#hubHomeSettings {
+  padding-bottom: 4px;
+}
+.intro-settings {
+  max-width: none;
+  background: var(--surface);
+}
+
+body :where(button, input, select, textarea) {
+  font-family: var(--sans, system-ui);
+  font-size: 13px;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#hubSaveHome {
+  display: block;
+}
+#hubOrder {
+  margin-bottom: 16px;
+}
+
+:root {
+  --button-bg: transparent;
+  --button-hover: #c1d3e410;
+  --button-active: #c1d3e420;
+  --button-radius: 6px;
+  --button-padding: 3px 8px;
+  --button-font: 400 12px/1.35 var(--sans, system-ui);
+}
+body
+  :where(
+    button,
+    .install-btn,
+    .login-btn,
+    .storage-upload,
+    .projects-upload,
+    .content-upload,
+    .reader-upload,
+    .wave-button,
+    .chat-file,
+    .storage-row a
+  ) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-height);
+  max-width: 100%;
+  padding: var(--button-padding);
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  background: var(--button-bg);
+  color: var(--text);
+  font: var(--button-font);
+  text-decoration: none;
+  vertical-align: middle;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+body
+  :where(
+    button,
+    .install-btn,
+    .login-btn,
+    .storage-upload,
+    .projects-upload,
+    .content-upload,
+    .reader-upload,
+    .wave-button,
+    .chat-file,
+    .storage-row a
+  ):hover:not(:disabled) {
+  background: var(--button-hover);
+  border-color: var(--accent);
+}
+body :where(button):active:not(:disabled) {
+  background: var(--button-active);
+}
+body :where(button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+body :where(button):disabled {
+  cursor: default;
+}
+body .page :where(.dialog-close) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  line-height: 1;
+  flex: none;
+}
+body .page .hub-order-row button {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  flex: none;
+}
+:where(
+  .storage-toolbar,
+  .projects-toolbar,
+  .content-toolbar,
+  .reader-toolbar,
+  .cinema-toolbar,
+  .kb-tools,
+  .hub-tools
+) {
+  align-items: center;
+}
+body .page .project-row button {
+  margin-left: 0;
+}
+.project-row strong {
+  margin-right: auto;
+}
+@media (max-width: 600px) {
+  :root {
+    --control-height: 36px;
+  }
+  body .page .hub-order-row button {
+    width: 36px;
+    min-width: 36px;
+    min-height: 40px;
+  }
+  body .page :where(.dialog-close) {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+body [hidden] {
+  display: none !important;
+}
+
+select {
+  color-scheme: dark;
+}
+select option,
+select optgroup {
+  background: #101720;
+  color: var(--text);
+}
+
+html[data-perf-effect='blur'] *,
+html[data-perf-effect='blur'] *::before,
+html[data-perf-effect='blur'] *::after,
+html[data-perf-effect='blur'] dialog::backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-perf-effect='shadows'] *,
+html[data-perf-effect='shadows'] *::before,
+html[data-perf-effect='shadows'] *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+html[data-perf-effect='background'] .constellation,
+html[data-perf-effect='background'] body::before,
+html[data-perf-effect='background'] body::after {
+  display: none !important;
+}
+html[data-perf-effect='animation'] *,
+html[data-perf-effect='animation'] *::before,
+html[data-perf-effect='animation'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+#performancePanel {
+  margin: 18px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+#performanceResults {
+  max-height: 40dvh;
+  font-size: 11px;
+}
+
+:root {
+  --ui-font-size: 13px;
+  --ui-small-size: 12px;
+  --ui-title-size: 15px;
+  --ui-meta-size: 11px;
+  --card-padding: 10px;
+  --card-gap: 8px;
+}
+body .page > main {
+  font-family: var(--sans);
+  font-size: var(--ui-font-size);
+  line-height: 1.5;
+}
+body .page > main :is(h2, h3):not(.article-prose *, .reader-text *, .wave-hero *) {
+  font-family: var(--sans);
+  font-size: var(--ui-title-size);
+  line-height: 1.4;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+body .page > main h3:not(.article-prose *, .reader-text *) {
+  font-size: var(--ui-font-size);
+}
+body .page > main :is(.activity-card, .balance-panel, .chat-panel, .rt-panel) {
+  padding: var(--card-padding);
+  border-radius: 8px;
+}
+body .page > main :is(.activity-card, .balance-panel, .rt-panel) p {
+  margin: 6px 0;
+}
+body .page > main :is(.activity-grid, .balance-totals, .balance-accounts, .chat-settings-grid) {
+  gap: var(--card-gap);
+}
+body #chatComposer {
+  background: var(--surface);
+}
+body #chatPage #chatInput {
+  background: var(--control-bg);
+}
+
+body .page > main :is(.trophy-panel, .anime-panel, .pulse-panel, .signal-panel) {
+  padding: var(--card-padding);
+  border-radius: 8px;
+  background: var(--surface);
+}
+body .page > main :is(.pulse-stat h2, .balance-total h2) {
+  font-size: var(--ui-meta-size);
+  font-weight: 500;
+  margin: 0 0 6px;
+}
+body .page > main :is(.pulse-stat strong, .balance-total-grid strong, #rtCards h2) {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+body
+  .page
+  > main
+  :is(
+    .trophy-card strong,
+    .anime-details h2,
+    .reader-book strong,
+    .cinema-card strong,
+    .wave-card strong
+  ) {
+  font-size: var(--ui-font-size);
+}
+body
+  .page
+  > main
+  :is(.trophy-card small, .anime-card-meta, .reader-book small, .cinema-kind, .wave-card > span) {
+  font-size: var(--ui-meta-size);
+}
+body
+  .page
+  > main
+  :is(.trophy-panel, .anime-panel, .signal-panel, .chat-panel, .balance-panel, .rt-panel)
+  :is(label, p, summary) {
+  line-height: 1.5;
+}
+body .page dialog:not(#readerReading) {
+  font: var(--ui-font-size) / 1.5 var(--sans);
+}
+body .page dialog:not(#readerReading) h2 {
+  font-size: var(--ui-title-size);
+}
+body
+  .page
+  > main
+  :is(
+    .trophy-toolbar,
+    .anime-meta,
+    .pulse-toolbar,
+    .signal-title,
+    .balance-toolbar,
+    .projects-toolbar,
+    .storage-toolbar,
+    .kb-tools,
+    .cinema-toolbar
+  ) {
+  gap: 8px;
+}
+
+body .page :is(.trophy-sync-actions, .balance-pagination) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+}
+body .page .trophy-top .trophy-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+body .page :is(.trophy-sync-actions, .trophy-tabs, .balance-pagination) :is(a, button) {
+  flex: 0 0 auto;
+  width: auto;
+}
+body
+  .page
+  :is(
+    .signal-panel,
+    .trophy-panel,
+    .anime-panel,
+    .chat-panel,
+    .balance-panel,
+    .reader-settings,
+    #rtConfig
+  )
+  button:not(.dialog-close) {
+  justify-self: start;
+  align-self: flex-start;
+  width: auto;
+}
+body
+  .page
+  :is(
+    .content-toolbar,
+    .reader-toolbar,
+    .wave-toolbar,
+    .rt-toolbar,
+    .projects-toolbar,
+    .storage-toolbar,
+    .kb-tools
+  )
+  button:not(.dialog-close) {
+  flex-grow: 0;
+}
