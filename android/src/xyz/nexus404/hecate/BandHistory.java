@@ -11,6 +11,7 @@ final class BandHistory {
   int kind, page, count;
   boolean finished;
   int unknownSleep;
+  final Map<Integer, Integer> sleepTypes = new TreeMap<>();
 
   BandHistory(String device, long from, long until) {
     this.device = device;
@@ -168,9 +169,10 @@ final class BandHistory {
         throw new IllegalArgumentException("Некорректная длительность сна");
       if (end < Math.min(from, until - 2 * 86400000L) || end > until || start < 946684800000L)
         continue;
+      sleepTypes.put(raw, sleepTypes.getOrDefault(raw, 0) + 1);
       int stage = raw == 6 ? 4 : raw == 7 ? 5 : 0;
       if (stage == 0) unknownSleep++;
-      records.put(
+      JSONObject sleepRecord =
           record("sleep", start, end)
               .put("complete", false)
               .put(
@@ -180,7 +182,9 @@ final class BandHistory {
                           new JSONObject()
                               .put("start", start)
                               .put("end", end)
-                              .put("stage", stage))));
+                              .put("stage", stage)));
+      if (metricsEnabled) sleepRecord.put("deviceFields", new JSONObject().put("04", BandAuth.hex(new byte[] {(byte) raw})));
+      records.put(sleepRecord);
     }
   }
 }

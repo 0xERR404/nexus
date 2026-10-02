@@ -919,7 +919,11 @@ public final class BandService extends Service {
         if (SystemClock.elapsedRealtime() - filesStarted > 120000)
           throw new IllegalArgumentException("Лимит времени файловой истории; повтор через час");
         BandAuth.Request next;
-        if (tags.containsKey(-1)) next = files.data(tags.get(-1), sessionKey);
+        if (tags.containsKey(-2)) {
+          Map<Integer, byte[]> ack = BandSetup.response(sessionKey, BandProtocol.parseTlv(tags.get(-2)));
+          BandAuth.checkResult(ack);
+          next = null;
+        } else if (tags.containsKey(-1)) next = files.data(tags.get(-1), sessionKey);
         else {
           BandAuth.checkResult(tags);
           Map<Integer, byte[]> plain =
@@ -927,9 +931,13 @@ public final class BandService extends Service {
                   ? BandSetup.response(sessionKey, tags)
                   : BandAuth.decrypted(sessionKey, tags);
           next = files.accept(plain);
+          if (!files.capabilitiesReport.isEmpty()) {
+            note(files.capabilitiesReport);
+            files.capabilitiesReport = "";
+          }
         }
         if (next == null && !files.done) {
-          protocol.expect(0x2c, 5);
+          protocol.expect(files.dataService(), 5);
           main.removeCallbacks(timeout);
           main.postDelayed(timeout, 15000);
           return;
@@ -999,7 +1007,7 @@ public final class BandService extends Service {
                     || Vault.prefs(this).getBoolean("bandMetrics." + readTarget, false));
         boolean backfill =
             metrics && !Vault.prefs(this).getBoolean(keySlot + ".metricsBackfill", false);
-        history = new BandHistory(device, BandPolicy.historyFrom(until, last, backfill), until);
+        history = new BandHistory(device, BandPolicy.historyFrom(until, last, backfill || forceFiles), until);
         history.metricsEnabled = metrics;
         readingHistory = forceFiles || backfill || BandPolicy.due(until, last, BandPolicy.HISTORY);
         long stamp = until / 60000 * 60000;
@@ -1139,7 +1147,9 @@ public final class BandService extends Service {
           if (files.stage < 0) {
             fileRequest(
                 (files.stage == -1 || files.stage == -4) ? files.nextWorkout() : files.fileBegin());
-          } else if (files.stage == 2) {
+          } else if (files.stage == 0) {
+            fileRequest(files.settings());
+          } else if (files.stage >= 2) {
             fileRequest(files.next());
           } else filesDone("Расширенная история недоступна · код " + e.code);
         } catch (Exception failure) {
@@ -1209,7 +1219,12 @@ public final class BandService extends Service {
       if (e instanceof IllegalArgumentException && phase == READING_FILES && files != null) {
         historyIncomplete = true;
         files.records = new JSONArray();
-        filesDone("Расширенные данные пропущены: " + message);
+        note("Расширенные данные пропущены: " + message);
+        try {
+          if (files.stage == 0) fileRequest(files.settings());
+          else if (files.stage >= 2) fileRequest(files.next());
+          else filesDone("Расширенные данные пропущены: " + message);
+        } catch (Exception failure) { finish("Не удалось продолжить расширенную историю"); }
         return;
       }
       if (e instanceof IllegalArgumentException && phase == SENDING_NOTICE) {
@@ -1316,7 +1331,7 @@ public final class BandService extends Service {
   void sendFileRequest(BandAuth.Request next) throws Exception {
     if (files.rawRequest()) request(next);
     else secure(next);
-    if (files.stage == 5) protocol.expect(0x2c, 5);
+    if (files.receiving()) protocol.expect(files.dataService(), 5);
   }
 
   void filesDone(String message) {
@@ -1363,7 +1378,7 @@ public final class BandService extends Service {
                   if (next == null) {
                     note(
                         "Доступная история прочитана. Неизвестных стадий сна: "
-                            + history.unknownSleep);
+                            + history.unknownSleep + " · типы 07/0D: " + history.sleepTypes);
                     completed();
                   } else
                     try {

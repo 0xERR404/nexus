@@ -12,6 +12,9 @@ final class BandFiles {
   int stage, kind = -1, fileId, size, position, windowEnd, maxBlock = 1024;
   boolean noEncrypt, done;
   private boolean sleepSupported, stressSupported;
+  private boolean sleepNewSync, stressNewSync;
+  BandLegacyFile legacy;
+  String capabilitiesReport = "";
   private byte[] data, hash;
   final ArrayDeque<Integer> workouts = new ArrayDeque<>();
   int workout, workoutPage, workoutCount;
@@ -56,6 +59,14 @@ final class BandFiles {
         "Возможности файлового обмена · 2C");
   }
 
+  BandAuth.Request settings() {
+    stage = 1;
+    return request(1, 0x31,
+        BandAuth.tlv(1, new byte[0], 2, new byte[0], 3, new byte[0],
+            4, new byte[0], 5, new byte[0], 6, new byte[0]),
+        "Параметры синхронизации файлов · 01/31");
+  }
+
   static boolean[] capabilities(Map<Integer, byte[]> tags, int service, int count) {
     byte[] b = tags.get(129);
     if (b == null) throw new IllegalArgumentException("Нет возможностей файлового обмена");
@@ -74,6 +85,7 @@ final class BandFiles {
 
   BandAuth.Request accept(Map<Integer, byte[]> tags) throws Exception {
     BandAuth.checkResult(tags);
+    if (legacy != null) return legacy.accept(tags);
     if (stage == -3) {
       boolean[] caps = capabilities(tags, 0x17, history.metricsEnabled ? 3 : 2);
       detailSupported = history.metricsEnabled && caps[2];
@@ -171,45 +183,30 @@ final class BandFiles {
       return nextWorkoutPage();
     }
     if (stage == 0) {
-      for (boolean supported : capabilities(tags, 0x2c, 6))
-        if (!supported) {
-          fileSupported = false;
-          done = true;
-          status = "Файловый протокол 2C не подтверждён; базовая история доступна";
-          return null;
-        }
-      fileSupported = true;
-      stage = 1;
-      return request(
-          1,
-          0x31,
-          BandAuth.tlv(
-              1,
-              new byte[0],
-              2,
-              new byte[0],
-              3,
-              new byte[0],
-              4,
-              new byte[0],
-              5,
-              new byte[0],
-              6,
-              new byte[0]),
-          "Параметры синхронизации файлов · 01/31");
+      boolean[] caps = capabilities(tags, 0x2c, 6);
+      StringBuilder report = new StringBuilder("Ответ 01/03 для 2C:");
+      for (int i = 0; i < caps.length; i++) report.append(" ").append(i + 1).append("=").append(caps[i] ? 1 : 0);
+      capabilitiesReport = report.toString();
+      // File routing is advertised by 01/31, not the generic command bitmap.
+      return settings();
     }
     if (stage == 1) {
       int flags = BandProtocol.number(tags, 2);
       if (flags < 0) throw new IllegalArgumentException("Нет параметров синхронизации файлов");
-      sleepSupported = dictSleep;
-      stressSupported = stressEnabled && (flags & 4) != 0;
+      sleepNewSync = (flags & 2) != 0;
+      stressNewSync = (flags & 4) != 0;
+      sleepSupported = true;
+      stressSupported = stressEnabled;
+      fileSupported = true;
+      capabilitiesReport = "01/31: " + flags + " · сон=" + (dictSleep || sleepNewSync ? "2C" : "0A")
+          + " · стресс=" + (stressNewSync ? "2C" : "0A") + " · словарь=" + dictSleep;
       return next();
     }
     if (stage == 2) {
       byte[] name = tags.get(1);
       if (name == null
           || !Arrays.equals(name, BandAuth.utf(filename()))
-          || BandProtocol.number(tags, 2) != (kind == 0 ? 0x16 : 0x10))
+          || BandProtocol.number(tags, 2) != fileType())
         throw new IllegalArgumentException("Браслет вернул другой файл");
       fileId = (int) BandHistory.uint(tags.get(3), 1);
       long length = BandHistory.uint(tags.get(4), 4);
@@ -296,10 +293,16 @@ final class BandFiles {
   }
 
   String filename() {
-    return kind == 0 ? "sequence_data" : "rrisqi_data.bin";
+    return kind == 0 ? (dictSleep ? "sequence_data" : "sleep_state.bin") : "rrisqi_data.bin";
   }
 
+  int fileType() { return kind == 0 ? (dictSleep ? 0x16 : 0x0e) : 0x10; }
+
+  int dataService() { return legacy == null ? 0x2c : 0x0a; }
+  boolean receiving() { return legacy == null ? stage == 5 : legacy.receiving(); }
+
   BandAuth.Request next() {
+    legacy = null;
     data = null;
     hash = null;
     kind++;
@@ -315,23 +318,27 @@ final class BandFiles {
       return null;
     }
     stage = 2;
+    if ((kind == 0 && !dictSleep && !sleepNewSync) || (kind == 1 && !stressNewSync)) {
+      legacy = new BandLegacyFile(this);
+      return legacy.begin();
+    }
     byte[] fields =
         BandAuth.tlv(
             1,
             BandAuth.utf(filename()),
             2,
-            new byte[] {(byte) (kind == 0 ? 0x16 : 0x10)},
+            new byte[] {(byte) fileType()},
             5,
             BandHistory.integer((history.until - (kind == 0 ? 3 : 7) * 86400000L) / 1000),
             6,
             BandHistory.integer(history.until / 1000));
-    if (kind == 0) fields = BandAuth.concat(fields, BandAuth.tlv(12, BandHistory.integer(700013)));
+    if (kind == 0 && dictSleep) fields = BandAuth.concat(fields, BandAuth.tlv(12, BandHistory.integer(700013)));
     return request(
         0x2c,
         1,
         fields,
         kind == 0
-            ? "Чтение подробного сна · sequence_data"
+            ? "Чтение сна · " + filename()
             : "Чтение истории стресса · rrisqi_data.bin");
   }
 
@@ -346,11 +353,12 @@ final class BandFiles {
             BandHistory.integer(position),
             3,
             BandHistory.integer(windowEnd - position));
-    if (kind == 0) f = BandAuth.concat(f, BandAuth.tlv(4, BandHistory.integer(700013)));
+    if (kind == 0 && dictSleep) f = BandAuth.concat(f, BandAuth.tlv(4, BandHistory.integer(700013)));
     return request(0x2c, 4, f, "Файл истории · " + position + "/" + size + " байт");
   }
 
   BandAuth.Request data(byte[] packet, byte[] key) throws Exception {
+    if (legacy != null) return legacy.data(packet, key);
     if (stage != 5) throw new IllegalArgumentException("Блок вне передачи файла");
     byte[] raw = packet;
     if (packet.length >= 3 && packet[0] == 124 && packet[1] == 1 && packet[2] == 1)
@@ -377,7 +385,7 @@ final class BandFiles {
         size == 0
             ? new JSONArray()
             : kind == 0
-                ? BandDetails.sleep(data, history, bedTime)
+                ? (dictSleep ? BandDetails.sleep(data, history, bedTime) : BandLegacyFile.sleepState(data, history))
                 : BandDetails.stress(data, history);
     if (records.length() + parsed.length() > 10000)
       throw new IllegalArgumentException("Слишком много записей расширенной истории");
@@ -391,10 +399,10 @@ final class BandFiles {
   }
 
   boolean rawRequest() {
-    return stage == 5 && noEncrypt;
+    return legacy == null && stage == 5 && noEncrypt;
   }
 
   boolean noReply() {
-    return stage == 6;
+    return legacy == null ? stage == 6 : legacy.complete;
   }
 }

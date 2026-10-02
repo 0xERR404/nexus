@@ -173,6 +173,12 @@ final class BandProtocol {
         slices = null;
       }
       if (body.length < 2) throw new IllegalArgumentException("Нет команды в ответе");
+      if ((expectedService == 0x0a || expectedService == 0x2c) && expectedCommand == 5
+          && (body[0] & 255) == expectedService && body[1] == 4) {
+        Map<Integer, byte[]> ack = new LinkedHashMap<>();
+        ack.put(-2, Arrays.copyOfRange(body, 2, body.length));
+        return ack;
+      }
       if ((body[0] & 255) != expectedService || (body[1] & 255) != expectedCommand) {
         if (unsolicited != null
             && (body[0] & 255) == 0x25
@@ -181,7 +187,7 @@ final class BandProtocol {
               body[0] & 255, body[1] & 255, parseTlv(Arrays.copyOfRange(body, 2, body.length)));
         continue;
       }
-      if (expectedService == 0x2c && expectedCommand == 5) {
+      if ((expectedService == 0x2c || expectedService == 0x0a) && expectedCommand == 5) {
         Map<Integer, byte[]> raw = new LinkedHashMap<>();
         raw.put(-1, Arrays.copyOfRange(body, 2, body.length));
         return raw;

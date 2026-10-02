@@ -172,3 +172,11 @@ test('all received types are available in the authenticated record viewer', asyn
  assert.equal(groups.length,9);
  for(const group of groups){group.open=true;group.ontoggle();const record=group.children[1].children[0];record.open=true;record.ontoggle();assert.ok(record.children.length>1);}
 });
+
+test('Huawei sleep raw types survive export without becoming recognized sleep', t => {
+ const {store,dev}=fixture(t);
+ store.ingest(dev,{records:[row('unknown',{type:'sleep',complete:false,stages:[{start:base+hour,end:base+2*hour,stage:0}],deviceFields:{'04':'01'}})],deleted:[]});
+ assert.equal(store.exportDay(day)[0].deviceFields['04'],'01');
+ assert.equal(store.daily(day).sleepMinutes,null);
+ assert.throws(()=>store.ingest(dev,{records:[row('bad',{type:'sleep',complete:false,deviceFields:{'04':'not-hex'}})],deleted:[]}));
+});

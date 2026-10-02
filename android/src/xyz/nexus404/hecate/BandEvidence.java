@@ -42,7 +42,7 @@ final class BandEvidence {
       boolean ok = i == 0 || p.getBoolean("bandEvidence." + group + ".ok", false);
       text.append(NAMES[i]).append(": ");
       boolean unsupported = (i == 7 && p.contains("bandEvidence.workout.supported") && !p.getBoolean("bandEvidence.workout.supported", true)) || (i == 6 && p.contains("bandEvidence.files.supported") && !p.getBoolean("bandEvidence.files.supported", true));
-      if (unsupported) text.append("нужный протокол не поддержан браслетом · ");
+      if (unsupported) text.append("выбранный способ чтения не подтверждён · ");
       if (received > 0) text.append("сохранено на телефоне ").append(time(received));
       else text.append(attempted == 0 ? "ещё не проверено" : ok ? "в прочитанном окне нет записей" : "чтение не завершено");
       if (attempted > received && !ok) text.append(" · последняя попытка не завершена");
@@ -72,6 +72,7 @@ final class BandEvidence {
       .append("\n").append(BandService.linkState(c)).append("\n")
       .append(BandService.powerState(c)).append("\n").append(delivery(c))
       .append("\n").append(data(c));
+    out.append("\nРасширенная история: ").append(p.getString("bandFilesStatus", "ещё не проверено"));
     out.append("\nСлужба: ").append(BandService.instance != null ? "работает" : "не работает")
       .append("\nНеизвестных стадий сна: ").append(p.getInt("bandUnknownSleep", 0))
       .append("\nСлушатель уведомлений: ").append(BankListener.connected() ? "есть" : "нет");

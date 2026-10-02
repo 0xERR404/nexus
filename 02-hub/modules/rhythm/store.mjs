@@ -354,7 +354,7 @@ export class Rhythm {
             data.dictionary[key] = value;
           }
         }
-        if (['activity', 'stress'].includes(r.type) && r.deviceFields !== undefined) {
+        if (['activity', 'stress', 'sleep'].includes(r.type) && r.deviceFields !== undefined) {
           if (
             !r.deviceFields ||
             typeof r.deviceFields !== 'object' ||
