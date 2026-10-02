@@ -88,6 +88,7 @@ public final class BandUpload extends JobService {
       if (out != null) file.failWrite(out);
       throw e;
     }
+    BandEvidence.saved(c, records);
     status(c, "В очереди пакетов: " + files(c).length);
     schedule(c, false);
   }
@@ -112,16 +113,31 @@ public final class BandUpload extends JobService {
     }
   }
 
+  static void manual(Context context) {
+    Context c = context.getApplicationContext();
+    schedule(c, false);
+    new Thread(() -> flush(c, new HubHttp.Call()), "band-manual-upload").start();
+  }
+
+  static void progress(Context c, int stage) {
+    Vault.prefs(c).edit().putInt("bandUploadStage", stage).apply();
+  }
+
   static void flush(Context c, HubHttp.Call call) {
     if (!running.compareAndSet(false, true)) return;
+    Vault.prefs(c).edit().putLong("bandUploadAttempt", System.currentTimeMillis())
+        .putInt("bandUploadStage", 1).putInt("bandUploadError", 0)
+        .putInt("bandUploadHttp", 0).apply();
+    status(c, "Отправка запущена");
     try {
       JSONObject cfg = config(c);
-      if (cfg == null) return;
+      if (cfg == null) throw new IOException("Подключение Асклепия не настроено");
       String destination = target(cfg);
       String capability = "bandExtended." + destination;
       long checked = Vault.prefs(c).getLong(capability + ".at", 0);
       if (!Vault.prefs(c).contains("bandMetrics." + destination)
           || BandPolicy.due(System.currentTimeMillis(), checked, 3600000L)) {
+        progress(c, 2);
         JSONObject hello = call.send(cfg, new JSONObject().put("type", "hello"));
         if (!"ready".equals(hello.optString("state")))
           throw new IOException("Хаб не подтвердил готовность приёмника");
@@ -136,6 +152,7 @@ public final class BandUpload extends JobService {
       int sent = 0;
       for (File f : files(c)) {
         if (call.stopped || System.currentTimeMillis() > deadline) break;
+        progress(c, 3);
         JSONObject item;
         synchronized (BandUpload.class) {
           try (InputStream in = new AtomicFile(f).openRead()) {
@@ -146,7 +163,10 @@ public final class BandUpload extends JobService {
               || !destination.equals(target(config(c))))
             throw new IOException("Адрес очереди отличается; отправка остановлена");
         }
-        JSONObject body = item.getJSONObject("body"), result = call.send(cfg, body);
+        JSONObject body = item.getJSONObject("body");
+        progress(c, 4);
+        JSONObject result = call.send(cfg, body);
+        progress(c, 5);
         if (result.optInt("accepted", -1) != body.getJSONArray("records").length()
             || result.optInt("deleted", -1) != 0)
           throw new IOException("Хаб не подтвердил весь пакет");
@@ -157,10 +177,13 @@ public final class BandUpload extends JobService {
         Vault.prefs(c).edit().putLong("bandUploaded", System.currentTimeMillis()).apply();
         status(c, "Хаб подтвердил записей: " + sent + " · пакетов осталось: " + files(c).length);
       }
+      progress(c, files(c).length == 0 ? 6 : 7);
+      if (files(c).length == 0) status(c, "Очередь отправлена · ожидающих пакетов нет");
     } catch (Exception e) {
-      if (!call.stopped)
-        status(c, e instanceof IOException ? e.getMessage() : "Ошибка отправки; очередь сохранена");
+      Vault.prefs(c).edit().putInt("bandUploadError", call.stopped ? 7 : UploadDiagnostic.error(e)).apply();
+      status(c, UploadDiagnostic.reason(call.stopped ? 7 : UploadDiagnostic.error(e)) + " · очередь сохранена");
     } finally {
+      Vault.prefs(c).edit().putInt("bandUploadHttp", call.responseCode).apply();
       running.set(false);
       schedule(c, false);
     }

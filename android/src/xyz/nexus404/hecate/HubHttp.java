@@ -29,6 +29,7 @@ final class HubHttp {
 
   static final class Call {
     volatile boolean stopped;
+    volatile int responseCode;
     private volatile HttpsURLConnection connection;
 
     void cancel() {
@@ -38,6 +39,7 @@ final class HubHttp {
     }
 
     Result post(JSONObject cfg, String route, JSONObject body) throws Exception {
+      responseCode = 0;
       if (stopped) throw new InterruptedException();
       URL url = new URL(cfg.getString("origin") + route);
       if (!url.getProtocol().equals("https")) throw new IOException("Нужен HTTPS");
@@ -59,6 +61,7 @@ final class HubHttp {
           out.write(bytes);
         }
         int code = current.getResponseCode();
+        responseCode = code;
         JSONObject result = new JSONObject();
         if (code == 200) {
           try (InputStream in = current.getInputStream();

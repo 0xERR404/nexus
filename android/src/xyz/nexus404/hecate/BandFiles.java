@@ -16,6 +16,7 @@ final class BandFiles {
   final ArrayDeque<Integer> workouts = new ArrayDeque<>();
   int workout, workoutPage, workoutCount;
   boolean detailSupported;
+  Boolean workoutSupported, fileSupported;
   final Map<Integer, Integer> pageCounts = new HashMap<>();
   JSONArray records = new JSONArray();
   String status = "Проверка расширенной истории";
@@ -76,6 +77,7 @@ final class BandFiles {
     if (stage == -3) {
       boolean[] caps = capabilities(tags, 0x17, history.metricsEnabled ? 3 : 2);
       detailSupported = history.metricsEnabled && caps[2];
+      workoutSupported = caps[0] && caps[1];
       if (!caps[0] || !caps[1]) return fileBegin();
       stage = -2;
       return request(
@@ -171,10 +173,12 @@ final class BandFiles {
     if (stage == 0) {
       for (boolean supported : capabilities(tags, 0x2c, 6))
         if (!supported) {
+          fileSupported = false;
           done = true;
           status = "Файловый протокол 2C не подтверждён; базовая история доступна";
           return null;
         }
+      fileSupported = true;
       stage = 1;
       return request(
           1,

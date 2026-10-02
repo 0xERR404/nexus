@@ -24,6 +24,7 @@
 | APK: Bluetooth lifecycle | `BandService`, `BandPolicy`; UI не владеет соединением |
 | APK: протокол | `BandProtocol` → `BandAuth` → `BandSetup` → `BandHistory`/`BandFiles`/`BandDetails`/`BandWorkout` |
 | APK: медиасессии и уведомления | `BandMedia`, `BandNotices` |
+| APK: состояния и обновление | `BandEvidence`, `AppUpdate`; `src/companion.mjs`, метаданные `companion.json` генерирует сборщик |
 | APK: доставка | `HubHttp`, `BandUpload`; получатель `/api/rhythm/sync` |
 | Копии и восстановление | `tools/backup/`, тест `tests/backup.test.mjs` |
 
@@ -60,3 +61,5 @@ JVM runner каждый раз компилирует все Java-файлы в 
 APK собирается в `02-hub/modules/balance/companion.apk`; этот файл должен побайтно совпадать с отдельным APK. Использовать прежний сертификат; не создавать другой ключ для удобства. Ключ и пароль не входят в Git/ZIP.
 
 Архив — полный проект без внешней папки, `.git`, `node_modules`, серверных баз/секретов и временных сборок. Включать `02-hub/Dockerfile.dockerignore`, исходники Android и тесты. Публикация в GitHub и установка на VPS — отдельные действия; локальная сборка их не выполняет. Не возвращать удалённый пользователем `.github`.
+
+Текущий статус: хаб 0.35.76, APK 0.1.40/code41 собран и подписан прежним сертификатом; 12 JVM-наборов пройдены. companion.json создан сборщиком из нового APK. Реальную доставку очереди и радио проверяет пользователь на телефоне.

@@ -174,7 +174,12 @@ test('structured APK operations are validated, deduplicated and retain no origin
 test('APK handshake validates token and reports only allowed source without financial data',async t=>{
  const f=fixture(t),module=createModule(f.file,{now:()=>now});t.after(()=>module.close());
  const result=await module.publicHandle({request:request({type:'hello'},{authorization:f.header})});
- assert.deepEqual(await result.json(),{state:'ready',package:'ru.example.bank',name:'Телефон',sms:true,operationKinds:['expense','income','refund']});
+ const {companion, ...hello}=await result.json();
+ assert.deepEqual(hello,{state:'ready',package:'ru.example.bank',name:'Телефон',sms:true,operationKinds:['expense','income','refund']});
+ const {createHash}=await import('node:crypto');
+ assert.equal(companion.sha256, createHash('sha256').update(fs.readFileSync(new URL('../02-hub/modules/balance/companion.apk', import.meta.url))).digest('hex'));
+ assert.ok(Number.isSafeInteger(companion.code) && companion.code > 0);
+ assert.match(companion.version, /^\d+\.\d+\.\d+$/);
  f.bank.revoke(f.source.id);assert.equal((await module.publicHandle({request:request({type:'hello'},{authorization:f.header})})).status,401);
 });
 

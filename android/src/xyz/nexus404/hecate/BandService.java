@@ -32,6 +32,7 @@ public final class BandService extends Service {
   private BandProtocol protocol;
   private BandAuth auth;
   private BandHistory history;
+  private Boolean pendingExtendedEvidence;
   private BandSetup setup;
   private BandFiles files;
   private long filesStarted;
@@ -408,8 +409,15 @@ public final class BandService extends Service {
   }
 
   void completed() {
-    if (readingHistory && history.metricsEnabled)
+    if (BandPolicy.advanceHistory(readingHistory, history.finished, historyIncomplete) && history.metricsEnabled)
       Vault.prefs(this).edit().putBoolean(keySlot + ".metricsBackfill", true).apply();
+    if (pendingExtendedEvidence != null) {
+      BandEvidence.attempt(this, true, pendingExtendedEvidence);
+      pendingExtendedEvidence = null;
+    } else if (readingHistory) {
+      BandEvidence.attempt(this, false, history.finished && !historyIncomplete);
+      Vault.prefs(this).edit().putInt("bandUnknownSleep", history.unknownSleep).apply();
+    }
     main.removeCallbacks(timeout);
     phase = IDLE;
     protocol.expect(-1, -1);
@@ -424,7 +432,7 @@ public final class BandService extends Service {
         .putLong("bandReadAt", System.currentTimeMillis())
         .putLong(
             keySlot + ".readAt",
-            readingHistory ? history.until : Vault.prefs(this).getLong(keySlot + ".readAt", 0))
+            BandPolicy.advanceHistory(readingHistory, history.finished, historyIncomplete) ? history.until : Vault.prefs(this).getLong(keySlot + ".readAt", 0))
         .apply();
     state("Подключён · данные обновляются автоматически");
     scheduleAlarm(BandPolicy.POLL);
@@ -552,6 +560,9 @@ public final class BandService extends Service {
   }
 
   void pause(String s) {
+    if (phase == READING_FILES) BandEvidence.attempt(this, true, false);
+    else if (phase == READING_HISTORY || phase == READING_SNAPSHOT)
+      BandEvidence.attempt(this, false, false);
     note(s);
     Vault.prefs(this).edit().putBoolean("bandEnabled", false).apply();
     state(s + " · открой Гекату");
@@ -563,7 +574,10 @@ public final class BandService extends Service {
   }
 
   void finish(String s) {
+    if (phase == READING_FILES) BandEvidence.attempt(this, true, false);
+    else if (phase == READING_HISTORY) BandEvidence.attempt(this, false, false);
     BandUpload.schedule(this, true);
+    Vault.prefs(this).edit().putInt("bandFailurePhase", phase).putLong("bandFailureAt", System.currentTimeMillis()).apply();
     if (phase == READING_FILES)
       Vault.prefs(this)
           .edit()
@@ -978,10 +992,6 @@ public final class BandService extends Service {
                 .toLowerCase(java.util.Locale.ROOT);
         if (!configured) throw new IllegalStateException("Настройка подключения не завершена");
         long last = Vault.prefs(this).getLong(keySlot + ".readAt", 0);
-        long from =
-            last > 0 && last <= until
-                ? Math.max(until - 7 * 86400000L, last - 30 * 60000L)
-                : until - 7 * 86400000L;
         JSONObject cfg = BandUpload.config(this);
         boolean metrics =
             cfg != null
@@ -989,7 +999,7 @@ public final class BandService extends Service {
                     || Vault.prefs(this).getBoolean("bandMetrics." + readTarget, false));
         boolean backfill =
             metrics && !Vault.prefs(this).getBoolean(keySlot + ".metricsBackfill", false);
-        history = new BandHistory(device, backfill ? until - 7 * 86400000L : from, until);
+        history = new BandHistory(device, BandPolicy.historyFrom(until, last, backfill), until);
         history.metricsEnabled = metrics;
         readingHistory = forceFiles || backfill || BandPolicy.due(until, last, BandPolicy.HISTORY);
         long stamp = until / 60000 * 60000;
@@ -1117,6 +1127,7 @@ public final class BandService extends Service {
       note("Запрос SecurityNegotiation · режим 4…");
       send(BandProtocol.negotiation(identityBytes));
     } catch (BandAuth.RemoteError e) {
+      Vault.prefs(this).edit().putLong("bandRemoteError", e.code).putLong("bandRemoteErrorAt", System.currentTimeMillis()).apply();
       if (phase == READING_FILES) {
         historyIncomplete = true;
         note("Расширенная история отклонена · " + e.code);
@@ -1310,6 +1321,9 @@ public final class BandService extends Service {
 
   void filesDone(String message) {
     JSONArray records = files.records;
+    if (files.workoutSupported != null) Vault.prefs(this).edit().putBoolean("bandEvidence.workout.supported", files.workoutSupported).apply();
+    if (files.fileSupported != null) Vault.prefs(this).edit().putBoolean("bandEvidence.files.supported", files.fileSupported).apply();
+    pendingExtendedEvidence = !historyIncomplete && files.done;
     files = null;
     note(message);
     Vault.prefs(this).edit().putString("bandFilesStatus", message).apply();
@@ -1375,6 +1389,7 @@ public final class BandService extends Service {
   }
 
   void close() {
+    pendingExtendedEvidence = null;
     files = null;
     pendingBond = null;
     main.removeCallbacks(bondTimeout);

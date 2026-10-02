@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
   private Button connect, pause;
   private String bank = "";
   private boolean working;
+  private AppUpdate updates;
 
   private int dp(int value) {
     return Math.round(value * getResources().getDisplayMetrics().density);
@@ -54,6 +55,18 @@ public final class MainActivity extends Activity {
     setContentView(scroll);
     label("NEXUS404", 21, Color.WHITE).setTypeface(android.graphics.Typeface.MONOSPACE);
     label("ГЕКАТА · деньги и браслет · " + Vault.version(this), 11, 0xff9ba8b9);
+    LinearLayout home = layout;
+    LinearLayout updatePanel = new LinearLayout(this);
+    updatePanel.setOrientation(LinearLayout.VERTICAL);
+    updatePanel.setVisibility(View.GONE);
+    action("Версия и обновление", () -> updatePanel.setVisibility(updatePanel.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
+    home.addView(updatePanel);
+    layout = updatePanel;
+    TextView versionStatus = label("Установлена " + Vault.version(this), 12, 0xff9ba8b9);
+    updates = new AppUpdate(this, versionStatus);
+    action("Проверить обновление APK", updates::check);
+    action("Скачать обновление", updates::download);
+    layout = home;
     bandPanel();
     LinearLayout root = layout;
     layout = card(root);
@@ -195,6 +208,7 @@ public final class MainActivity extends Activity {
 
   protected void onStop() {
     Vault.prefs(this).unregisterOnSharedPreferenceChangeListener(changes);
+    if (updates != null) updates.stop();
     super.onStop();
   }
 

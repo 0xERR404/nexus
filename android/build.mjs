@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -115,7 +116,13 @@ try {
     aligned
   ]);
   run(path.join(tools, 'apksigner'), ['verify', '--verbose', output]);
-  console.log(output + ' · ' + fs.statSync(output).size + ' байт');
+  const manifest = fs.readFileSync(path.join(root, 'AndroidManifest.xml'), 'utf8');
+  fs.writeFileSync(output.replace(/\.apk$/, '.json'), JSON.stringify({
+    version: manifest.match(/android:versionName="([^"]+)"/)[1],
+    code: Number(manifest.match(/android:versionCode="(\d+)"/)[1]),
+    sha256: createHash('sha256').update(fs.readFileSync(output)).digest('hex')
+  }) + '\n');
+  console.log(output + ' · '  + fs.statSync(output).size + ' байт');
 } finally {
   fs.rmSync(temp, {recursive: true, force: true});
 }

@@ -20,7 +20,7 @@ public final class BandActivity extends Activity {
   private LinearLayout layout, devices;
   private TextView status, feedback, bridgeStatus;
   private boolean scanning, connectingServer, rebindRequested, pendingRenew, connectionStarting;
-  private TextView uploadStatus, connectionStatus;
+  private TextView uploadStatus, connectionStatus, dataStatus;
   private EditText hubOrigin, hubKey;
   private HubHttp.Call uploadCall;
   private final StringBuilder report = new StringBuilder();
@@ -58,15 +58,19 @@ public final class BandActivity extends Activity {
     serverSettings();
     connectionStatus = text("", 13);
     feedback = text("", 12);
+    dataStatus = text("", 12);
+    dataStatus.setVisibility(android.view.View.GONE);
+    button(layout, "Полученные данные", () -> dataStatus.setVisibility(dataStatus.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE));
     button(layout, "Подключить", this::connectSaved);
     button(
         layout,
         "Прочитать сейчас",
         () -> {
           try {
-            if (BandService.enabled(this))
+            if (BandService.enabled(this)) {
               startForegroundService(new Intent(this, BandService.class).setAction("read"));
-            else note("Сначала подключи браслет");
+              note("Запрос чтения передан службе · состояние связи показано выше");
+            } else note("Сначала подключи браслет");
           } catch (RuntimeException e) {
             note("Android не разрешил запуск связи");
           }
@@ -87,14 +91,10 @@ public final class BandActivity extends Activity {
                     : android.view.View.GONE));
     button(
         layout,
-        "Скопировать журнал",
+        "Скопировать безопасный отчёт",
         () -> {
-          if (report.length() == 0) {
-            note("Сначала выполни проверку.");
-            return;
-          }
           ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
-              .setPrimaryClip(ClipData.newPlainText("Band 11", report.toString()));
+              .setPrimaryClip(ClipData.newPlainText("Band 11", BandEvidence.report(this)));
           Toast.makeText(this, "Диагностика скопирована", Toast.LENGTH_SHORT).show();
         });
     button(
@@ -467,7 +467,8 @@ public final class BandActivity extends Activity {
         settings,
         "Повторить отправку данных",
         () -> {
-          BandUpload.schedule(this, true);
+          BandUpload.manual(this);
+          note("Отправка запрошена · результат появится в статусе и безопасном отчёте");
           refreshUpload();
         });
     uploadStatus = text("", 12);
@@ -483,6 +484,7 @@ public final class BandActivity extends Activity {
   }
 
   void refreshUpload() {
+    if (dataStatus != null) dataStatus.setText(BandEvidence.data(this));
     if (bridgeStatus != null)
       bridgeStatus.setText(
           Vault.prefs(this).getString("bandMediaStatus", "")
@@ -491,19 +493,9 @@ public final class BandActivity extends Activity {
               + "\n"
               + Vault.prefs(this).getString("bandFilesStatus", ""));
     if (connectionStatus != null) {
-      long last = Vault.prefs(this).getLong("bandReadAt", 0);
-      String value =
-          BandService.enabled(this) && BandService.instance == null
-              ? "Служба не работает · нажми «Прочитать сейчас»"
-              : Vault.prefs(this).getString("bandState", "Связь не запущена");
-      connectionStatus.setText(
-          value
-              + (last > 0
-                  ? "\nОбновлено: "
-                      + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
-                          .format(new Date(last))
-                  : ""));
+      connectionStatus.setText(BandService.linkState(this) + "\n" + Vault.prefs(this).getString("bandState", "Связь не запущена") + "\n" + BandEvidence.delivery(this));
     }
+
     if (status != null) {
       String saved = Vault.prefs(this).getString("bandReport", "");
       if (!saved.isEmpty()) {

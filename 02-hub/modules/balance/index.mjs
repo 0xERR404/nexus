@@ -1,3 +1,4 @@
+import {companion} from '../../src/companion.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -64,6 +65,7 @@ export function createModule(
           const source = inbox().authenticate(request.headers.authorization);
           return Response.json({
             state: 'ready',
+            companion: companion(),
             package: source.package,
             name: source.name,
             sms: true,
@@ -109,7 +111,7 @@ export function createModule(
             return new Response(request.method === 'HEAD' ? null : apk, {
               headers: {
                 'Content-Type': 'application/vnd.android.package-archive',
-                'Content-Disposition': 'attachment; filename="nexus404-hecate-0.1.38.apk"',
+                'Content-Disposition': `attachment; filename="nexus404-hecate-${companion()?.version ?? 'download'}.apk"`,
                 'Content-Length': String(apk.length),
                 'Cache-Control': 'private, no-store',
                 'X-Checksum-SHA256': createHash('sha256').update(apk).digest('hex')

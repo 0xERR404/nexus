@@ -7,6 +7,15 @@ final class BandPolicy {
     return last <= 0 || now < last || now - last >= interval;
   }
 
+  static long historyFrom(long now, long last, boolean backfill) {
+    long earliest = now - 7 * 86400000L;
+    return !backfill && last > 0 && last <= now ? Math.max(earliest, last - 30 * 60000L) : earliest;
+  }
+
+  static boolean advanceHistory(boolean reading, boolean finished, boolean incomplete) {
+    return reading && finished && !incomplete;
+  }
+
   static long retry(int failures) {
     return new long[] {10000, 30000, 60000, 120000, 300000, 900000}
         [Math.max(0, Math.min(5, failures - 1))];

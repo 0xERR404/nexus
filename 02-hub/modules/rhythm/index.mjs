@@ -1,3 +1,4 @@
+import {companion} from '../../src/companion.mjs';
 import {readJSON} from '../../src/input.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +64,7 @@ export function createModule(directory, options = {}) {
         if (data.type === 'hello')
           return Response.json({
             state: 'ready',
+            companion: companion(),
             name: device.name,
             format: 'json',
             maxRecords: 500,
