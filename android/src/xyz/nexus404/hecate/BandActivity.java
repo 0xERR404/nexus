@@ -20,7 +20,7 @@ public final class BandActivity extends Activity {
   private LinearLayout layout, devices;
   private TextView status, feedback, bridgeStatus;
   private boolean scanning, connectingServer, rebindRequested, pendingRenew, connectionStarting;
-  private TextView uploadStatus, connectionStatus, dataStatus;
+  private TextView uploadStatus, connectionStatus, dataStatus, monitorStatus;
   private EditText hubOrigin, hubKey;
   private HubHttp.Call uploadCall;
   private final StringBuilder report = new StringBuilder();
@@ -75,6 +75,7 @@ public final class BandActivity extends Activity {
             note("Android не разрешил запуск связи");
           }
         });
+    monitorSettings();
     devices = new LinearLayout(this);
     devices.setOrientation(1);
     layout.addView(devices);
@@ -106,6 +107,47 @@ public final class BandActivity extends Activity {
           BandService.stop(this);
           note("Остановлено");
         });
+  }
+
+  void monitorSettings() {
+    LinearLayout panel = new LinearLayout(this);
+    panel.setOrientation(1);
+    panel.setVisibility(android.view.View.GONE);
+    button(layout, "Мониторинг пульса и SpO₂", () -> panel.setVisibility(
+        panel.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE));
+    layout.addView(panel);
+    TextView hint = new TextView(this);
+    hint.setText("Настройки измерений браслета. SpO₂ измеряется автоматически в покое. Постоянный пульс увеличивает расход батареи. Выбранные значения применяются кнопкой ниже.");
+    hint.setTextColor(0xffa9b8c9); panel.addView(hint);
+    Spinner heart = new Spinner(this), oxygen = new Spinner(this);
+    heart.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
+        new String[] {"Пульс: не менять", "Пульс: выключить", "Пульс: автоматический", "Пульс: реальное время"}));
+    oxygen.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
+        new String[] {"SpO₂: не менять", "SpO₂: выключить", "SpO₂: автоматически"}));
+    heart.setSelection(3); oxygen.setSelection(2);
+    panel.addView(heart); panel.addView(oxygen);
+    button(panel, "Применить к браслету", () -> {
+      try {
+        if (heart.getSelectedItemPosition() == 0 && oxygen.getSelectedItemPosition() == 0) {
+          note("Выбери хотя бы одну настройку"); return;
+        }
+        String slot = BandService.monitorSlot(this);
+        android.content.SharedPreferences prefs = Vault.prefs(this);
+        long revision = prefs.getLong(slot + ".monitor.revision", 0) + 1;
+        if (!prefs.edit().putInt(slot + ".monitor.heart", heart.getSelectedItemPosition() - 1)
+            .putInt(slot + ".monitor.oxygen", oxygen.getSelectedItemPosition() - 1)
+            .putLong(slot + ".monitor.revision", revision).putBoolean(slot + ".monitor.pending", true)
+            .putString(slot + ".monitor.status", "Ожидает защищённого соединения и завершения текущего обмена").commit())
+          throw new IllegalStateException();
+        if (BandService.enabled(this))
+          startForegroundService(new Intent(this, BandService.class).setAction("monitor"));
+        else note("Настройки сохранены для выбранного браслета. Нажми «Подключить»");
+        refreshUpload();
+      } catch (Exception e) { note("Не удалось поставить настройки в очередь. Проверь, что браслет выбран"); }
+    });
+    monitorStatus = new TextView(this);
+    monitorStatus.setTextColor(0xffa9b8c9); monitorStatus.setTextSize(12);
+    panel.addView(monitorStatus);
   }
 
   boolean allowed() {
@@ -492,6 +534,7 @@ public final class BandActivity extends Activity {
   }
 
   void refreshUpload() {
+    if (monitorStatus != null) monitorStatus.setText(BandService.monitorStatus(this));
     if (dataStatus != null) dataStatus.setText(BandEvidence.data(this));
     if (bridgeStatus != null)
       bridgeStatus.setText(

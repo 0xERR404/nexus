@@ -18,7 +18,36 @@ public class BandFileRouteTest {
     ok(req.service == (dict || (flags & 2) != 0 ? 0x2c : 0x0a));
     return f;
   }
+  static BandFiles parameters(byte[] mode) throws Exception {
+    BandFiles f = route(true, 6);
+    byte[] bytes = BandFilesTest.sleep(1768003200L);
+    f.accept(tags(BandAuth.tlv(1, BandAuth.utf("sequence_data"), 2, new byte[] {0x16},
+        3, new byte[] {9}, 4, BandHistory.integer(bytes.length))));
+    f.accept(tags(BandAuth.tlv(1, new byte[] {9}, 3, BandAuth.sha(bytes))));
+    byte[] fields = BandAuth.tlv(1, new byte[] {9}, 4, BandHistory.integer(1024));
+    if (mode != null) fields = BandAuth.concat(fields, BandAuth.tlv(5, mode));
+    ok(f.accept(tags(fields)).command == 4);
+    return f;
+  }
+
   public static void main(String[] args) throws Exception {
+    for (byte[] mode : new byte[][] {null, new byte[0], new byte[] {2}, new byte[] {0,1}, new byte[] {0}}) {
+      BandFiles secure = parameters(mode);
+      ok(!secure.rawRequest());
+      byte[] raw = BandAuth.concat(new byte[] {9}, BandHistory.integer(0), new byte[] {0}, BandFilesTest.sleep(1768003200L));
+      BandFilesTest.bad(() -> secure.data(raw, new byte[16]));
+      ok(secure.data(BandAuth.encrypted(new byte[16], raw), new byte[16]).command == 6);
+      ok(secure.records.length() == 1);
+    }
+    ok(parameters(new byte[] {1}).rawRequest());
+    BandFiles stopped = parameters(new byte[] {2});
+    BandAuth.Request reject = stopped.skipFile("неизвестный формат");
+    ok(reject.service == 0x2c && reject.command == 6 && stopped.noReply());
+    ok(BandProtocol.number(tags(reject.tlv), 2) == 2);
+    ok(BandProtocol.number(tags(reject.tlv), 1) == 9 && stopped.records.length() == 0);
+    ok(stopped.next().command == 1 && stopped.kind == 1);
+    ok(stopped.skipFile("отказ 144001") == null && stopped.done);
+    ok(stopped.status.contains("144001") && stopped.status.contains("неизвестный формат"));
     BandFiles f = route(false, 0);
     ok(f.legacy != null && f.filename().equals("sleep_state.bin"));
     BandAuth.Request init = f.legacy.begin();

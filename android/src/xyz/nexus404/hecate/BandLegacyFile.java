@@ -31,6 +31,7 @@ final class BandLegacyFile {
       byte[] names = BandAuth.required(tags, 1, 0, 4096);
       String list = new String(names, java.nio.charset.StandardCharsets.UTF_8);
       if (!Arrays.asList(list.split(";")).contains(owner.filename())) {
+        owner.fileResults.add(owner.filename() + ": отсутствует в списке браслета");
         owner.capabilitiesReport = "0A: запрошенный файл отсутствует в списке · " + owner.filename();
         return owner.next();
       }
@@ -83,6 +84,7 @@ final class BandLegacyFile {
         ? sleepState(content, owner.history) : BandDetails.stress(content, owner.history);
     if (owner.records.length() + parsed.length() > 10000) throw new IllegalArgumentException("0A: слишком много записей");
     for (int i = 0; i < parsed.length(); i++) owner.records.put(parsed.getJSONObject(i));
+    owner.fileResults.add(owner.filename() + ": получено записей " + parsed.length());
     complete = true;
     return request(6, BandAuth.tlv(6, new byte[] {1}), "Файл получен · записей: " + parsed.length());
   }

@@ -15,6 +15,8 @@ final class BandFiles {
   private boolean sleepNewSync, stressNewSync;
   BandLegacyFile legacy;
   String capabilitiesReport = "";
+  final List<String> fileResults = new ArrayList<>();
+  boolean fileOpen;
   private byte[] data, hash;
   final ArrayDeque<Integer> workouts = new ArrayDeque<>();
   int workout, workoutPage, workoutCount;
@@ -209,6 +211,7 @@ final class BandFiles {
           || BandProtocol.number(tags, 2) != fileType())
         throw new IllegalArgumentException("Браслет вернул другой файл");
       fileId = (int) BandHistory.uint(tags.get(3), 1);
+      fileOpen = true;
       long length = BandHistory.uint(tags.get(4), 4);
       if (length > MAX_FILE)
         throw new IllegalArgumentException("Файл истории превышает 1 МиБ или недоступен");
@@ -249,10 +252,11 @@ final class BandFiles {
       if (block < 1 || block > MAX_FILE)
         throw new IllegalArgumentException("Неверный размер блока файла");
       maxBlock = (int) Math.min(block, 1024);
-      int flag = BandProtocol.number(tags, 5);
-      if (flag != 0 && flag != 1)
-        throw new IllegalArgumentException("Неизвестный режим шифрования файла");
-      noEncrypt = flag == 1;
+      byte[] mode = tags.get(5);
+      noEncrypt = plainBlocks(mode);
+      capabilitiesReport = "2C/03 · файл=" + filename() + " · блок=" + block
+          + " · поле 05=" + (mode == null ? "нет" : mode.length + " байт: " + BandAuth.hex(Arrays.copyOf(mode, Math.min(mode.length, 16))))
+          + " · запрос=" + (noEncrypt ? "открытый, SHA-256 обязателен" : "GCM, SHA-256 обязателен");
       return block();
     }
     throw new IllegalArgumentException("Неожиданный ответ файлового обмена");
@@ -296,6 +300,23 @@ final class BandFiles {
     return kind == 0 ? (dictSleep ? "sequence_data" : "sleep_state.bin") : "rrisqi_data.bin";
   }
 
+  static boolean plainBlocks(byte[] mode) {
+    // Only an explicit one-byte true permits cleartext; all other forms require GCM.
+    return mode != null && mode.length == 1 && mode[0] == 1;
+  }
+
+  BandAuth.Request skipFile(String reason) {
+    fileResults.add(filename() + ": " + reason);
+    records = new JSONArray();
+    if (legacy == null && fileOpen) {
+      fileOpen = false;
+      stage = 6;
+      return request(0x2c, 6, BandAuth.tlv(1, new byte[] {(byte) fileId}, 2, new byte[] {2}),
+          "Передача " + filename() + " не завершена · статус неуспеха 2C/06");
+    }
+    return next();
+  }
+
   int fileType() { return kind == 0 ? (dictSleep ? 0x16 : 0x0e) : 0x10; }
 
   int dataService() { return legacy == null ? 0x2c : 0x0a; }
@@ -303,6 +324,8 @@ final class BandFiles {
 
   BandAuth.Request next() {
     legacy = null;
+    fileOpen = false;
+    noEncrypt = false;
     data = null;
     hash = null;
     kind++;
@@ -314,7 +337,8 @@ final class BandFiles {
           "Расширенная история обработана · записей: "
               + (savedRecords + records.length())
               + (!sleepSupported ? " · словарный сон не подтверждён" : "")
-              + (!stressSupported ? " · стресс недоступен" : "");
+              + (!stressSupported ? " · стресс недоступен" : "")
+              + (fileResults.isEmpty() ? "" : " · " + String.join("; ", fileResults));
       return null;
     }
     stage = 2;
@@ -390,6 +414,8 @@ final class BandFiles {
     if (records.length() + parsed.length() > 10000)
       throw new IllegalArgumentException("Слишком много записей расширенной истории");
     for (int i = 0; i < parsed.length(); i++) records.put(parsed.getJSONObject(i));
+    fileResults.add(filename() + ": получено записей " + parsed.length());
+    fileOpen = false;
     stage = 6;
     return request(
         0x2c,

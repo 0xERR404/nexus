@@ -21,6 +21,8 @@ public final class BandService extends Service {
   private static final int SENDING_MEDIA = 8;
   private static final int IDLE = 9;
   private static final int READING_FILES = 10;
+  private static final int SETTING_MONITOR = 11;
+  private BandMonitor monitor;
 
   static volatile BandService instance;
   static final int NOTICE = 71;
@@ -87,14 +89,20 @@ public final class BandService extends Service {
   private final Runnable retry = this::attempt;
   private final Runnable poll = () -> tick("таймер службы");
   private final Runnable timeout =
-      () ->
-          finish(
+      () -> {
+        if (phase == SETTING_MONITOR && monitor != null && !writing && writes.isEmpty()) {
+          try { monitorRequest(monitor.failed("нет подтверждения, тайм-аут")); }
+          catch (Exception e) { finish("Не удалось продолжить настройку мониторинга"); }
+          return;
+        }
+        finish(
               (totalChunks == 0
                       ? "Нет завершённого GATT-подключения или подписки"
                       : writing || !writes.isEmpty()
                           ? "Android подтвердил фрагменты: " + sentChunks + "/" + totalChunks
                           : "Нет ответа браслета после записи запроса")
                   + " · тайм-аут");
+      };
 
   static boolean enabled(Context c) {
     return Vault.prefs(c).getBoolean("bandEnabled", false);
@@ -223,6 +231,9 @@ public final class BandService extends Service {
       } else if (!enabled(this)) {
         stopSelf();
         return START_NOT_STICKY;
+      } else if ("monitor".equals(action)) {
+        if (active && phase == IDLE) beginMonitor();
+        else if (!active) { main.removeCallbacks(retry); attempt(); }
       } else if ("read".equals(action)) {
         forceFiles = true;
         if (active && phase == IDLE) {
@@ -440,7 +451,7 @@ public final class BandService extends Service {
     main.postDelayed(poll, BandPolicy.POLL);
     BandUpload.schedule(this, true);
     refreshMediaBridge();
-    if (!beginFiles()) pumpNotices();
+    if (!beginMonitor() && !beginFiles()) pumpNotices();
   }
 
   PendingIntent alarm() {
@@ -915,6 +926,11 @@ public final class BandService extends Service {
 
   void response(Map<Integer, byte[]> tags) {
     try {
+      if (phase == SETTING_MONITOR) {
+        Map<Integer, byte[]> plain = BandSetup.response(sessionKey, tags);
+        monitorRequest(monitor.accept(plain));
+        return;
+      }
       if (phase == READING_FILES) {
         if (SystemClock.elapsedRealtime() - filesStarted > 120000)
           throw new IllegalArgumentException("Лимит времени файловой истории; повтор через час");
@@ -1136,6 +1152,11 @@ public final class BandService extends Service {
       send(BandProtocol.negotiation(identityBytes));
     } catch (BandAuth.RemoteError e) {
       Vault.prefs(this).edit().putLong("bandRemoteError", e.code).putLong("bandRemoteErrorAt", System.currentTimeMillis()).apply();
+      if (phase == SETTING_MONITOR && monitor != null && e.code != 100004 && e.code != 100005) {
+        try { monitorRequest(monitor.failed("отказ браслета " + e.code)); }
+        catch (Exception failure) { finish("Не удалось продолжить настройку мониторинга"); }
+        return;
+      }
       if (phase == READING_FILES) {
         historyIncomplete = true;
         note("Расширенная история отклонена · " + e.code);
@@ -1150,7 +1171,7 @@ public final class BandService extends Service {
           } else if (files.stage == 0) {
             fileRequest(files.settings());
           } else if (files.stage >= 2) {
-            fileRequest(files.next());
+            fileRequest(files.skipFile("отказ " + e.code));
           } else filesDone("Расширенная история недоступна · код " + e.code);
         } catch (Exception failure) {
           finish("Ошибка файловой истории");
@@ -1202,6 +1223,11 @@ public final class BandService extends Service {
                   || e instanceof IllegalArgumentException
               ? e.getMessage()
               : null;
+      if (e instanceof IllegalArgumentException && phase == SETTING_MONITOR && monitor != null) {
+        try { monitorRequest(monitor.failed(message)); }
+        catch (Exception failure) { finish("Не удалось продолжить настройку мониторинга"); }
+        return;
+      }
       if (e instanceof IllegalArgumentException
           && phase == READING_FILES
           && files != null
@@ -1222,7 +1248,7 @@ public final class BandService extends Service {
         note("Расширенные данные пропущены: " + message);
         try {
           if (files.stage == 0) fileRequest(files.settings());
-          else if (files.stage >= 2) fileRequest(files.next());
+          else if (files.stage >= 2) fileRequest(files.skipFile(message));
           else filesDone("Расширенные данные пропущены: " + message);
         } catch (Exception failure) { finish("Не удалось продолжить расширенную историю"); }
         return;
@@ -1246,6 +1272,53 @@ public final class BandService extends Service {
         pause(message == null ? "Проверка ключа не пройдена" : message);
       else finish(message == null ? "Обмен остановлен · " + e.getClass().getSimpleName() : message);
     }
+  }
+
+  static String monitorSlot(Context c) throws Exception {
+    String address = Vault.open(Vault.prefs(c).getString("bandDevice", ""));
+    if (!BluetoothAdapter.checkBluetoothAddress(address)) throw new IllegalArgumentException("Сначала выбери браслет");
+    return "bandKey." + BandAuth.hex(BandAuth.sha(BandAuth.utf(address)));
+  }
+
+  static String monitorStatus(Context c) {
+    try { return Vault.prefs(c).getString(monitorSlot(c) + ".monitor.status", "Настройки ещё не отправлялись; текущее состояние браслета не прочитано"); }
+    catch (Exception e) { return "Сначала выбери браслет"; }
+  }
+
+  boolean beginMonitor() {
+    if (!active || phase != IDLE || !sessionVerified || monitor != null || keySlot == null) return false;
+    android.content.SharedPreferences prefs = Vault.prefs(this);
+    if (!prefs.getBoolean(keySlot + ".monitor.pending", false)) return false;
+    try {
+      monitor = new BandMonitor(prefs.getInt(keySlot + ".monitor.heart", -1),
+          prefs.getInt(keySlot + ".monitor.oxygen", -1), prefs.getLong(keySlot + ".monitor.revision", 0));
+      if (!prefs.edit().putBoolean(keySlot + ".monitor.pending", false)
+          .putString(keySlot + ".monitor.status", "Отправка настроек браслету…").commit()) {
+        monitor = null; return false;
+      }
+      phase = SETTING_MONITOR;
+      monitorRequest(monitor.begin());
+    } catch (Exception e) { finish("Не удалось начать настройку мониторинга"); }
+    return true;
+  }
+
+  void monitorRequest(BandAuth.Request next) throws Exception {
+    if (next != null) {
+      hold(); secure(next);
+      return;
+    }
+    String result = monitor.report();
+    long revision = monitor.revision;
+    monitor = null;
+    android.content.SharedPreferences prefs = Vault.prefs(this);
+    if (revision == prefs.getLong(keySlot + ".monitor.revision", 0))
+      prefs.edit().putString(keySlot + ".monitor.status", result).apply();
+    note(result);
+    main.removeCallbacks(timeout);
+    phase = IDLE;
+    protocol.expect(-1, -1);
+    release();
+    if (!beginMonitor() && !beginFiles()) pumpNotices();
   }
 
   boolean filesDue() {
@@ -1404,6 +1477,12 @@ public final class BandService extends Service {
   }
 
   void close() {
+    if (monitor != null) {
+      String message = monitor.report() + "\nНастройка прервана; применение оставшихся команд не подтверждено";
+      if (monitor.revision == Vault.prefs(this).getLong(keySlot + ".monitor.revision", 0))
+        Vault.prefs(this).edit().putString(keySlot + ".monitor.status", message).apply();
+      monitor = null;
+    }
     pendingExtendedEvidence = null;
     files = null;
     pendingBond = null;
@@ -1512,6 +1591,7 @@ public final class BandService extends Service {
 
   void pumpNotices() {
     if (!active || phase != IDLE || !configured || !sessionVerified || stopping) return;
+    if (beginMonitor()) return;
     if (alarmDue > 0 && SystemClock.elapsedRealtime() >= alarmDue) {
       tick("Чтение перед передачей на браслет");
       return;

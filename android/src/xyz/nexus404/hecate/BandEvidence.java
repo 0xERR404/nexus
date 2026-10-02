@@ -72,6 +72,7 @@ final class BandEvidence {
       .append("\n").append(BandService.linkState(c)).append("\n")
       .append(BandService.powerState(c)).append("\n").append(delivery(c))
       .append("\n").append(data(c));
+    out.append("\nМониторинг: ").append(BandService.monitorStatus(c));
     out.append("\nРасширенная история: ").append(p.getString("bandFilesStatus", "ещё не проверено"));
     out.append("\nСлужба: ").append(BandService.instance != null ? "работает" : "не работает")
       .append("\nНеизвестных стадий сна: ").append(p.getInt("bandUnknownSleep", 0))
