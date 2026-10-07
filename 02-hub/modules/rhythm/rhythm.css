@@ -1,0 +1,113 @@
+:is(#rhythm, #rhythmSettings) {
+  font: var(--ui-font-size) / 1.5 var(--sans);
+}
+#rtCards {
+  min-width: 0;
+}
+.rt-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: var(--card-padding);
+  margin-bottom: 10px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.rt-panel h2 {
+  font-size: var(--ui-title-size);
+  margin: 0 0 6px;
+}
+.rt-section-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.rt-section-head h2 { margin: 0; }
+.rt-meta, .rt-note, #rtDailyState, #rtAutoState { color: var(--muted); font-size: var(--ui-small-size); }
+.rt-badge { border: 1px solid var(--line); border-radius: 20px; padding: 2px 9px; color: var(--muted); font-size: var(--ui-meta-size); }
+#rhythm .rt-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--ui-font-size); }
+#rhythm .rt-table th, #rhythm .rt-table td { padding: 9px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+#rhythm .rt-table thead th { color: var(--muted); font-weight: 400; font-size: var(--ui-small-size); padding-top: 6px; }
+#rhythm .rt-table thead th:nth-child(1) { width: 25%; }
+#rhythm .rt-table thead th:nth-child(2) { width: 25%; }
+#rhythm .rt-table thead th:nth-child(3) { width: 50%; }
+#rhythm .rt-table tbody th { font-weight: 400; }
+#rhythm .rt-table .rt-group th { padding: 10px 12px 5px; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); border-bottom: 0; }
+#rhythm .rt-table tr:last-child :is(th, td) { border-bottom: 0; }
+#rhythm .rt-value strong { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#rhythm .rt-missing strong { color: var(--muted); font-size: var(--ui-font-size); font-weight: 400; }
+#rhythm .rt-sleep-details { border: 0; padding: 6px 0 0; }
+#rhythm .rt-sleep-details summary { font-size: var(--ui-small-size); }
+.rt-sleep-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; margin: 8px 0 0; }
+.rt-sleep-details dd { margin: 0; color: var(--text); }
+.rt-coverage { margin-top: 8px; }
+#rtReport { border-color: var(--accent); }
+#rtReport:disabled { border-color: var(--line); }
+#rtReportText, #rtDailyText, #rtWakeText, #rtWakeArchive p { white-space: pre-wrap; line-height: 1.7; margin: 10px 0; }
+#rtReportText:empty, #rtDailyText:empty, #rtWakeText:empty { display: none; }
+.rt-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+#rtReportText,
+#rtToken {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#rtReportState,
+#rtCoverage {
+  font-size: var(--ui-small-size);
+  color: var(--muted);
+}
+#rtConfig label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+#rtSources input {
+  width: 70px;
+}
+:is(#rhythm, #rhythmSettings) details {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+:is(#rhythm, #rhythmSettings) summary {
+  cursor: pointer;
+  font-size: var(--ui-font-size);
+}
+#rtStatus {
+  color: var(--amber);
+}
+#rtStatus:empty {
+  display: none;
+}
+@media (max-width: 700px) {
+  .rt-panel {
+    padding: 9px;
+  }
+  #rhythm .rt-table, #rhythm .rt-table tbody { display: block; }
+  #rhythm .rt-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #rhythm .rt-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid var(--line); padding: 7px 0; }
+  #rhythm .rt-table tbody th, #rhythm .rt-table tbody td { display: block; padding: 2px 4px; font-size: 12px; border: 0; }
+  #rhythm .rt-table .rt-note { grid-column: 1 / -1; padding-top: 2px; }
+  #rhythm .rt-table .rt-group { display: block; border: 0; padding: 7px 0 1px; }
+  #rhythm .rt-table .rt-group th { padding: 0 4px; }
+  #rhythm .rt-table tbody tr:last-child { border: 0; }
+  #rhythm .rt-value strong { font-size: 13px; }
+  #rhythm .rt-table .rt-note { font-size: 11px; }
+  .rt-sleep-details dl { grid-template-columns: 1fr 1fr; gap: 5px 8px; }
+}
+
+#rhythmSettings {
+  max-width: 760px;
+}
+#rhythmSettings h3 {
+  margin: 16px 0 8px;
+}
+#rhythmSettings p {
+  font-size: var(--ui-small-size);
+  color: var(--muted);
+}
+#rtData { margin-top: 10px; overflow-wrap: anywhere; }
+#rtData details details { margin-left: 12px; }
+#rtData p { margin: 4px 0; font-size: var(--ui-small-size); }

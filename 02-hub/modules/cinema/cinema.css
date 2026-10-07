@@ -1,0 +1,220 @@
+.cinema-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.cinema-toolbar a {
+  font-size: var(--ui-small-size);
+  color: var(--muted);
+}
+.cinema-player {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--surface);
+}
+#cinemaTitle {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+.cinema-file-controls {
+  display: flex;
+  gap: 8px;
+}
+.cinema-file-controls select {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+}
+#cinemaVideo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;
+  max-height: 65dvh;
+  background: var(--bg);
+  border-radius: 7px;
+  margin: 14px 0;
+}
+.cinema-transfer {
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 7px;
+  margin-bottom: 12px;
+  font-size: var(--ui-small-size);
+  line-height: 1.6;
+}
+.cinema-transfer progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin: 10px 0;
+  accent-color: var(--accent);
+}
+#cinemaPlayback {
+  color: var(--muted);
+}
+#cinemaStop {
+  font-size: var(--ui-small-size);
+}
+#cinemaStatus:empty {
+  display: none;
+}
+#cinemaStatus {
+  margin: 12px 0;
+  font-size: var(--ui-font-size);
+}
+#cinemaDialog {
+  width: min(600px, 95vw);
+}
+#cinemaForm label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+#cinemaForm input,
+#cinemaForm select {
+  width: 100%;
+  font-size: 16px;
+}
+@media (max-width: 700px) {
+  .cinema-player {
+    padding: 10px;
+  }
+  .cinema-toolbar {
+    gap: 10px;
+  }
+  .cinema-file-controls {
+    flex-wrap: wrap;
+  }
+  .cinema-file-controls select {
+    width: 100%;
+    flex-basis: 100%;
+  }
+}
+
+.cinema-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 16px;
+}
+.cinema-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+}
+.cinema-cover {
+  display: grid;
+  place-items: center;
+  position: relative;
+  aspect-ratio: 2/3;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.cinema-monogram {
+  font: 300 64px var(--sans);
+  color: var(--muted);
+}
+.cinema-cover-play {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: var(--ui-small-size);
+  color: var(--text);
+}
+.cinema-card:hover .cinema-cover {
+  border-color: var(--accent);
+  background: var(--control-bg);
+}
+.cinema-card strong {
+  font-size: var(--ui-font-size);
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.cinema-kind {
+  font-size: var(--ui-meta-size);
+  color: var(--muted);
+}
+.cinema-back {
+  margin-right: auto;
+  text-decoration: none;
+}
+#cinemaEmpty {
+  margin: 24px 0;
+  color: var(--muted);
+  font-size: var(--ui-font-size);
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .cinema-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .cinema-monogram {
+    font-size: 48px;
+  }
+}
+
+#cinemaAdd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 23px;
+  line-height: 1;
+  background: transparent;
+}
+@media (max-width: 600px) {
+  #cinemaAdd {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+}
+
+.cinema-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#cinemaEditDialog {
+  width: min(440px, 95vw);
+}
+#cinemaEditForm label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+#cinemaEditForm input:not([type='checkbox']) {
+  width: 100%;
+  min-width: 0;
+}
+#cinemaEditForm label:has([type='checkbox']) {
+  display: flex;
+  align-items: center;
+}
+#cinemaEditError {
+  color: var(--muted);
+}

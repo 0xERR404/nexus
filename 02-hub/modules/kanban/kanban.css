@@ -1,0 +1,63 @@
+.kb-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+#kbColumns { display:flex; gap:10px; overflow-x:auto; align-items:stretch; min-height:clamp(380px,64dvh,760px); padding:2px 2px 16px; }
+.kb-column { flex:0 0 300px; min-width:0; box-sizing:border-box; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px; display:flex; flex-direction:column; }
+.kb-column-head { display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+.kb-column-head h3 { margin:0; flex:1; min-width:0; overflow-wrap:anywhere; font-size:var(--ui-font-size); }
+.kb-column-actions { display:flex; gap:4px; }
+.kb-count { color:var(--muted); font-variant-numeric:tabular-nums; }
+#kanban .kb-icon, :is(#kbEditor,#kbColumnEditor) .kb-icon { display:inline-grid; place-items:center; width:30px; height:30px; min-height:30px; padding:5px; flex:none; }
+.kb-icon svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.kb-trash { color:var(--red); }
+.kb-card { position:relative; background:transparent; border:1px solid var(--line); border-radius:8px; padding:10px; margin-top:10px; overflow-wrap:anywhere; }
+.kb-card-head { display:flex; align-items:flex-start; gap:6px; }
+#kanban .kb-card-title { flex:1; min-width:0; text-align:left; white-space:normal; font-weight:600; padding:3px 0; border:0; background:transparent; }
+.kb-card-state { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; color:var(--muted); font-size:var(--ui-small-size); margin:7px 0; }
+.kb-done { color:var(--green); }
+.kb-priority { border:1px solid var(--line); padding:1px 6px; border-radius:5px; }
+.kb-priority-2, .kb-overdue { color:var(--amber); }
+.kb-priority-3 { color:var(--red); }
+.kb-description { white-space:pre-wrap; margin:8px 0; }
+.kb-description.kb-truncated { display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
+.kb-text-button { padding:1px 0; border:0; background:transparent; font-size:var(--ui-small-size); }
+.kb-dates { display:grid; gap:3px; margin:8px 0; color:var(--muted); font-size:var(--ui-small-size); }
+.kb-tags { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
+.kb-tags span { border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:var(--ui-small-size); }
+.kb-project { display:block; margin:8px 0; font-size:var(--ui-small-size); }
+.kb-checklist { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; }
+.kb-check-heading { color:var(--muted); font-size:var(--ui-small-size); margin-bottom:5px; }
+.kb-check-item { display:flex; align-items:flex-start; gap:7px; padding:4px 0; }
+.kb-check-item input { margin:3px 0 0; flex:none; accent-color:var(--accent); }
+.kb-check-item input:checked + span { text-decoration:line-through; color:var(--muted); }
+.kb-checklist details { margin-top:4px; }
+.kb-checklist summary, .kb-attachments summary { color:var(--muted); font-size:var(--ui-small-size); }
+.kb-attachments { border-top:1px solid var(--line); padding-top:8px; margin-top:10px; }
+.kb-attachments a { display:block; margin:5px 0; }
+.kb-drop-hint { margin:auto 0 0; padding:24px 0 12px; color:var(--muted); font-size:var(--ui-small-size); text-align:center; }
+.kb-column:has(.kb-card) .kb-drop-hint { opacity:0; }
+.kb-column.kb-drop-target .kb-drop-hint { opacity:1; }
+.kb-grip { display:grid; place-items:center; width:24px; min-height:28px; cursor:grab; touch-action:none; user-select:none; color:var(--muted); font-size:20px; flex:none; }
+.kb-dragging { opacity:.6; }
+.kb-drop-target { border-color:var(--accent); outline:1px solid var(--accent); }
+:is(#kbEditor,#kbColumnEditor) { background:var(--dialog-bg); color:var(--text); border:1px solid var(--line); border-radius:10px; width:min(650px,94vw); max-height:90dvh; padding:16px; overflow-y:auto; }
+#kbColumnEditor { width:min(480px,94vw); }
+:is(#kbEditor,#kbColumnEditor)::backdrop { background:#0008; }
+:is(#kbForm,#kbColumnForm) > label { display:block; margin:10px 0; }
+:is(#kbForm,#kbColumnForm) input:not([type=checkbox]), :is(#kbForm,#kbColumnForm) textarea, :is(#kbForm,#kbColumnForm) select { display:block; width:100%; box-sizing:border-box; }
+#kbForm textarea { min-height:80px; }
+#kbFiles { max-height:220px; overflow:auto; }
+#kbFiles label { display:flex; gap:8px; padding:5px; }
+#kbStatus, #kbEditorStatus, #kbColumnStatus { white-space:pre-wrap; color:var(--amber); }
+#kbColumnRemove { margin-left:auto; }
+.kb-check-editor { margin:12px 0; }
+.kb-check-edit-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+.kb-check-edit-row input[type=text] { min-width:0; flex:1; }
+.kb-check-edit-row input[type=checkbox] { flex:none; }
+@media(max-width:600px) {
+  .kb-column { flex-basis:min(300px,84vw); }
+  .kb-tools input { min-width:0; max-width:100%; }
+  #kbEditor, #kbColumnEditor { margin:auto; }
+}
+@media(pointer:coarse) {
+  .kb-check-item { min-height:40px; align-items:center; }
+  .kb-grip { min-height:40px; width:32px; }
+}

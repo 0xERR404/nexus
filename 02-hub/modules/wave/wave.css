@@ -1,0 +1,1282 @@
+.wave-layout {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+.wave-main {
+  min-width: 0;
+}
+.wave-sidebar {
+  border-right: 1px solid var(--line);
+  padding-right: 12px;
+  min-width: 0;
+}
+.wave-sidebar nav {
+  display: grid;
+  gap: 4px;
+}
+.wave-sidebar nav a {
+  display: block;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: var(--ui-small-size);
+  color: var(--muted);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wave-sidebar nav a:hover,
+.wave-sidebar nav a[aria-current] {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.wave-sidebar nav a[aria-current] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.wave-playlist-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--ui-meta-size);
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+.wave-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.wave-toolbar input[type='search'] {
+  flex: 1;
+  min-width: 120px;
+}
+.wave-secondary {
+  margin: 12px 0;
+}
+.wave-secondary > span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: var(--ui-meta-size);
+}
+#wavePage button,
+#wavePage input,
+#wavePage select,
+#wavePlayer button {
+  border: 1px solid var(--line);
+  background: var(--button-bg);
+  color: var(--text);
+  border-radius: var(--button-radius);
+  padding: var(--button-padding);
+  min-height: 32px;
+  font: var(--button-font);
+}
+#wavePage button,
+#wavePlayer button {
+  cursor: pointer;
+}
+#wavePage button:hover,
+#wavePlayer button:hover {
+  border-color: var(--accent);
+}
+#wavePage :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+#wavePage [hidden] {
+  display: none !important;
+}
+#wavePage button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#waveStatus,
+#wavePlayerStatus,
+#waveDialogError {
+  font-size: var(--ui-small-size);
+  color: var(--amber);
+}
+#waveStatus:empty,
+#wavePlayerStatus:empty,
+#waveDialogError:empty {
+  display: none;
+}
+.wave-muted {
+  font-size: var(--ui-meta-size);
+  color: var(--muted);
+}
+.wave-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+  min-width: 0;
+}
+.wave-hero > .wave-art {
+  width: 108px;
+  flex: 0 0 108px;
+}
+.wave-hero-text {
+  min-width: 0;
+}
+.wave-hero h2 {
+  font-size: clamp(20px, 3vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.6px;
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+.wave-section {
+  margin: 20px 0;
+}
+.wave-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.wave-section-head h3{
+  font-size: 14px;
+  margin: 0;
+}
+.wave-section-head a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--ui-meta-size);
+}
+.wave-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.wave-card {
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  transition:
+    background 0.18s,
+    border-color 0.18s;
+}
+.wave-card:hover {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.wave-card strong,
+.wave-card > span {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.wave-card strong {
+  font-size: var(--ui-small-size);
+  margin-top: 9px;
+}
+.wave-card > span {
+  font-size: var(--ui-meta-size);
+  color: var(--muted);
+  margin-top: 3px;
+}
+.wave-art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--control-bg);
+  font-size: 32px;
+  color: var(--muted);
+  position: relative;
+}
+.wave-art.artist {
+  border-radius: 8px;
+}
+.wave-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  min-height: 0;
+  min-width: 0;
+}
+.wave-art.artist img {
+  filter: saturate(0.7);
+}
+#waveTracks {
+  display: grid;
+  gap: 4px;
+}
+.wave-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 6px;
+  background: transparent;
+  min-width: 0;
+}
+.wave-track:hover {
+  background: var(--accent-soft);
+}
+.wave-track.is-current {
+  background: var(--accent-soft);
+  border-color: var(--line-soft);
+}
+.wave-track.is-current .wave-track-title {
+  color: var(--accent);
+}
+#wavePage .wave-track-start {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  position: relative;
+  overflow: hidden;
+}
+.wave-track-start .wave-art {
+  font-size: 20px;
+  width: 100%;
+  height: 100%;
+}
+.wave-track-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--backdrop);
+  color: white;
+  opacity: 0;
+  font-size: 14px;
+}
+.wave-track-start:hover .wave-track-play,
+.wave-track.is-current .wave-track-play,
+.wave-track-start:focus-visible .wave-track-play {
+  opacity: 1;
+}
+.wave-track-info {
+  min-width: 0;
+  flex: 1;
+}
+.wave-track-meta {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  align-items: center;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--ui-meta-size);
+}
+.wave-track-meta a {
+  color: var(--muted);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.wave-track-meta a:hover {
+  text-decoration: underline;
+  color: var(--text);
+}
+#wavePage .wave-track-title {
+  display: block;
+  max-width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0;
+  min-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-small-size);
+}
+.wave-duration {
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+#wavePage .wave-favorite,
+#wavePage .wave-track-menu {
+  border: 0;
+  background: none;
+  font-size: 19px;
+  padding: 3px;
+  min-width: 28px;
+  flex-shrink: 0;
+}
+.wave-favorite[aria-pressed='true'] {
+  color: var(--accent);
+}
+#waveMore {
+  display: block;
+  margin: 16px auto;
+}
+#waveDialog {
+  max-width: 440px;
+}
+#waveDialogBody {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+#waveDialogBody label {
+  display: grid;
+  gap: 5px;
+  font-size: var(--ui-small-size);
+  color: var(--muted);
+}
+#waveDialog h2 {
+  flex: 1;
+  font-size: 16px;
+}
+#waveDialog .dialog-close {
+  font-size: 28px;
+}
+#wavePage #wavePlay {
+  background: var(--button-bg);
+  color: var(--text);
+  border-color: var(--accent);
+}
+#wavePage #waveCreate {
+  font-size: 18px;
+  padding: 0;
+  width: 30px;
+}
+@media (max-width: 900px) {
+  .wave-layout {
+    grid-template-columns: 125px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .wave-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .wave-layout {
+    display: block;
+  }
+  .wave-sidebar {
+    border: 0;
+    padding: 0;
+    margin-bottom: 14px;
+  }
+  .wave-sidebar #waveNav {
+    display: flex;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 2px 0 6px;
+    scrollbar-width: thin;
+  }
+  .wave-sidebar #waveNav a {
+    flex-shrink: 0;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    font-size: var(--ui-meta-size);
+  }
+  .wave-sidebar #waveNav a[aria-current] {
+    box-shadow: none;
+    border-color: var(--line-strong);
+  }
+  .wave-playlist-heading {
+    position: absolute;
+    right: 0;
+    top: 0;
+    margin: 0;
+  }
+  .wave-playlist-heading > span {
+    display: none;
+  }
+  .wave-sidebar {
+    position: relative;
+    padding-right: 36px;
+  }
+  #wavePlaylists {
+    display: none !important;
+  }
+  .wave-toolbar input[type='search'] {
+    width: 0;
+    min-width: 0;
+    flex: 1;
+  }
+  .wave-toolbar #waveUploadButton {
+    font-size: var(--ui-meta-size);
+    padding: 5px 7px;
+  }
+  .wave-hero {
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .wave-hero > .wave-art {
+    width: 80px;
+    flex-basis: 80px;
+  }
+  .wave-hero h2 {
+    font-size: 22px;
+  }
+  .wave-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wave-section {
+    margin: 16px 0;
+  }
+  .wave-card {
+    padding: 6px;
+  }
+  .wave-card strong {
+    font-size: var(--ui-small-size);
+  }
+  .wave-secondary {
+    gap: 6px;
+  }
+  .wave-secondary > span {
+    flex-basis: 100%;
+  }
+  #wavePage .wave-secondary select {
+    min-width: 0;
+    flex: 1;
+    max-width: 155px;
+    font-size: var(--ui-meta-size);
+  }
+  .wave-track {
+    gap: 7px;
+    padding: 5px 0;
+  }
+  .wave-duration {
+    font-size: 10px;
+  }
+  .wave-track-meta .wave-album-link,
+  .wave-track-meta > span {
+    display: none;
+  }
+  #wavePage .wave-favorite,
+  #wavePage .wave-track-menu {
+    min-width: 26px;
+    font-size: 18px;
+  }
+  .wave-track-start .wave-track-play {
+    opacity: 0;
+  }
+  .wave-track.is-current .wave-track-play {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wave-card {
+    transition: none;
+  }
+}
+body.wave-shell {
+  position: fixed;
+  top: var(--wave-viewport-top, 0px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  height: var(--wave-viewport-height, 100dvh);
+  justify-content: flex-start;
+  overflow: hidden;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.wave-shell #hubFrame {
+  display: block;
+  border: 0;
+  width: 100%;
+  height: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--bg);
+}
+#wavePlayer {
+  z-index: 20;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  background: var(--dialog-bg);
+  padding: 8px max(12px, calc((100vw - 1180px) / 2)) max(8px, env(safe-area-inset-bottom));
+  width: 100%;
+  box-sizing: border-box;
+}
+#wavePlayer[hidden],
+#wavePlayer [hidden] {
+  display: none !important;
+}
+.wave-player-heading {
+  display: none;
+}
+.wave-player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.wave-transport {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#wavePlayer button {
+  min-width: 36px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  touch-action: manipulation;
+}
+#wavePlayer button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+#wavePlayer button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.wave-control-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.wave-repeat-one {
+  font: 8px var(--mono);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+#wavePlayer .wave-player-art {
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+#wavePlayerCover,
+#waveCoverFallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+#waveCoverFallback {
+  display: grid;
+  place-items: center;
+}
+#waveCoverFallback img {
+  width: 65%;
+  height: auto;
+  opacity: 0.7;
+}
+#wavePlayer .wave-player-info {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.wave-player-info strong,
+.wave-player-info span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wave-player-info strong {
+  font-size: var(--ui-font-size);
+}
+.wave-player-info span {
+  font-size: var(--ui-meta-size);
+  color: var(--muted);
+  margin-top: 4px;
+}
+.wave-player-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+}
+#waveSeek {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+#waveSeek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--played, 0%),
+    var(--line) var(--played, 0%)
+  );
+}
+#waveSeek::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-top: -4.5px;
+}
+#waveSeek::-moz-range-track {
+  height: 3px;
+  background: var(--line);
+}
+#waveSeek::-moz-range-progress {
+  height: 3px;
+  background: var(--accent);
+}
+#waveSeek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 0;
+  border-radius: 50%;
+}
+#waveTime {
+  font: 10px var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.wave-player-extra {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+#wavePlayer.expanded .wave-player-extra {
+  display: flex;
+}
+.wave-volume-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
+}
+#waveVolume {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100px;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#waveVolume::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+}
+#waveVolume::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-top: -3.5px;
+}
+#waveVolume::-moz-range-track {
+  height: 3px;
+  background: var(--line);
+}
+#waveVolume::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 0;
+  border-radius: 50%;
+}
+#waveQueueCount {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--ui-meta-size);
+}
+#waveQueueDialog {
+  width: min(460px, calc(100vw - 24px));
+  max-height: 75dvh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--dialog-bg);
+  color: var(--text);
+  padding: 16px;
+  overflow: auto;
+}
+#waveQueueDialog::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(5px);
+}
+.wave-queue-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: -16px;
+  background: var(--dialog-bg);
+  z-index: 1;
+  padding: 4px 0 10px;
+}
+.wave-queue-heading h2 {
+  font-size: 17px;
+  margin: 0;
+}
+#wavePlayer #waveQueueClose {
+  font-size: 28px;
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border: 0;
+}
+.wave-queue-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+.wave-queue-row button:first-child {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  justify-content: flex-start !important;
+}
+#wavePlayerStatus {
+  margin: 8px 0 0;
+  font-size: var(--ui-meta-size);
+}
+@media (max-width: 600px), (max-height: 500px) and (max-width: 1000px) {
+  #wavePlayer {
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+  }
+  .wave-player-row {
+    gap: 8px;
+  }
+  .wave-transport {
+    gap: 5px;
+  }
+  #wavePlayer .wave-player-art {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+  #wavePrev {
+    display: none !important;
+  }
+  #wavePlayer.expanded {
+    position: fixed;
+    inset: var(--wave-viewport-top, 0px) 0 auto;
+    height: var(--wave-viewport-height, 100dvh);
+    max-height: var(--wave-viewport-height, 100dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-content: start;
+    align-items: center;
+    gap: clamp(12px, 2.2dvh, 22px) 8px;
+    padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: radial-gradient(ellipse at 50% 15%, var(--accent-soft), transparent 60%), var(--bg);
+  }
+  #wavePlayer.expanded .wave-player-heading {
+    display: flex;
+    grid-column: 1/-1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 42px;
+    padding: 0 44px;
+    font: 11px var(--mono);
+    letter-spacing: 3px;
+  }
+  .wave-player-heading span:last-child {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  #wavePlayer.expanded .wave-player-row,
+  #wavePlayer.expanded .wave-transport,
+  #wavePlayer.expanded .wave-player-extra {
+    display: contents;
+  }
+  #wavePlayer.expanded #waveExpand {
+    position: absolute;
+    right: max(18px, env(safe-area-inset-right));
+    top: max(18px, env(safe-area-inset-top));
+    width: 44px;
+    height: 44px;
+    background: transparent;
+    border: 0;
+  }
+  #wavePlayer.expanded .wave-player-art {
+    grid-column: 1/-1;
+    justify-self: center;
+    width: min(100%, 38dvh, 360px);
+    height: auto;
+    aspect-ratio: 1;
+    min-height: 0;
+    min-width: 0;
+    margin: 8px 0;
+    border: 1px solid var(--line-soft);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px #0007;
+    cursor: default;
+  }
+  #wavePlayer.expanded .wave-player-info {
+    grid-column: 1/-1;
+    justify-self: stretch;
+    cursor: default;
+    min-height: 54px;
+  }
+  #wavePlayer.expanded .wave-player-info strong {
+    font-size: clamp(20px, 5.4vw, 27px);
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  #wavePlayer.expanded .wave-player-info span {
+    font-size: 14px;
+    margin-top: 7px;
+  }
+  #wavePlayer.expanded .wave-player-progress {
+    grid-column: 1/-1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+  }
+  #wavePlayer.expanded #waveSeek {
+    flex: auto;
+    width: 100%;
+    height: 30px;
+  }
+  #wavePlayer.expanded #waveTime {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: var(--ui-meta-size);
+  }
+  #wavePlayer.expanded .wave-time-divider {
+    display: none;
+  }
+  #wavePlayer.expanded #waveShuffle {
+    grid-column: 1;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #wavePrev {
+    display: inline-flex !important;
+    grid-column: 2;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveToggle {
+    grid-column: 3;
+    grid-row: 5;
+    background: var(--button-bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    box-shadow: 0 4px 22px var(--accent-glow);
+  }
+  #wavePlayer.expanded #waveNext {
+    grid-column: 4;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveRepeat {
+    grid-column: 5;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveShuffle,
+  #wavePlayer.expanded #wavePrev,
+  #wavePlayer.expanded #waveNext,
+  #wavePlayer.expanded #waveRepeat {
+    justify-self: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+  }
+  #wavePlayer.expanded #waveToggle {
+    justify-self: center;
+  }
+  #wavePlayer.expanded #wavePrev .wave-control-icon,
+  #wavePlayer.expanded #waveNext .wave-control-icon {
+    width: 27px;
+    height: 27px;
+  }
+  #wavePlayer.expanded #waveToggle .wave-control-icon {
+    width: 28px;
+    height: 28px;
+  }
+  #wavePlayer.expanded .wave-volume-row {
+    grid-column: 1/-1;
+    grid-row: 6;
+    justify-self: center;
+    width: min(75%, 260px);
+    gap: 12px;
+  }
+  #wavePlayer.expanded #waveVolume {
+    width: 100%;
+    min-width: 0;
+  }
+  #wavePlayer.expanded #waveQueueToggle {
+    grid-column: 1/4;
+    grid-row: 7;
+    justify-self: start;
+    background: none;
+    border: 1px solid var(--line);
+    min-height: 38px;
+    padding: 8px 14px;
+  }
+  #wavePlayer.expanded #waveQueueCount {
+    grid-column: 4/6;
+    grid-row: 7;
+    text-align: right;
+    font-size: var(--ui-meta-size);
+  }
+  #wavePlayer.expanded #wavePlayerStatus {
+    grid-column: 1/-1;
+    grid-row: 8;
+    text-align: center;
+    margin: 0;
+  }
+  #waveQueueDialog {
+    margin: auto 0 0;
+    max-width: none;
+    width: 100%;
+    max-height: 75dvh;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  #wavePlayer.expanded :is(#waveShuffle, #waveRepeat)[aria-pressed='true']::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+}
+@media (max-width: 350px) {
+  #wavePlayer.expanded {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  #wavePlayer.expanded #waveToggle {
+    width: 56px;
+    height: 56px;
+  }
+}
+#waveTransfer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+  background: var(--bg);
+  font-size: var(--ui-meta-size);
+  flex-shrink: 0;
+}
+#waveTransfer[hidden] {
+  display: none;
+}
+#waveTransferText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#waveTransferStop {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: var(--ui-meta-size);
+  cursor: pointer;
+}
+.wave-artist-bio {
+  color: var(--muted);
+  font-size: var(--ui-small-size);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 650px;
+  margin: 8px 0;
+}
+.wave-hero-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+#waveSelection {
+  margin: 10px 0;
+  padding: 8px;
+  background: var(--surface);
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  font-size: var(--ui-meta-size);
+}
+#waveSelectedCount {
+  margin-right: auto;
+}
+#wavePage input[type='checkbox'] {
+  appearance: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+#waveSelection label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wave-profile-preview {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+#waveDialogBody textarea {
+  width: 100%;
+  min-height: 75px;
+  resize: vertical;
+  background: var(--control-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px;
+  font: 12px var(--sans);
+}
+#waveDialogBody input[type='file'] {
+  width: 100%;
+  min-width: 0;
+}
+.wave-sidebar nav a {
+  scroll-margin: 4px;
+}
+.wave-art.artist img {
+  filter: none;
+}
+@media (max-width: 600px) {
+  #waveSelection {
+    gap: 6px;
+  }
+  #waveSelection label {
+    flex: 1 0 100%;
+  }
+  #wavePage .wave-track:has(input[type='checkbox']) {
+    gap: 4px;
+  }
+  #wavePage .wave-track:has(input[type='checkbox']) .wave-duration {
+    display: none;
+  }
+}
+#wavePlayer .wave-player-art:disabled,
+#wavePlayer .wave-player-info:disabled {
+  opacity: 1;
+  cursor: default;
+}
+html:has(> body.wave-shell) {
+  scrollbar-gutter: auto;
+  overflow: hidden;
+}
+
+#waveNav .wave-playlist-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+#waveNav .wave-playlist-heading > a {
+  flex: 1;
+  min-width: 0;
+}
+#waveNav #waveCreate {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 21px;
+}
+#wavePlaylists[hidden] {
+  display: none;
+}
+#wavePlaylists {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  margin: 0 0 0 8px;
+}
+#wavePlaylists:not([hidden]) {
+  display: grid !important;
+}
+@media (max-width: 600px) {
+  .wave-sidebar {
+    padding-right: 0;
+  }
+  .wave-sidebar #waveNav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+  #waveNav .wave-playlist-heading {
+    position: static;
+    grid-column: 1/-1;
+  }
+  #wavePlaylists {
+    margin-top: 6px;
+  }
+}
+
+#wavePlayerStatus:empty {
+  display: none;
+}
+
+body.wave-shell.reader-focus {
+  padding-bottom: 0 !important;
+}
+body.reader-focus #hubFrame {
+  height: 100dvh !important;
+  bottom: 0 !important;
+}
+body.reader-focus #wavePlayer,
+body.reader-focus #waveTransfer {
+  display: none !important;
+}
+
+#waveUploadDialog {
+  width: min(520px, calc(100vw - 24px));
+  max-height: 85dvh;
+  overflow: auto;
+  background: var(--dialog-bg);
+  backdrop-filter: blur(12px);
+}
+#waveUploadDialog h2 {
+  flex: 1;
+  font-size: 16px;
+}
+#waveDropZone {
+  margin: 16px 0;
+  padding: 20px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+#waveDropZone.dragging {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+#waveUploadList {
+  max-height: 25dvh;
+  overflow: auto;
+  padding-left: 20px;
+  font-size: var(--ui-small-size);
+  overflow-wrap: anywhere;
+}
+#waveUploadList:empty {
+  display: none;
+}
+#waveUploadProgress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+#waveUploadSummary,
+#waveUploadMessage {
+  font-size: var(--ui-small-size);
+  overflow-wrap: anywhere;
+}
+#waveUploadMessage {
+  color: var(--muted);
+}
+
+@media (max-width:600px), (max-height:500px) and (max-width:1000px) {
+  #wavePlayer.expanded #waveClose {
+    position: absolute;
+    left: max(18px, env(safe-area-inset-left));
+    top: max(18px, env(safe-area-inset-top));
+    width: 44px;
+    height: 44px;
+    background: transparent;
+  }
+}
+
+@media (max-width: 650px), (max-height: 500px) and (pointer: coarse) {
+  body.wave-shell.chat-focus { padding-bottom: 0 !important; }
+  body.chat-focus #hubFrame { flex: 1 1 0; min-height: 0; }
+  body.chat-focus #wavePlayer, body.chat-focus #waveTransfer { display: none !important; }
+}
+
+/* Compact transport; hiding its UI never changes the persistent audio element. */
+#wavePlayer:not(.expanded) {
+  padding: 3px max(8px, calc((100vw - 1180px) / 2)) max(3px, env(safe-area-inset-bottom));
+}
+#wavePlayer:not(.expanded) .wave-player-row { gap: 6px; }
+#wavePlayer:not(.expanded) .wave-transport { gap: 2px; }
+#wavePlayer:not(.expanded) .wave-player-row > button:not(.wave-player-info):not(.wave-player-art),
+#wavePlayer:not(.expanded) .wave-transport button {
+  width: 40px; height: 44px; min-width: 40px; flex-shrink: 0; padding: 6px;
+  border-color: transparent; background: transparent;
+}
+#wavePlayer:not(.expanded) .wave-player-art {
+  width: 34px; height: 34px; min-width: 34px; flex-basis: 34px; border-radius: 6px;
+}
+#wavePlayer:not(.expanded) .wave-player-info { min-height: 44px; }
+#wavePlayer:not(.expanded) .wave-player-info strong { font-size: 13px; line-height: 18px; }
+#wavePlayer:not(.expanded) .wave-player-info span { font-size: 11px; line-height: 16px; margin-top: 0; }
+#wavePlayer:not(.expanded) .wave-player-progress,
+#wavePlayer:not(.expanded) #waveClose,
+#wavePlayer.expanded #waveMinimize { display: none; }
+#wavePlayer:not(.expanded) #wavePlayerStatus { margin: 2px 0; font-size: 11px; }
+#waveRestore {
+  position: fixed; z-index: 19;
+  right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom));
+  width: 44px; height: 44px; min-width: 44px; padding: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--dialog-bg); color: var(--text);
+  box-shadow: 0 2px 10px #0003; touch-action: manipulation;
+}
+#waveRestore[hidden], body.reader-focus #waveRestore { display: none !important; }
+#waveRestore:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 650px), (max-height: 500px) and (pointer: coarse) {
+  body.chat-focus #waveRestore { display: none !important; }
+}
