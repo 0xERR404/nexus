@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import {BASE,HOST,NODE,atomic,json,query,lock,direct} from './common.mjs';
+import {installCleanup} from './maintenance.mjs';
 import {maintenanceCron} from '../02-hub/src/maintenance-schema.mjs';
 import {agentConfig,agentDefaults,durable,readState,uuid} from '../02-hub/src/agent-protocol.mjs';
 import {initialSettings} from './maintenance-control.mjs';
@@ -8,10 +9,16 @@ export const AGENT_CONTROL='/var/lib/nexus404-agent-control';
 export function agentCron(config) {
   return Object.fromEntries(Object.entries(maintenanceCron(config.maintenance,NODE,HOST)).map(([file,value])=>[file,value.replaceAll('/maintenance.mjs','/agent-jobs.mjs')]));
 }
-export function installAgentControl({base=BASE,control=AGENT_CONTROL,write=atomic}={}) {
+export function installAgentControl({base=BASE,control=AGENT_CONTROL,write=atomic,inspect=query}={}) {
   fs.mkdirSync(control+'/requests',{recursive:true});fs.mkdirSync(control+'/status',{recursive:true});
   let state=readState(base+'/agent-maintenance.json',null);
-  if(!state){const config=agentDefaults();config.timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;config.maintenance=json(base+'/maintenance-settings.json')?.config??initialSettings();state={version:0,requestId:null,result:'applied',config};durable(base+'/agent-maintenance.json',state);}
+  if(!state){
+    const config=agentDefaults();config.timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if(fs.existsSync(base+'/installed.flag'))config.maintenance=json(base+'/maintenance-settings.json')?.config??initialSettings();
+    else {for(const row of Object.values(config.maintenance))row.enabled=false;config.maintenance.cleanup.afterReboot=false;}
+    config.services=config.services.filter(name=>name==='nexus404-agent.service'||inspect('systemctl',['show','-p','LoadState','--value',name]).text==='loaded');
+    state={version:0,requestId:null,result:'applied',config};durable(base+'/agent-maintenance.json',state);
+  }
   for(const [file,value]of Object.entries(agentCron(state.config)))write(file,value,0o644);
   durable(control+'/status/status.json',state,0o644);
   write('/etc/systemd/system/nexus404-maintenance-control.service',`[Unit]
@@ -27,6 +34,16 @@ ProtectHome=true
 ProtectSystem=full
 ReadWritePaths=/etc/cron.d /var/lib/nexus404-base /var/lib/nexus404-agent-control/status /run/lock
 `,0o644);
+  write('/etc/systemd/system/nexus404-maintenance-control.timer',`[Unit]
+Description=NEXUS404 apply agent maintenance settings
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+AccuracySec=5s
+[Install]
+WantedBy=timers.target
+`,0o644);
+  installCleanup({write});
   return state;
 }
 function requestFile(file){let fd;try{fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);const s=fs.fstatSync(fd);if(!s.isFile()||s.size>8192||s.nlink!==1)throw Error();return JSON.parse(fs.readFileSync(fd,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}finally{if(fd!==undefined)fs.closeSync(fd);}}

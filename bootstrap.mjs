@@ -70,6 +70,7 @@ export const projectFiles = [
   'host/agent-control.mjs',
   'host/agent-jobs.mjs',
   'host/agent-install.mjs',
+  'host/remote-install.mjs',
   'host/event-reader.mjs',
 
   '02-hub/public/card-layout.css',

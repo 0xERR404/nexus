@@ -1,7 +1,8 @@
+import {validateCertificatePair} from './vpn-cert.mjs';
 import fs from 'node:fs';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {randomUUID,X509Certificate,createPrivateKey,createPublicKey} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {once} from 'node:events';
 import {durable,readState} from '../02-hub/src/agent-protocol.mjs';
@@ -13,7 +14,7 @@ export class Xray {
   constructor(directory,binary='/opt/nexus404/vpn/xray'){this.directory=directory;this.binary=binary;this.child=null;}
   async command(args){return execute(this.binary,args,{timeout:10000,maxBuffer:1024*1024,env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});}
   async validate(config){
-    for(const inbound of config.inbounds){const tls=inbound.streamSettings?.tlsSettings;if(!tls)continue;const c=tls.certificates[0],cert=new X509Certificate(fs.readFileSync(c.certificateFile)),key=createPublicKey(createPrivateKey(fs.readFileSync(c.keyFile)));check(cert.publicKey.equals(key)&&(cert.checkHost(tls.serverName)||cert.checkIP(tls.serverName))&&new Date(cert.validTo).getTime()>Date.now()&&new Date(cert.validFrom).getTime()<=Date.now(),'TLS: сертификат истёк или ключ не совпадает');}
+    for(const inbound of config.inbounds){const tls=inbound.streamSettings?.tlsSettings;if(!tls)continue;const c=tls.certificates[0];validateCertificatePair(fs.readFileSync(c.certificateFile),fs.readFileSync(c.keyFile),{name:tls.serverName});}
     durable(this.directory+'/candidate.json',config);const version=await this.command(['version']);check(new RegExp('Xray '+CORE_VERSION.replaceAll('.','\\.')+'(?:\\s|$)').test(version.stdout),'Установлена другая версия Xray');await this.command(['run','-test','-config',this.directory+'/candidate.json']);}
   async start(config){await this.stop();durable(this.directory+'/running.json',config);this.child=spawn(this.binary,['run','-config',this.directory+'/running.json'],{stdio:'ignore',env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});this.child.on('error',()=>{});for(let n=0;n<30;n++){await sleep(100);if(this.child.exitCode!==null)throw Error('Ядро не запустилось');try{await this.stats();return;}catch{}}await this.stop();throw Error('API ядра не отвечает');}
   alive(){return !!this.child&&this.child.exitCode===null&&this.child.signalCode===null;}

@@ -13,7 +13,9 @@ esac
 : </dev/tty || { echo 'Нужен интерактивный терминал.'; exit 1; }
 install_tools() {
     apt-get -o DPkg::Lock::Timeout=120 update
-    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y ca-certificates curl git xz-utils util-linux
+    set -- ca-certificates curl xz-utils util-linux
+    [ -n "$project_dir" ] || set -- "$@" git
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends "$@"
 }
 project_dir=''
 if [ -z "${NEXUS_REPO+x}" ] && [ "${0##*/}" = menu.sh ] && [ -f "$0" ]; then

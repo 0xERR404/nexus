@@ -13,6 +13,7 @@ import {
   event
 } from './common.mjs';
 import {initializeControl} from './maintenance-control.mjs';
+import {installAgentControl} from './agent-control.mjs';
 import {SSH, prepareRuntime} from './ssh.mjs';
 import {protection, portFindings} from './security.mjs';
 import {
@@ -527,6 +528,7 @@ export class BaseSetup {
   }
   async health() {
     initializeControl();
+    if(this.standalone&&fs.existsSync(BASE+'/agent-mode'))installAgentControl();
     for (const [name, cmd, args] of [
       ['timezone', 'timedatectl', ['show', '-p', 'Timezone', '--value']],
       ['swap_devices', 'swapon', ['--noheadings', '--raw', '--show=NAME']],

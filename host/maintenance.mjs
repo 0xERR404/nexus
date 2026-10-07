@@ -77,7 +77,7 @@ export async function job(
     throw e;
   }
   try {
-    if (!fs.existsSync(base + '/installed.flag')) return;
+    if (!fs.existsSync(base + '/installed.flag') && !fs.existsSync(base + '/agent-mode')) return;
     const managed=readManaged(base)?.config;
     if(managed && !maintenanceDue(managed,name,now()))return;
     if (name.includes('security') && !fs.existsSync(requiredFile)) return;
@@ -126,24 +126,25 @@ export async function job(
 
 const unit = (description, command, extra = '') =>
   `[Unit]\nDescription=${description}\n${extra}\n[Service]\nType=oneshot\nExecStart=${command}\n`;
-export function installEvents() {
-  fs.mkdirSync('/opt/nexus404/hooks/events', {recursive: true, mode: 0o700});
-  atomic(
+export function installEvents({managed=true,write=atomic,mkdir=fs.mkdirSync,remove=fs.rmSync}={}) {
+  mkdir('/opt/nexus404/hooks/events', {recursive: true, mode: 0o700});
+  if(managed){write(
     '/etc/fail2ban/action.d/nexus404-hook.conf',
     `[Definition]\nactionban = ${NODE} ${HOST}/events.mjs security.fail2ban.ban "IP=<ip> jail=<name>"\nactionunban = ${NODE} ${HOST}/events.mjs security.fail2ban.unban "IP=<ip> jail=<name>"\n`,
     0o644
   );
-  atomic(
+  write(
     '/etc/fail2ban/jail.d/99-nexus404-events.local',
     '[sshd]\naction = %(action_)s\n         nexus404-hook\n',
     0o644
   );
-  atomic(
+  }
+  write(
     '/etc/systemd/system/nexus404-ssh-events.service',
     `[Unit]\nDescription=NEXUS404 SSH events\nAfter=network.target ssh.service sshd.service\n[Service]\nExecStart=${NODE} ${HOST}/events.mjs --watch-ssh\nRestart=always\nRestartSec=3\n[Install]\nWantedBy=multi-user.target\n`,
     0o644
   );
-  atomic(
+  write(
     '/etc/systemd/system/nexus404-boot-event.service',
     unit(
       'NEXUS404 boot event',
@@ -152,33 +153,34 @@ export function installEvents() {
     ) + '[Install]\nWantedBy=multi-user.target\n',
     0o644
   );
-  atomic(
+  write(
     '/etc/systemd/system/nexus404-event-failure@.service',
     unit('NEXUS404 failure event', `${NODE} ${HOST}/events.mjs system.service.failed %i`),
     0o644
   );
-  atomic(
+  if(managed)write(
     '/etc/systemd/system/apt-daily-upgrade.service.d/90-nexus404-events.conf',
     `[Unit]\nOnFailure=nexus404-event-failure@%n.service\n[Service]\nExecStartPost=-${NODE} ${HOST}/events.mjs system.update.completed "Security maintenance completed"\n`,
     0o644
   );
   for (const f of ['/usr/local/bin/deploy_kit_ssh_events.sh', '/opt/nexus404/hooks/event_hook.sh'])
-    fs.rmSync(f, {force: true});
+    remove(f, {force: true});
 }
-export function installLogging() {
-  atomic(
+export function installLogging({managed=true,write=atomic,remove=fs.rmSync}={}) {
+  if(managed)
+  write(
     '/etc/systemd/journald.conf.d/90-nexus404.conf',
     '[Journal]\nSystemMaxUse=100M\nRuntimeMaxUse=50M\nSystemKeepFree=256M\nMaxRetentionSec=7day\n',
     0o644
   );
   for (const f of ['/etc/logrotate.d/nexus404-base', '/etc/logrotate.d/nexus404-hooks'])
-    fs.rmSync(f, {force: true});
-  atomic(
+    remove(f, {force: true});
+  write(
     '/etc/nexus404-logrotate.conf',
     '/var/lib/nexus404-base/*.log /var/lib/nexus404-caddy/*.log /var/lib/nexus404-menu/*.log /var/lib/nexus404-shell/*.log /opt/nexus404/hooks/events/events.jsonl /opt/nexus404/hub-platform/data/auth-events.jsonl {\n daily\n maxsize 10M\n rotate 5\n compress\n missingok\n notifempty\n copytruncate\n su root root\n}\n',
     0o644
   );
-  atomic(
+  write(
     '/etc/systemd/system/nexus404-logrotate.service',
     unit(
       'NEXUS404 log rotation',
@@ -186,7 +188,7 @@ export function installLogging() {
     ),
     0o644
   );
-  atomic(
+  write(
     '/etc/systemd/system/nexus404-logrotate.timer',
     '[Unit]\nDescription=NEXUS404 hourly log check\n[Timer]\nOnCalendar=hourly\nPersistent=true\nRandomizedDelaySec=5min\n[Install]\nWantedBy=timers.target\n',
     0o644
@@ -203,16 +205,7 @@ export function cronSchedule(file, readFile = read) {
     ? {time: hour.padStart(2, '0') + ':' + minute.padStart(2, '0'), day}
     : null;
 }
-export function installSchedules(time, day, health, {write = atomic, remove = fs.rmSync, settings} = {}) {
-  if (!validTime(time) || !validTime(health) || !Number.isInteger(day) || day < 0 || day > 6)
-    throw new Error('Некорректное расписание');
-  write(
-    '/etc/apt/apt.conf.d/99-nexus404-reboot',
-    'Unattended-Upgrade::Automatic-Reboot "false";\n',
-    0o644
-  );
-  const config=settings??{...maintenanceDefaults(),reboot:{enabled:true,day,time},health:{enabled:true,time:health},securityReboot:{enabled:true,time:'02:00'}};
-  for(const [file,value] of Object.entries(maintenanceCron(config,NODE,HOST)))write(file,value,0o644);
+export function installCleanup({write=atomic}={}) {
   write(
     '/etc/systemd/system/nexus404-post-reboot-cleanup.service',
     unit(
@@ -227,6 +220,18 @@ export function installSchedules(time, day, health, {write = atomic, remove = fs
     '[Unit]\nDescription=NEXUS404 deferred cleanup\n[Timer]\nOnBootSec=10min\nOnUnitInactiveSec=10min\nAccuracySec=30s\nUnit=nexus404-post-reboot-cleanup.service\n[Install]\nWantedBy=timers.target\n',
     0o644
   );
+}
+export function installSchedules(time, day, health, {write = atomic, remove = fs.rmSync, settings} = {}) {
+  if (!validTime(time) || !validTime(health) || !Number.isInteger(day) || day < 0 || day > 6)
+    throw new Error('Некорректное расписание');
+  write(
+    '/etc/apt/apt.conf.d/99-nexus404-reboot',
+    'Unattended-Upgrade::Automatic-Reboot "false";\n',
+    0o644
+  );
+  const config=settings??{...maintenanceDefaults(),reboot:{enabled:true,day,time},health:{enabled:true,time:health},securityReboot:{enabled:true,time:'02:00'}};
+  for(const [file,value] of Object.entries(maintenanceCron(config,NODE,HOST)))write(file,value,0o644);
+  installCleanup({write});
   write(
     '/etc/systemd/system/nexus404-security-check.service',
     unit(

@@ -1,3 +1,4 @@
+import {installRemote} from './host/remote-install.mjs';
 import {installVPNPanel,installVPNNode} from './host/vpn-install.mjs';
 import {installAgent} from './host/agent-install.mjs';
 import fs from 'node:fs';
@@ -129,7 +130,7 @@ async function update(ui) {
   });
 }
 async function applyUpdate(ui) {
-  if(fs.existsSync('/var/lib/nexus404-base/agent-mode')){await installAgent(ui,{baseSetup:false});if(fs.existsSync('/var/lib/nexus404-base/vpn-mode'))await installVPNNode(ui,{baseSetup:false,update:true});return;}
+  if(fs.existsSync('/var/lib/nexus404-base/agent-mode')){await installAgent(ui);if(fs.existsSync('/var/lib/nexus404-base/vpn-mode'))await installVPNNode(ui,{update:true});return;}
   installHost();
   await migrate(ui);
   if (fs.existsSync(CADDY + '/upstream')) await installCaddy(ui, true);
@@ -144,7 +145,7 @@ async function action(choice, ui) {
   if (choice === '2') return installCaddy(ui);
   if (choice === '3') return update(ui);
   if (choice === '5') return installHub(ui);
-  if (choice === '7') return installAgent(ui);
+  if (choice === '7') return installRemote(ui);
   if (choice === '8') return installVPNPanel(ui);
   if (choice === '9') return installVPNNode(ui);
   throw new Error('Неизвестный пункт');
@@ -160,6 +161,7 @@ async function main() {
   const ui = new UI('/var/lib/nexus404-menu/menu.log');
   try {
     if(['--vpn-panel','--vpn-node'].includes(process.argv[2])){await withLock('/run/lock/nexus404-setup.lock',()=>process.argv[2]==='--vpn-panel'?installVPNPanel(ui):installVPNNode(ui),true);return;}
+    if(process.argv[2]==='--remote'){await withLock('/run/lock/nexus404-setup.lock',()=>installRemote(ui),true);return;}
     if(process.argv[2]==='--agent'){await withLock('/run/lock/nexus404-setup.lock',()=>installAgent(ui),true);return;}
     if (process.argv[2] === '--apply-update') {
       await applyUpdate(ui);
@@ -193,7 +195,7 @@ async function main() {
         '',
         '5  Хаб · логин и PWA',
         '6  Модули · установка и обновление',
-        '7  Агент · базовая настройка и подключение к хабу',
+        '7  Удалённый VPS · агент или VPN-нода',
         '8  VPN-панель · Арго в существующем хабе',
         '9  VPN-нода · отдельный VPS, без хаба',
         '',
