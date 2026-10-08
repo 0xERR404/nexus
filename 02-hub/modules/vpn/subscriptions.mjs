@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {connectionLabel,proxyNames} from './countries.mjs';
 import {xrayProfiles} from './xray-client.mjs';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
@@ -7,7 +8,7 @@ export function uri(c,u){
   const p=new URLSearchParams({sni:c.sni});let scheme,credential;
   if(c.profile.startsWith('vless')){scheme='vless';credential=u.uuid;p.set('encryption','none');p.set('security','reality');p.set('pbk',c.publicKey);p.set('sid',c.shortId);p.set('fp',c.fingerprint);p.set('type',c.profile.slice(6)==='raw'?'tcp':c.profile.slice(6));if(c.profile==='vless-raw')p.set('flow','xtls-rprx-vision');if(c.profile==='vless-xhttp'){p.set('path',c.path);p.set('mode','auto');}if(c.profile==='vless-grpc')p.set('serviceName',c.serviceName);}
   else {scheme=c.profile==='trojan'?'trojan':'hysteria2';credential=u.password;if(scheme==='trojan'){p.set('security','tls');p.set('type','tcp');}}
-  return `${scheme}://${encodeURIComponent(credential)}@${isIP(c.address)===6?'['+c.address+']':c.address}:${c.port}?${p}#${encodeURIComponent(c.name)}`;
+  return `${scheme}://${encodeURIComponent(credential)}@${isIP(c.address)===6?'['+c.address+']':c.address}:${c.port}?${p}#${encodeURIComponent(connectionLabel(c))}`;
 }
 export function proxy(c,u){
   const p={name:c.id,type:c.profile.startsWith('vless')?'vless':c.profile,server:c.address,port:c.port,udp:true};
@@ -25,6 +26,7 @@ export function exportSubscription(store,u,format='mihomo'){
   for(const source of route.sources){const saved=store.sourceData(source.id);check(saved?.url===source.url&&saved?.type===source.type&&saved?.rules?.length,'Внешний список ещё не загружен: импорт остановлен, чтобы не пропустить VPN-направления');rules.push(...saved.rules.map(r=>({...r,target:source.target,exception:source.exception})));}
   rules=rules.map((r,index)=>({...r,index})).sort((a,b)=>Number(b.exception)-Number(a.exception)||a.index-b.index);
   if(format==='xray')return JSON.stringify(xrayProfiles(connections,u,route,rules),null,2);
+  const labels=proxyNames(connections),label=target=>labels.get(target)??target;
   const allowed=new Set(connections.map(c=>c.id));
   const groups=[{name:'VPN',type:'select',proxies:[...allowed]}];
   for(const g of route.groups){const proxies=g.connections.filter(c=>allowed.has(c));if(proxies.length)groups.push({name:g.id,type:'fallback',proxies,url:'https://www.gstatic.com/generate_204',interval:300});}
@@ -35,12 +37,12 @@ export function exportSubscription(store,u,format='mihomo'){
     for(const c of connections){const name='fallback-'+c.id;fallbackNames.set(c.id,name);groups.push({name,type:'fallback',proxies:[c.id,'DIRECT'],url:'https://www.gstatic.com/generate_204',interval:60});}
   }
   const targets=new Set(['DIRECT','REJECT','VPN',...allowed,...groups.map(g=>g.name)]);
-  const formatted=rules.map(r=>{const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??fallbackNames.get(r.target)??r.target;check(targets.has(target),'Маршрутизация ссылается на недоступное пользователю подключение или группу');const type=r.type==='domain'?'DOMAIN':r.type==='suffix'?'DOMAIN-SUFFIX':r.value.includes(':')?'IP-CIDR6':'IP-CIDR';return `${type},${r.value},${target}${r.type==='ip'?',no-resolve':''}`;});
+  const formatted=rules.map(r=>{const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??fallbackNames.get(r.target)??r.target;check(targets.has(target),'Маршрутизация ссылается на недоступное пользователю подключение или группу');const type=r.type==='domain'?'DOMAIN':r.type==='suffix'?'DOMAIN-SUFFIX':r.value.includes(':')?'IP-CIDR6':'IP-CIDR';return `${type},${r.value},${label(target)}${r.type==='ip'?',no-resolve':''}`;});
   const resolver=route.dns,policy={};
   // Use the selected tunnel for DNS of VPN destinations, including fake-IP lookups.
   // Process lowest priority first because a later exception must override it.
-  for(const r of [...rules].reverse()){if(r.type==='ip')continue;const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??r.target;policy[(r.type==='suffix'?'+.':'')+r.value]=target==='DIRECT'?[resolver]:target==='REJECT'?['rcode://refused']:[resolver+'#'+target];}
-  return JSON.stringify({'mixed-port':7890,'allow-lan':false,mode:'rule','log-level':'warning',ipv6:true,tun:{enable:true,stack:'mixed','auto-route':true,'auto-detect-interface':true,'dns-hijack':['any:53']},dns:{enable:true,listen:'127.0.0.1:1053',ipv6:true,'enhanced-mode':'fake-ip','respect-rules':true,'default-nameserver':[resolver],'nameserver':[resolver],'proxy-server-nameserver':[resolver],'direct-nameserver':[resolver],'nameserver-policy':policy},proxies:connections.map(c=>proxy(c,u)),'proxy-groups':groups,rules:[...formatted,'MATCH,DIRECT']},null,2);
+  for(const r of [...rules].reverse()){if(r.type==='ip')continue;const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??r.target;policy[(r.type==='suffix'?'+.':'')+r.value]=target==='DIRECT'?[resolver]:target==='REJECT'?['rcode://refused']:[resolver+'#'+label(target)];}
+  return JSON.stringify({'mixed-port':7890,'allow-lan':false,mode:'rule','log-level':'warning',ipv6:true,tun:{enable:true,stack:'mixed','auto-route':true,'auto-detect-interface':true,'dns-hijack':['any:53']},dns:{enable:true,listen:'127.0.0.1:1053',ipv6:true,'enhanced-mode':'fake-ip','respect-rules':true,'default-nameserver':[resolver],'nameserver':[resolver],'proxy-server-nameserver':[resolver],'direct-nameserver':[resolver],'nameserver-policy':policy},proxies:connections.map(c=>({...proxy(c,u),name:label(c.id)})),'proxy-groups':groups.map(g=>({...g,proxies:g.proxies.map(label)})),rules:[...formatted,'MATCH,DIRECT']},null,2);
 }
 export function publicAddress(address){
   if(isIP(address)===4){const [a,b]=address.split('.').map(Number);return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&(b===168||b===0)||a===100&&b>=64&&b<=127||a===198&&(b===18||b===19));}

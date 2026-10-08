@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {VPN} from './store.mjs';
+import {countries,connectionLabel} from './countries.mjs';
 import {exportSubscription,uri,refreshSources} from './subscriptions.mjs';
 import {qr} from './qr.mjs';
 import {modulePage} from '../../src/views.mjs';
@@ -16,18 +17,19 @@ export async function handle({request,path:route,user,searchParams,authorized=()
     if(request.method==='GET'){
       if(route==='/')return new Response(modulePage({embedded:user.embedded,username:user.username,title:'Арго',content}),{headers:{'content-type':'text/html; charset=utf-8'}});
       if(['/app.js','/style.css'].includes(route))return new Response(fs.readFileSync(new URL('.'+route,import.meta.url)),{headers:{'content-type':route.endsWith('.js')?'text/javascript':'text/css'}});
-      if(route==='/api')return Response.json({...store().snapshot(agents?.list()??[]),profiles:PROFILES});
+      if(route==='/api')return Response.json({...store().snapshot(agents?.list()??[]),profiles:PROFILES,countries});
       if(route==='/api/history')return Response.json({rows:store().history(searchParams.get('user'))});
       if(route==='/api/subscription'){
         const u=store().get('user',searchParams.get('user'));check(store().active(u),'Доступ пользователя отключён или истёк');exportSubscription(store(),u,'xray');const base=origin+'/subscriptions/vpn/'+u.token;
-        return Response.json({url:base+'/xray',alternatives:{mihomo:base+'/mihomo',base64:base+'/base64'},links:store().subscriptionConnections(u).map(c=>({name:c.name,uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
+        return Response.json({url:base+'/xray',alternatives:{mihomo:base+'/mihomo',base64:base+'/base64'},links:store().subscriptionConnections(u).map(c=>({name:connectionLabel(c),uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
       }
       if(route==='/api/qr'){const u=store().get('user',searchParams.get('user'));return new Response(qr(origin+'/subscriptions/vpn/'+u.token+'/xray'),{headers:{'content-type':'image/svg+xml','cache-control':'no-store'}});}
       if(route==='/api/config'){const node=searchParams.get('node');agents.get(node);const bundle=store().preview(node);check(bundle,'Сначала включи VPN на агенте');return Response.json({config:serverConfig(bundle),settings:bundle.settings,notice:'Редактируются порт, SNI, цель Reality, путь XHTTP, имя gRPC, DNS и правила direct/block. Учётные данные, API и пути сертификатов защищены. Итог проверяется и применяется на ноде.'});}
     }
     if(request.method==='POST'){
       const v=await readJSON(request,131072);if(!authorized())return Response.json({error:'Нужен вход'},{status:401});
-      if(route==='/api/node'){const a=agents.get(v.id);check(!a.revoked,'Доступ агента отозван');return Response.json(store().node(v.id,v.settings,v.version));}
+      if(route==='/api/node'){const a=agents.get(v.id);check(!a.revoked,'Доступ агента отозван');return Response.json(store().node(v.id,v.settings,v.version,v.country));}
+      if(route==='/api/node-country'){const a=agents.get(v.id);check(!a.revoked,'Доступ агента отозван');return Response.json(store().nodeCountry(v.id,v.country,v.version));}
       if(route==='/api/config'){const a=agents.get(v.id);check(!a.revoked,'Доступ агента отозван');return Response.json(store().saveConfig(v.id,v.config,v.version));}
       if(route==='/api/connection'){const a=agents.get(v.value?.node);check(!a.revoked,'Доступ агента отозван');return Response.json(store().saveConnection(v.value,v.version));}
       if(route==='/api/user')return Response.json(store().saveUser(v.value,v.version));

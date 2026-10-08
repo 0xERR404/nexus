@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {countryCode} from './countries.mjs';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {DatabaseSync} from 'node:sqlite';
@@ -35,7 +36,14 @@ export class VPN {
   put(kind,v){this.db.prepare('INSERT OR REPLACE INTO objects VALUES(?,?,?)').run(kind,v.id,JSON.stringify(v));return v;}
   revision(){return this.db.prepare("SELECT value FROM meta WHERE key='revision'").get().value;}
   change(version,fn){return this.tx(()=>{check(version===this.revision(),'Данные изменились: обнови страницу');const r=fn();this.db.exec("UPDATE meta SET value=value+1 WHERE key='revision';UPDATE nodes SET revision=revision+1");return r;});}
-  node(agent,settings,version){return this.change(version,()=>{check(id(agent));this.db.prepare('INSERT INTO nodes(id,settings) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings').run(agent,JSON.stringify(serverSettings(settings)));return {ok:true};});}
+  nodeCountry(node,code,version){return this.tx(()=>{
+    check(version===this.revision(),'Данные изменились: обнови страницу');
+    check(this.db.prepare('SELECT 1 FROM nodes WHERE id=?').get(node),'Сначала включи VPN на агенте');
+    const country=countryCode(code);this.put('location',{id:node,country});
+    // Display metadata is immediate and must not create a VPN deployment.
+    this.db.exec("UPDATE meta SET value=value+1 WHERE key='revision'");return {ok:true,country};
+  });}
+  node(agent,settings,version,country){return this.change(version,()=>{check(id(agent));this.db.prepare('INSERT INTO nodes(id,settings) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings').run(agent,JSON.stringify(serverSettings(settings)));if(country!==undefined)this.put('location',{id:agent,country:countryCode(country)});return {ok:true};});}
   saveConnection(value,version){return this.change(version,()=>{
     const old=value.id?this.get('connection',value.id):null;
     const saved=old?this.all('connection-state').find(x=>x.id===old.id):null;
@@ -110,7 +118,8 @@ export class VPN {
     return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created:this.now(),expires:this.now()+LEASE_MS,connections,users,settings:JSON.parse(n.settings)};
   });}
   snapshot(agents=[]){
-    const nodes=this.db.prepare('SELECT * FROM nodes').all().map(n=>({id:n.id,revision:n.revision,settings:JSON.parse(n.settings),status:n.status?JSON.parse(n.status):null,seen:n.seen,stale:!n.seen||this.now()-n.seen>15000||this.now()-(n.status?JSON.parse(n.status).time:0)>15000,...{agent:agents.find(a=>a.id===n.id)??null}}));
+    const locations=new Map(this.all('location').map(x=>[x.id,x.country]));
+    const nodes=this.db.prepare('SELECT * FROM nodes').all().map(n=>({id:n.id,country:locations.get(n.id)||'',revision:n.revision,settings:JSON.parse(n.settings),status:n.status?JSON.parse(n.status):null,seen:n.seen,stale:!n.seen||this.now()-n.seen>15000||this.now()-(n.status?JSON.parse(n.status).time:0)>15000,...{agent:agents.find(a=>a.id===n.id)??null}}));
     return {version:this.revision(),core:CORE_VERSION,nodes:nodes.map(n=>({...n,applicationState:applicationState(n)})),agents:agents.map(a=>({id:a.id,name:a.name,state:a.state,revoked:a.revoked})),connections:this.all('connection'),users:this.all('user').map(u=>{const {token,password,uuid,...safe}=u;return {...safe,...this.total(u.id),active:this.active(u),nodes:this.db.prepare('SELECT * FROM usage WHERE user=?').all(u.id)};}),routing:this.all('routing'),sources:this.db.prepare('SELECT value FROM sources').all().map(r=>JSON.parse(r.value))};
   }
   preview(node){
@@ -138,11 +147,12 @@ export class VPN {
   });}
   history(user){this.get('user',user);return this.db.prepare('SELECT * FROM history WHERE user=? ORDER BY hour DESC LIMIT 2000').all(user);}
   subscriptionConnections(u){
+    const locations=new Map(this.all('location').map(x=>[x.id,x.country]));
     const deployed=new Map(this.all('deployed').map(d=>[d.id,d.connections]));
     return this.all('connection').filter(c=>c.enabled&&u.connections.includes(c.id)).flatMap(c=>{
       if(!deployed.has(c.node))return []; // Wait for the first acknowledged exchange, including after an upgrade.
       const running=deployed.get(c.node).find(x=>x.id===c.id&&x.enabled);
-      return running?[{...running,name:c.name}]:[];
+      return running?[{...running,name:c.name,country:locations.get(c.node)||''}]:[];
     });
   }
   subscription(token){check(typeof token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(token),'Подписка недоступна');const digest=hash(token);const u=this.all('user').find(u=>hash(u.token)===digest);check(u&&this.active(u),'Подписка недоступна');return u;}

@@ -1,3 +1,4 @@
+import {connectionLabel} from './countries.mjs';
 import {check} from '../../src/vpn-protocol.mjs';
 
 export function clientOutbound(c,u){
@@ -58,7 +59,7 @@ export function xrayProfiles(connections, user, route, rules) {
       enabled: true, routeOnly: false, destOverride: ['http', 'tls', 'quic']
     });
     const config = {
-      remarks: selected.name,
+      remarks: connectionLabel(selected),
       log: {access: 'none', loglevel: 'warning'},
       dns: {servers: [route.dns], queryStrategy: 'UseIP'},
       inbounds: [
