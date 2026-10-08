@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {xrayProfiles} from './xray-client.mjs';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {check,destination} from '../../src/vpn-protocol.mjs';
@@ -18,8 +19,12 @@ export function exportSubscription(store,u,format='mihomo'){
   const connections=store.all('connection').filter(c=>c.enabled&&u.connections.includes(c.id));check(connections.length,'Нет разрешённых подключений');
   if(format==='links')return connections.map(c=>uri(c,u)).join('\n')+'\n';
   if(format==='base64')return Buffer.from(connections.map(c=>uri(c,u)).join('\n')).toString('base64');
-  check(format==='mihomo','Доступны mihomo, links и base64. URI не переносит правила маршрутизации.');
+  check(['xray','mihomo'].includes(format),'Доступны xray, mihomo, links и base64. URI не переносит правила маршрутизации.');
   const route=u.routing?store.get('routing',u.routing):{fallback:'block',dns:'1.1.1.1',rules:[],groups:[],sources:[]};
+  let rules=[...route.rules];
+  for(const source of route.sources){const saved=store.sourceData(source.id);check(saved?.url===source.url&&saved?.type===source.type&&saved?.rules?.length,'Внешний список ещё не загружен: импорт остановлен, чтобы не пропустить VPN-направления');rules.push(...saved.rules.map(r=>({...r,target:source.target,exception:source.exception})));}
+  rules=rules.map((r,index)=>({...r,index})).sort((a,b)=>Number(b.exception)-Number(a.exception)||a.index-b.index);
+  if(format==='xray')return JSON.stringify(xrayProfiles(connections,u,route,rules),null,2);
   const allowed=new Set(connections.map(c=>c.id));
   const groups=[{name:'VPN',type:'select',proxies:[...allowed]}];
   for(const g of route.groups){const proxies=g.connections.filter(c=>allowed.has(c));if(proxies.length)groups.push({name:g.id,type:'fallback',proxies,url:'https://www.gstatic.com/generate_204',interval:300});}
@@ -29,10 +34,7 @@ export function exportSubscription(store,u,format='mihomo'){
     for(const group of groups){group.type='fallback';group.proxies.push('DIRECT');group.url='https://www.gstatic.com/generate_204';group.interval=60;}
     for(const c of connections){const name='fallback-'+c.id;fallbackNames.set(c.id,name);groups.push({name,type:'fallback',proxies:[c.id,'DIRECT'],url:'https://www.gstatic.com/generate_204',interval:60});}
   }
-  let rules=[...route.rules];
-  for(const source of route.sources){const saved=store.sourceData(source.id);check(saved?.url===source.url&&saved?.type===source.type&&saved?.rules?.length,'Внешний список ещё не загружен: импорт остановлен, чтобы не пропустить VPN-направления');rules.push(...saved.rules.map(r=>({...r,target:source.target,exception:source.exception})));}
   const targets=new Set(['DIRECT','REJECT','VPN',...allowed,...groups.map(g=>g.name)]);
-  rules=rules.map((r,index)=>({...r,index})).sort((a,b)=>Number(b.exception)-Number(a.exception)||a.index-b.index);
   const formatted=rules.map(r=>{const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??fallbackNames.get(r.target)??r.target;check(targets.has(target),'Маршрутизация ссылается на недоступное пользователю подключение или группу');const type=r.type==='domain'?'DOMAIN':r.type==='suffix'?'DOMAIN-SUFFIX':r.value.includes(':')?'IP-CIDR6':'IP-CIDR';return `${type},${r.value},${target}${r.type==='ip'?',no-resolve':''}`;});
   const resolver=route.dns,policy={};
   // Use the selected tunnel for DNS of VPN destinations, including fake-IP lookups.

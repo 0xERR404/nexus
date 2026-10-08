@@ -19,10 +19,10 @@ export async function handle({request,path:route,user,searchParams,authorized=()
       if(route==='/api')return Response.json({...store().snapshot(agents?.list()??[]),profiles:PROFILES});
       if(route==='/api/history')return Response.json({rows:store().history(searchParams.get('user'))});
       if(route==='/api/subscription'){
-        const u=store().get('user',searchParams.get('user'));check(store().active(u),'Доступ пользователя отключён или истёк');exportSubscription(store(),u,'mihomo');const base=origin+'/subscriptions/vpn/'+u.token;
-        return Response.json({url:base+'/mihomo',links:store().all('connection').filter(c=>c.enabled&&u.connections.includes(c.id)).map(c=>({name:c.name,uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
+        const u=store().get('user',searchParams.get('user'));check(store().active(u),'Доступ пользователя отключён или истёк');exportSubscription(store(),u,'xray');const base=origin+'/subscriptions/vpn/'+u.token;
+        return Response.json({url:base+'/xray',alternatives:{mihomo:base+'/mihomo',base64:base+'/base64'},links:store().all('connection').filter(c=>c.enabled&&u.connections.includes(c.id)).map(c=>({name:c.name,uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
       }
-      if(route==='/api/qr'){const u=store().get('user',searchParams.get('user'));return new Response(qr(origin+'/subscriptions/vpn/'+u.token+'/mihomo'),{headers:{'content-type':'image/svg+xml','cache-control':'no-store'}});}
+      if(route==='/api/qr'){const u=store().get('user',searchParams.get('user'));return new Response(qr(origin+'/subscriptions/vpn/'+u.token+'/xray'),{headers:{'content-type':'image/svg+xml','cache-control':'no-store'}});}
       if(route==='/api/config'){const node=searchParams.get('node');agents.get(node);const bundle=store().preview(node);check(bundle,'Сначала включи VPN на агенте');return Response.json({config:serverConfig(bundle),settings:bundle.settings,notice:'Редактируются порт, SNI, цель Reality, путь XHTTP, имя gRPC, DNS и правила direct/block. Учётные данные, API и пути сертификатов защищены. Итог проверяется и применяется на ноде.'});}
     }
     if(request.method==='POST'){
@@ -40,8 +40,8 @@ export async function handle({request,path:route,user,searchParams,authorized=()
 }
 export async function publicHandle({request,path:route}){
   if(request.method!=='GET')return new Response(null,{status:405});
-  const match=/^\/([A-Za-z0-9_-]{43})\/(mihomo|links|base64)$/.exec(route);if(!match)return new Response(null,{status:404});
-  try{const u=store().subscription(match[1]),body=exportSubscription(store(),u,match[2]);return new Response(body,{headers:{'content-type':match[2]==='mihomo'?'application/json; charset=utf-8':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','profile-update-interval':'1','subscription-userinfo':`upload=${store().total(u.id).up}; download=${store().total(u.id).down}; total=${u.limit}; expire=${Math.floor(u.expires/1000)}`}});}catch{return new Response('Подписка недоступна или профиль ещё не готов',{status:404});}
+  const match=/^\/([A-Za-z0-9_-]{43})\/(xray|mihomo|links|base64)$/.exec(route);if(!match)return new Response(null,{status:404});
+  try{const u=store().subscription(match[1]),body=exportSubscription(store(),u,match[2]);return new Response(body,{headers:{'content-type':['xray','mihomo'].includes(match[2])?'application/json; charset=utf-8':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','profile-update-interval':'1',...(match[2]==='xray'?{'profile-title':'NEXUS404','dns-from-json-enable':'true'}:{}),'subscription-userinfo':`upload=${store().total(u.id).up}; download=${store().total(u.id).down}; total=${u.limit}; expire=${Math.floor(u.expires/1000)}`}});}catch{return new Response('Подписка недоступна или профиль ещё не готов',{status:404});}
 }
 export async function summary(){const s=store().snapshot();return {state:'ok',items:[{label:'Пользователи',value:s.users.filter(u=>u.active).length},{label:'Ноды',value:s.nodes.length},{label:'Подключения',value:s.connections.filter(c=>c.enabled).length}]};}
 export function start(){store();timer=setInterval(()=>{if(!pending)pending=refreshSources(store()).catch(()=>{}).finally(()=>{pending=null;});},60000);timer.unref();}
