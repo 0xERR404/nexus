@@ -15,6 +15,7 @@ export class VPN {
     CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,revision INTEGER DEFAULT 1,settings TEXT DEFAULT '{}',status TEXT,ledger TEXT,seq INTEGER DEFAULT 0,seen INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS usage(node TEXT,user TEXT,up INTEGER DEFAULT 0,down INTEGER DEFAULT 0,ceiling INTEGER DEFAULT 0,PRIMARY KEY(node,user));
     CREATE TABLE IF NOT EXISTS history(node TEXT,user TEXT,hour INTEGER,up INTEGER,down INTEGER,PRIMARY KEY(node,user,hour));
+    CREATE TABLE IF NOT EXISTS deployments(node TEXT,revision INTEGER,value TEXT,PRIMARY KEY(node,revision));
     CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY,value TEXT);
     CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value INTEGER);
     INSERT OR IGNORE INTO meta VALUES('revision',0);`);
@@ -27,8 +28,22 @@ export class VPN {
   change(version,fn){return this.tx(()=>{check(version===this.revision(),'Данные изменились: обнови страницу');const r=fn();this.db.exec("UPDATE meta SET value=value+1 WHERE key='revision';UPDATE nodes SET revision=revision+1");return r;});}
   node(agent,settings,version){return this.change(version,()=>{check(id(agent));this.db.prepare('INSERT INTO nodes(id,settings) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings').run(agent,JSON.stringify(serverSettings(settings)));return {ok:true};});}
   saveConnection(value,version){return this.change(version,()=>{
-    const old=value.id?this.get('connection',value.id):null;const keys=old??(()=>{const k=generateKeyPairSync('x25519');return {privateKey:k.privateKey.export({format:'jwk'}).d,publicKey:k.publicKey.export({format:'jwk'}).x,shortId:randomBytes(8).toString('hex')};})();
-    const c=connection({...keys,...value,id:old?.id??randomUUID()});check(this.db.prepare('SELECT 1 FROM nodes WHERE id=?').get(c.node),'Сначала включи VPN на агенте');
+    const old=value.id?this.get('connection',value.id):null;
+    const saved=old?this.all('connection-state').find(x=>x.id===old.id):null;
+    const keys=old?.privateKey?old:saved?.privateKey?saved:(()=>{const k=generateKeyPairSync('x25519');return {privateKey:k.privateKey.export({format:'jwk'}).d,publicKey:k.publicKey.export({format:'jwk'}).x,shortId:randomBytes(8).toString('hex')};})();
+    const reality=value.profile?.startsWith('vless'),wasReality=old?.profile.startsWith('vless');
+    const memory={...saved,...(old?{[wasReality?'realitySni':'tlsSni']:old.sni}:{} )};
+    const node=this.db.prepare('SELECT * FROM nodes WHERE id=?').get(value.node);
+    const tls=node?.status?JSON.parse(node.status).tls:null;
+    let sni=value.sni;
+    if(old&&reality!==wasReality&&(!sni||sni===old.sni))sni=memory[reality?'realitySni':'tlsSni']||(reality?value.target||saved?.target:tls?.names?.find(x=>x===value.address)||tls?.names?.[0])||value.address;
+    const c=connection({...old,...keys,...memory,...value,id:old?.id??randomUUID(),sni,target:value.target||saved?.target});
+    if(c.enabled&&!reality&&tls){check(tls.ready&&tls.expires>this.now(),'На ноде нет действующего TLS. Запусти настройку TLS на VPN-ноде.');check(tls.names.includes(c.sni),'SNI должен совпадать с сертификатом ноды: '+tls.names.join(', '));}
+    c[reality?'realitySni':'tlsSni']=c.sni;
+    this.put('connection-state',{...memory,id:c.id,privateKey:c.privateKey??keys.privateKey,publicKey:c.publicKey??keys.publicKey,shortId:c.shortId??keys.shortId,[reality?'realitySni':'tlsSni']:c.sni,target:c.target||old?.target||saved?.target});
+    // Seed an upgraded installation only when the previous settings were acknowledged.
+    if(old&&node?.status){const status=JSON.parse(node.status);if(status.state==='applied'&&status.revision===node.revision&&!this.all('deployed').some(x=>x.id===old.node))this.put('deployed',{id:old.node,revision:node.revision,connections:this.all('connection').filter(x=>x.node===old.node)});}
+    check(this.db.prepare('SELECT 1 FROM nodes WHERE id=?').get(c.node),'Сначала включи VPN на агенте');
     const rest=this.all('connection').filter(x=>x.id!==c.id&&x.node===c.node);check(rest.length<32&&!rest.some(x=>x.enabled&&c.enabled&&x.port===c.port&&(x.profile==='hysteria2')===(c.profile==='hysteria2')),'Порт уже занят другим подключением');return this.put('connection',c);
   });}
   saveUser(value,version){return this.change(version,()=>{
@@ -54,6 +69,12 @@ export class VPN {
     check(new Set(rows.map(x=>x.r.user)).size===rows.length);
     for(const {r,known} of rows){const up=r.up-known.up,down=r.down-known.down;this.db.prepare('UPDATE usage SET up=?,down=? WHERE node=? AND user=?').run(r.up,r.down,node,r.user);if(up||down)this.db.prepare('INSERT INTO history VALUES(?,?,?,?,?) ON CONFLICT(node,user,hour) DO UPDATE SET up=up+excluded.up,down=down+excluded.down').run(node,r.user,Math.floor(v.time/3600000),up,down);}
     const status={core:v.core,time:v.time,complete:v.complete===true,revision:integer(v.revision)?v.revision:0,state:['applied','rejected','expired','stopped'].includes(v.state)?v.state:'stopped',error:typeof v.error==='string'?v.error.slice(0,200):'',running:v.running===true};
+    if(v.tls&&Array.isArray(v.tls.names))status.tls={ready:v.tls.ready===true,names:v.tls.names.filter(x=>typeof x==='string'&&x.length<=253&&/^[a-z0-9.:-]+$/i.test(x)).slice(0,32),expires:integer(v.tls.expires)?v.tls.expires:0};
+    if(status.state==='applied'&&status.running){
+      const sent=this.db.prepare('SELECT value FROM deployments WHERE node=? AND revision=?').get(node,status.revision);
+      const deployed=this.all('deployed').find(x=>x.id===node);
+      if(sent&&(!deployed||deployed.revision<=status.revision))this.put('deployed',{id:node,revision:status.revision,connections:JSON.parse(sent.value)});
+    }
     this.db.prepare('UPDATE nodes SET ledger=?,seq=?,seen=?,status=? WHERE id=?').run(v.ledger,v.seq,this.now(),JSON.stringify(status),node);
     this.db.prepare('DELETE FROM history WHERE hour<?').run(Math.floor(this.now()/3600000)-24*366);
   }
@@ -75,6 +96,8 @@ export class VPN {
       }
       users.push({id:u.id,uuid:u.uuid,password:u.password,expires:u.expires,ceiling,connections:selected.map(c=>c.id)});
     }
+    this.db.prepare('INSERT OR REPLACE INTO deployments VALUES(?,?,?)').run(node,n.revision,JSON.stringify(connections));
+    this.db.prepare('DELETE FROM deployments WHERE node=? AND revision<?').run(node,n.revision-32);
     return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created:this.now(),expires:this.now()+LEASE_MS,connections,users,settings:JSON.parse(n.settings)};
   });}
   snapshot(agents=[]){
@@ -105,6 +128,14 @@ export class VPN {
     for(const c of bundle.connections)this.put('connection',c);this.db.prepare('UPDATE nodes SET settings=? WHERE id=?').run(JSON.stringify(settings),node);return {ok:true};
   });}
   history(user){this.get('user',user);return this.db.prepare('SELECT * FROM history WHERE user=? ORDER BY hour DESC LIMIT 2000').all(user);}
+  subscriptionConnections(u){
+    const deployed=new Map(this.all('deployed').map(d=>[d.id,d.connections]));
+    return this.all('connection').filter(c=>c.enabled&&u.connections.includes(c.id)).flatMap(c=>{
+      if(!deployed.has(c.node))return []; // Wait for the first acknowledged exchange, including after an upgrade.
+      const running=deployed.get(c.node).find(x=>x.id===c.id&&x.enabled);
+      return running?[{...running,name:c.name}]:[];
+    });
+  }
   subscription(token){check(typeof token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(token),'Подписка недоступна');const digest=hash(token);const u=this.all('user').find(u=>hash(u.token)===digest);check(u&&this.active(u),'Подписка недоступна');return u;}
   source(value){this.db.prepare('INSERT OR REPLACE INTO sources VALUES(?,?)').run(value.id,JSON.stringify(value));}
   sourceData(id){const r=this.db.prepare('SELECT value FROM sources WHERE id=?').get(id);return r?JSON.parse(r.value):null;}

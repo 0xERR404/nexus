@@ -22,6 +22,7 @@ export function connection(v){
   check(integer(c.port,1,65535)&&c.port!==API_PORT&&c.port!==22&&c.port!==80,'Порт зарезервирован для SSH, проверки TLS или локального API');
   check(/^\/[a-zA-Z0-9/_-]{0,119}$/.test(c.path)&&/^[a-zA-Z0-9_-]{1,80}$/.test(c.serviceName));
   if(c.profile.startsWith('vless')){check(/^[A-Za-z0-9_-]{43}$/.test(v.privateKey)&&/^[A-Za-z0-9_-]{43}$/.test(v.publicKey)&&/^[a-f0-9]{16}$/.test(v.shortId),'Неверные ключи Reality');Object.assign(c,{privateKey:v.privateKey,publicKey:v.publicKey,shortId:v.shortId,target:hostname(v.target||c.sni)});}
+  for(const key of ['realitySni','tlsSni'])if(v[key])c[key]=hostname(v[key]);
   c.fingerprint=['chrome','firefox','safari','randomized'].includes(v.fingerprint)?v.fingerprint:'chrome';
   return c;
 }

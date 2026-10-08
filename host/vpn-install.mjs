@@ -47,6 +47,7 @@ export async function installVPNPanel(ui){
 }
 export async function installVPNNode(ui,{update=false}={}){
   supported();check(!fs.existsSync(HUB+'/config/auth.json'),'VPN-нода устанавливается только на отдельном VPS');
+  if(update)check(fs.existsSync(BASE+'/vpn-mode'),'Сначала установи VPN-ноду через --vpn-node');
   if(!update)await installAgent(ui);
   ui.section('VPN-нода · ядро и TLS');
   const identity=readState('/var/lib/nexus404-agent/credentials.json',null);check(identity?.id,'Сначала зарегистрируй агент');

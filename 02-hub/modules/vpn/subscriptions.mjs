@@ -16,7 +16,7 @@ export function proxy(c,u){
   return p;
 }
 export function exportSubscription(store,u,format='mihomo'){
-  const connections=store.all('connection').filter(c=>c.enabled&&u.connections.includes(c.id));check(connections.length,'Нет разрешённых подключений');
+  const connections=store.subscriptionConnections?store.subscriptionConnections(u):store.all('connection').filter(c=>c.enabled&&u.connections.includes(c.id));check(connections.length,'Нет разрешённых подключений');
   if(format==='links')return connections.map(c=>uri(c,u)).join('\n')+'\n';
   if(format==='base64')return Buffer.from(connections.map(c=>uri(c,u)).join('\n')).toString('base64');
   check(['xray','mihomo'].includes(format),'Доступны xray, mihomo, links и base64. URI не переносит правила маршрутизации.');

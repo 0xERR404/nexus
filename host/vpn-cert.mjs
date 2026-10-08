@@ -11,6 +11,13 @@ export function validateCertificatePair(chain,key,{name,now=Date.now()}={}) {
   if(name&&!(isIP(name)?certificate.checkIP(name):certificate.checkHost(name)))throw Error('TLS: сертификат не выдан на указанный IP / имя');
   return certificate;
 }
+export function certificateStatus(root='/var/lib/nexus404-vpn',now=Date.now()){
+  try{
+    const c=validateCertificatePair(fs.readFileSync(root+'/certs/fullchain.pem'),fs.readFileSync(root+'/certs/privkey.pem'),{now});
+    const names=(c.subjectAltName??'').split(', ').flatMap(x=>x.startsWith('DNS:')?[x.slice(4)]:x.startsWith('IP Address:')?[x.slice(11)]:[]).filter(x=>/^[a-z0-9.:-]+$/i.test(x)).map(x=>x.toLowerCase());
+    return {ready:names.length>0,names,expires:Date.parse(c.validTo)};
+  }catch{return {ready:false,names:[],expires:0};}
+}
 export function renewVPNCertificate({source='/etc/letsencrypt/live/nexus404-vpn',root='/var/lib/nexus404-vpn',name,gid=+query('id',['-g','nexus404-vpn']).text,owner=0,chown=fs.chownSync}={}) {
   if(!Number.isInteger(gid)||gid<=0)throw Error('Нет пользователя VPN');
   const read=file=>{if(fs.statSync(file).size>128*1024)throw Error('Слишком большой TLS-файл');return fs.readFileSync(file,'utf8');};

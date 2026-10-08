@@ -1,4 +1,4 @@
-import {validateCertificatePair} from './vpn-cert.mjs';
+import {validateCertificatePair,certificateStatus} from './vpn-cert.mjs';
 import fs from 'node:fs';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -14,7 +14,7 @@ export class Xray {
   constructor(directory,binary='/opt/nexus404/vpn/xray'){this.directory=directory;this.binary=binary;this.child=null;}
   async command(args){return execute(this.binary,args,{timeout:10000,maxBuffer:1024*1024,env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});}
   async validate(config){
-    for(const inbound of config.inbounds){const tls=inbound.streamSettings?.tlsSettings;if(!tls)continue;const c=tls.certificates[0];validateCertificatePair(fs.readFileSync(c.certificateFile),fs.readFileSync(c.keyFile),{name:tls.serverName});}
+    for(const inbound of config.inbounds){const tls=inbound.streamSettings?.tlsSettings;if(!tls)continue;const c=tls.certificates[0];try{validateCertificatePair(fs.readFileSync(c.certificateFile),fs.readFileSync(c.keyFile),{name:tls.serverName});}catch{throw Object.assign(Error('TLS: нужен действующий сертификат ноды на '+tls.serverName+'. Настрой TLS через меню VPN-ноды.'),{vpnTLS:true});}}
     durable(this.directory+'/candidate.json',config);const version=await this.command(['version']);check(new RegExp('Xray '+CORE_VERSION.replaceAll('.','\\.')+'(?:\\s|$)').test(version.stdout),'Установлена другая версия Xray');await this.command(['run','-test','-config',this.directory+'/candidate.json']);}
   async start(config){await this.stop();durable(this.directory+'/running.json',config);this.child=spawn(this.binary,['run','-config',this.directory+'/running.json'],{stdio:'ignore',env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});this.child.on('error',()=>{});for(let n=0;n<30;n++){await sleep(100);if(this.child.exitCode!==null)throw Error('Ядро не запустилось');try{await this.stats();return;}catch{}}await this.stop();throw Error('API ядра не отвечает');}
   alive(){return !!this.child&&this.child.exitCode===null&&this.child.signalCode===null;}
@@ -47,16 +47,19 @@ export class VPNNode {
   async apply(bundle){
     const active=this.active(bundle),config=serverConfig(bundle,active,this.directory+'/certs');let renewal='';try{renewal=fs.readFileSync(this.directory+'/certs/renewed','utf8');}catch{}const digest=hash([config,renewal]);
     if(this.configHash===digest&&this.core.alive()){this.set('working',bundle);return;}
-    const rejectionKey=hash([digest,bundle.revision]);if(this.rejectionKey===rejectionKey){this.set('rollback',this.core.alive());this.phase=this.rejectionPhase;throw Error('Эта версия уже отклонена');}
+    const rejectionKey=hash([digest,bundle.revision]);if(this.rejectionKey===rejectionKey){this.set('rollback',this.core.alive());this.phase=this.rejectionPhase;throw Object.assign(Error(this.rejectionMessage||'Эта версия уже отклонена'),{vpnTLS:!!this.rejectionMessage});}
     const previous=this.get('working');
     try{this.phase='validate';await this.core.validate(config);check(bundle.expires>this.now(),'Разрешение истекло во время проверки');await this.stop();this.set('running',true);this.phase='start';await this.core.start(config);check(bundle.expires>this.now(),'Разрешение истекло во время запуска');this.configHash=digest;this.last={};this.set('working',bundle);this.set('running',true);}
-    catch(error){this.rejectionKey=rejectionKey;this.rejectionPhase=this.phase;await this.core.stop();this.set('running',false);this.set('complete',false);
+    catch(error){this.rejectionKey=rejectionKey;this.rejectionPhase=this.phase;this.rejectionMessage=error.vpnTLS?error.message:null;
       if(previous&&bundle.expires>this.now()){
         // Roll back transport settings, never resurrect withdrawn user credentials.
         const allowed=new Map(active.map(u=>[u.id,u]));
         const safe={...previous,created:bundle.created,expires:bundle.expires,users:previous.users.filter(u=>allowed.has(u.id)&&u.uuid===allowed.get(u.id).uuid&&u.password===allowed.get(u.id).password).map(u=>({...allowed.get(u.id),connections:u.connections.filter(c=>allowed.get(u.id).connections.includes(c))}))};
-        const rollback=serverConfig(safe,this.active(safe),this.directory+'/certs');await this.core.validate(rollback);this.set('running',true);await this.core.start(rollback);this.last={};check(bundle.expires>this.now(),'Разрешение истекло');this.configHash=hash([rollback,renewal]);this.set('rollback',true);
+        const rollback=serverConfig(safe,this.active(safe),this.directory+'/certs'),rollbackHash=hash([rollback,renewal]);
+        if(!this.core.alive()||this.configHash!==rollbackHash){await this.stop();await this.core.validate(rollback);this.set('running',true);await this.core.start(rollback);this.last={};}
+        check(bundle.expires>this.now(),'Разрешение истекло');this.configHash=rollbackHash;this.set('working',safe);this.set('rollback',true);
       }
+      if(!this.get('rollback'))await this.stop();
       throw error;
     }
   }
@@ -76,14 +79,14 @@ export class VPNNode {
       }else{
         await this.apply(this.bundle);this.reportState='applied';this.error='';this.set('applied',this.bundle.revision);
       }
-    }catch{
-      this.reportState='rejected';this.error={validate:'Проверка конфигурации, версии ядра или TLS не пройдена.',start:'Ядро не запустилось или его локальный API недоступен.',stats:'Учёт трафика недоступен. Передача остановлена.'}[this.phase]??'Неверное или просроченное задание VPN.';
+    }catch(error){
+      this.reportState='rejected';this.error=error.vpnTLS?error.message:{validate:'Проверка конфигурации, версии ядра или TLS не пройдена.',start:'Ядро не запустилось или его локальный API недоступен.',stats:'Учёт трафика недоступен. Передача остановлена.'}[this.phase]??'Неверное или просроченное задание VPN.';
       // A malformed new request must not keep previously granted credentials alive.
       if(!this.bundle||this.bundle.expires<=this.now()||this.bundle.revision!==this.get('applied')&&!this.get('rollback'))await this.stop();
     }
     return this.publish();
   }
-  publish(){const seq=(this.get('seq')??0)+1;this.set('seq',seq);const report={ledger:this.get('ledger'),seq,core:CORE_VERSION,time:this.get('sampled')??this.now(),complete:this.get('complete')!==false,revision:this.get('applied')??0,state:this.reportState,error:this.error,running:this.core.alive(),usage:this.totals()};durable(this.directory+'/status/report.json',report,0o640);return report;}
+  publish(){const seq=(this.get('seq')??0)+1;this.set('seq',seq);const report={ledger:this.get('ledger'),seq,core:CORE_VERSION,time:this.get('sampled')??this.now(),complete:this.get('complete')!==false,revision:this.get('applied')??0,state:this.reportState,error:this.error,running:this.core.alive(),tls:certificateStatus(this.directory,this.now()),usage:this.totals()};durable(this.directory+'/status/report.json',report,0o640);return report;}
   async close(){try{await this.stop();this.publish();}finally{await this.core.stop();this.db.close();}}
 }
 export async function runVPN(){

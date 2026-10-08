@@ -20,7 +20,7 @@ export async function handle({request,path:route,user,searchParams,authorized=()
       if(route==='/api/history')return Response.json({rows:store().history(searchParams.get('user'))});
       if(route==='/api/subscription'){
         const u=store().get('user',searchParams.get('user'));check(store().active(u),'Доступ пользователя отключён или истёк');exportSubscription(store(),u,'xray');const base=origin+'/subscriptions/vpn/'+u.token;
-        return Response.json({url:base+'/xray',alternatives:{mihomo:base+'/mihomo',base64:base+'/base64'},links:store().all('connection').filter(c=>c.enabled&&u.connections.includes(c.id)).map(c=>({name:c.name,uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
+        return Response.json({url:base+'/xray',alternatives:{mihomo:base+'/mihomo',base64:base+'/base64'},links:store().subscriptionConnections(u).map(c=>({name:c.name,uri:uri(c,u)})),qr:'/modules/vpn/api/qr?user='+u.id});
       }
       if(route==='/api/qr'){const u=store().get('user',searchParams.get('user'));return new Response(qr(origin+'/subscriptions/vpn/'+u.token+'/xray'),{headers:{'content-type':'image/svg+xml','cache-control':'no-store'}});}
       if(route==='/api/config'){const node=searchParams.get('node');agents.get(node);const bundle=store().preview(node);check(bundle,'Сначала включи VPN на агенте');return Response.json({config:serverConfig(bundle),settings:bundle.settings,notice:'Редактируются порт, SNI, цель Reality, путь XHTTP, имя gRPC, DNS и правила direct/block. Учётные данные, API и пути сертификатов защищены. Итог проверяется и применяется на ноде.'});}
