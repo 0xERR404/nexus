@@ -51,7 +51,7 @@ html body :is(.vpn-toolbar,.vpn-actions,.server-tools,.kb-tools,.content-toolbar
 html body :is(.vpn-connection,.vpn-card-head,.pulse-panel-title) { flex-wrap:wrap; }
 html body .vpn-connection > div { min-width:0; overflow-wrap:anywhere; }
 html body .vpn-connection .vpn-actions { flex-shrink:0; }
-html body dialog { box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; }
+html body dialog:not(:where(#readerReading)) { box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; }
 html body :is(.ui-dialog-actions,.dialog-actions) { flex-wrap:wrap; }
 /* The overview includes every installed module exactly once. */
 html body #homeDashboard .home-grid { gap:16px; grid-auto-flow:row; grid-auto-rows:auto; }
@@ -140,7 +140,7 @@ html body #homeDashboard .home-open,html body #homeDashboard .home-add { width:4
  html body #vpn button { min-height:44px; font-size:14px; }
  html body .vpn-connection { align-items:stretch; flex-direction:column; gap:12px; }
  html body .vpn-connection .vpn-actions button { flex:1 1 auto; }
- html body dialog { max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:16px; }
+ html body dialog:not(:where(#readerReading)) { max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:16px; }
  html body #vpnDialog { padding:16px; }
  html body #vpnDialog :is(.vpn-fields,.vpn-checks) { grid-template-columns:minmax(0,1fr); }
  html body #vpnDialog label { font-size:14px; line-height:1.5; }

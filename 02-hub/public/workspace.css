@@ -52,8 +52,7 @@ html[data-carbon-glass='false'] :is(.module-card,.home-card,.workspace-header,.w
 .workspace-mobile .ui-icon { width:21px; height:21px; }
 .workspace-mobile [aria-current='page'] { color:var(--accent); }
 .workspace-mobile [aria-current='page']::after { content:''; position:absolute; bottom:0; width:38px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 12px var(--accent-glow); }
-body.wave-shell #wavePlayer { background:var(--glass-light),var(--surface); border-top:1px solid var(--line); box-shadow:var(--glass-edge); }
-html[data-carbon-glass='true'] body.wave-shell #wavePlayer { backdrop-filter:blur(var(--glass-blur)); }
+body.wave-shell #wavePlayer { border-top:1px solid var(--line); box-shadow:var(--glass-edge); }
 body.wave-shell #wavePlayer:not(.expanded) { padding-left:16px; padding-right:16px; }
 body.wave-shell #waveRestore { bottom:12px; }
 body.wave-shell #hubFrame { background:transparent; }
@@ -317,7 +316,7 @@ html[data-carbon-glass] body :is(.box,.home-card,.module-card,.workspace-header,
   .rt-panel,.balance-panel,.balance-total,.signal-panel,.cinema-player,.cinema-transfer,.cinema-card,
   .project-card,.project-row,.gallery-card,.article-card,.security-panel,.activity-card,
   .ui-empty,.watch-card,.intro-settings,.hub-search-result,.trophy-overview > div,
-  #performancePanel,#wavePlayer,#waveSelection,#waveDropZone,#waveTransfer,
+  #performancePanel,#waveSelection,#waveDropZone,
   #projectDetail,#articleEditor,#articleReading
 ) {
   background:var(--glass-light),var(--surface);
@@ -334,17 +333,6 @@ html[data-carbon-glass] body :is(.home-card,.chat-panel,.trophy-panel,.balance-p
   -webkit-backdrop-filter:none;
   backdrop-filter:none;
 }
-html[data-carbon-glass] body :is(dialog,.content-dialog,.reader-dialog,.storage-menu[open],#waveQueueDialog,#waveUploadDialog) {
-  background:linear-gradient(125deg,#eef2ea0b,transparent 45%),var(--dialog-bg);
-  border-color:var(--line-strong);
-  -webkit-backdrop-filter:blur(5px);
-  backdrop-filter:blur(5px);
-}
-html[data-carbon-glass='false'] body :is(dialog,.content-dialog,.reader-dialog,.storage-menu[open],#waveQueueDialog,#waveUploadDialog) {
-  -webkit-backdrop-filter:none;
-  backdrop-filter:none;
-}
-
 /* Shared navigation when the music shell is unavailable. */
 body.standalone-page { display:block; padding:0 0 72px; }
 .standalone-page > .page { max-width:1480px; margin:auto; padding:12px 18px; }
@@ -357,8 +345,67 @@ body.standalone-page { display:block; padding:0 0 72px; }
 .ui-empty p { margin:5px 0 10px; color:var(--muted); font-size:13px; line-height:1.5; }
 .ui-empty :is(button,a) { display:inline-flex; align-items:center; min-height:36px; max-width:100%; font-size:13px; border:1px solid var(--line); border-radius:var(--button-radius); padding:6px 10px; background:var(--button-bg); color:var(--text); text-decoration:none; cursor:pointer; }
 :is(.anime-card,.reader-book,.trophy-card,.project-card,.gallery-card,.article-card,.cinema-card,.wave-card) { min-width:0; overflow-wrap:anywhere; }
-/* Touch screens retain the shared alpha without compositing dozens of blurs. */
+/* Limit blur on card grids only; floating windows have their own material. */
 @media (max-width:800px) and (pointer:coarse) {
   html[data-carbon-glass] { --glass-blur:0px; --glass-edge:inset 0 1px 0 #eef2ea12; }
-  html[data-carbon-glass] body :is(dialog,.content-dialog,.reader-dialog,.storage-menu[open],#waveQueueDialog,#waveUploadDialog) { -webkit-backdrop-filter:none; backdrop-filter:none; }
+}
+
+/* Floating surfaces must remain legible independently of card transparency.
+   Start solid; use dense glass only when the browser supports the blur. */
+html[data-carbon-glass] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
+  background:var(--dialog-bg);
+  border-color:var(--line-strong);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
+html body :is(dialog,#vpnDialog,#readerReading)::backdrop {
+  background:#080b09b8;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  html[data-carbon-glass='true'] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
+    background:linear-gradient(125deg,#eef2ea0b,transparent 45%),var(--dialog-glass);
+    -webkit-backdrop-filter:blur(16px) saturate(.95);
+    backdrop-filter:blur(16px) saturate(.95);
+  }
+  html[data-carbon-glass='true'] body :is(dialog,#vpnDialog,#readerReading)::backdrop {
+    -webkit-backdrop-filter:blur(8px);
+    backdrop-filter:blur(8px);
+  }
+}
+html[data-carbon-glass='false'] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore),
+html[data-perf-effect='blur'] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
+  background:var(--dialog-bg);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
+@media (prefers-reduced-transparency:reduce) {
+  html[data-carbon-glass] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
+    background:var(--dialog-bg);
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
+  }
+  html[data-carbon-glass] body :is(dialog,#vpnDialog,#readerReading)::backdrop {
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
+  }
+}
+/* Full-screen reading and expanded playback are opaque workspaces. */
+html[data-carbon-glass] body #readerReading {
+  background:var(--bg);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  box-shadow:none;
+}
+html[data-carbon-glass] body #readerReading::backdrop {
+  background:var(--bg);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
+html body #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) { background:var(--bg); }
+html[data-carbon-glass] body #wavePlayer.expanded {
+  background:radial-gradient(ellipse at 50% 15%,var(--accent-soft),transparent 60%),var(--surface-solid);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
 }

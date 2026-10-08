@@ -22,7 +22,7 @@
       '--accent-glow':css(accent,.141),'--button-active':css(accent,.141),'--track':css(accent,.141),
       '--theme-solid':css(mix([22,22,22],raw,.035)),
       '--theme-control':css(mix([14,14,14],raw,.025),46/255),
-      '--dialog-bg':css(mix([19,19,19],raw,.03),217/255),
+      '--dialog-glass':css(mix([19,19,19],raw,.03),.96),
       '--surface-raised':css(accent,24/255),'--line':css(mix(accent,[255,255,255],.5),56/255),
       '--line-strong':css(mix(accent,[255,255,255],.65),115/255),'--line-soft':css(accent,25/255),
       '--heat-0':css(mix([20,20,20],accent,.07)),'--heat-1':css(mix([20,20,20],accent,.25)),

@@ -16,7 +16,8 @@
   --bg: #080b09;
   --surface: var(--theme-surface, #191b1954);
   --control-bg: var(--theme-control, #1113122e);
-  --dialog-bg: #161817d9;
+  --dialog-bg: var(--surface-solid);
+  --dialog-glass: #161817f5;
   --surface-solid: var(--theme-solid, #191b1a);
   --surface-raised: #b8bdb818;
   --line: #d6ddd438;
