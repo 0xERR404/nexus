@@ -9,8 +9,8 @@ export function countryCode(value=''){
   if(code&&!byCode.has(code))throw Object.assign(Error('Выбери страну из списка'),{status:400});
   return code;
 }
-export const countryLabel=code=>{const c=byCode.get(code);return c?c.flag+' '+c.name:'';};
-export const connectionLabel=c=>{const country=countryLabel(c.country);return country?country+' · '+c.name:c.name;};
+export const countryLabel=code=>byCode.get(code)?.flag??'';
+export const connectionLabel=c=>{const country=countryLabel(c.country);return country?country+' '+c.name:c.name;};
 export function proxyNames(connections){
   const used=new Set(['VPN','DIRECT','REJECT',...connections.map(c=>c.id)]),result=new Map();
   for(const c of connections){
