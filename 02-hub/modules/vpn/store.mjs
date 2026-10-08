@@ -6,6 +6,15 @@ import {randomBytes,randomUUID,generateKeyPairSync} from 'node:crypto';
 import {check,id,integer,text,connection,routing,serverSettings,CORE_VERSION,LEASE_MS,hash,serverConfig} from '../../src/vpn-protocol.mjs';
 const secret=()=>randomBytes(32).toString('base64url');
 const CHUNK=16*1024*1024;
+export function applicationState(node){
+  const s=node.status;
+  if(node.agent?.revoked)return 'revoked';
+  if(node.stale)return 'offline';
+  if(s?.state==='rejected')return 'rejected';
+  if(s?.state==='expired')return 'expired';
+  if(s?.revision!==node.revision)return 'pending';
+  return s?.state==='applied'&&s.running?'applied':'stopped';
+}
 export class VPN {
   constructor(directory,now=Date.now){
     this.now=now;if(directory)fs.mkdirSync(directory,{recursive:true,mode:0o700});
@@ -102,7 +111,7 @@ export class VPN {
   });}
   snapshot(agents=[]){
     const nodes=this.db.prepare('SELECT * FROM nodes').all().map(n=>({id:n.id,revision:n.revision,settings:JSON.parse(n.settings),status:n.status?JSON.parse(n.status):null,seen:n.seen,stale:!n.seen||this.now()-n.seen>15000||this.now()-(n.status?JSON.parse(n.status).time:0)>15000,...{agent:agents.find(a=>a.id===n.id)??null}}));
-    return {version:this.revision(),core:CORE_VERSION,nodes,agents:agents.map(a=>({id:a.id,name:a.name,state:a.state,revoked:a.revoked})),connections:this.all('connection'),users:this.all('user').map(u=>{const {token,password,uuid,...safe}=u;return {...safe,...this.total(u.id),active:this.active(u),nodes:this.db.prepare('SELECT * FROM usage WHERE user=?').all(u.id)};}),routing:this.all('routing'),sources:this.db.prepare('SELECT value FROM sources').all().map(r=>JSON.parse(r.value))};
+    return {version:this.revision(),core:CORE_VERSION,nodes:nodes.map(n=>({...n,applicationState:applicationState(n)})),agents:agents.map(a=>({id:a.id,name:a.name,state:a.state,revoked:a.revoked})),connections:this.all('connection'),users:this.all('user').map(u=>{const {token,password,uuid,...safe}=u;return {...safe,...this.total(u.id),active:this.active(u),nodes:this.db.prepare('SELECT * FROM usage WHERE user=?').all(u.id)};}),routing:this.all('routing'),sources:this.db.prepare('SELECT value FROM sources').all().map(r=>JSON.parse(r.value))};
   }
   preview(node){
     const n=this.db.prepare('SELECT * FROM nodes WHERE id=?').get(node);check(n,'Нода не найдена');

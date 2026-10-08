@@ -1,6 +1,6 @@
 {
   "name": "nexus404-hub",
-  "version": "0.35.147",
+  "version": "0.35.148",
   "private": true,
   "type": "module",
   "engines": {
