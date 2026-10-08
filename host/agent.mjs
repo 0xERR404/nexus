@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import https from 'node:https';
+import {transport,connectionError,retryable} from './agent-http.mjs';
+export {transport} from './agent-http.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {generateKeyPairSync,randomUUID} from 'node:crypto';
 import {Collector,serviceStates} from './metrics.mjs';
@@ -15,17 +16,6 @@ export function credentials(file,hub,code) {
   const value={hub:hubAddress(hub),code,privateKey:keys.privateKey.export({type:'pkcs8',format:'pem'}),publicKey:keys.publicKey.export({type:'spki',format:'der'}).toString('base64')};
   durable(file,value);return value;
 }
-export function transport(hub,route,raw,headers) {
-  hubAddress(hub);
-  return new Promise((resolve,reject)=>{
-    const request=https.request(hub+route,{method:'POST',headers:{...headers,'content-length':Buffer.byteLength(raw)},rejectUnauthorized:true},response=>{
-      let size=0;const chunks=[];
-      response.on('data',chunk=>{size+=chunk.length;if(size>128*1024){response.destroy(Error('Ответ слишком большой'));return;}chunks.push(chunk);});
-      response.on('error',reject);response.on('end',()=>{if(response.statusCode!==200){reject(Object.assign(Error('Хаб отклонил запрос'),{status:response.statusCode}));return;}try{resolve(JSON.parse(Buffer.concat(chunks)));}catch{reject(Error('Неверный ответ хаба'));}});
-    });
-    const timer=setTimeout(()=>request.destroy(Error('Тайм-аут хаба')),15000);request.once('close',()=>clearTimeout(timer));request.once('error',reject);request.end(raw);
-  });
-}
 export class Agent {
   constructor({directory=AGENT_DATA,control='/var/lib/nexus404-agent-control',eventFile='/opt/nexus404/hooks/events/events.jsonl',now=Date.now,send=transport,collector=new Collector(),services=serviceStates}={}) {
     Object.assign(this,{directory,control,eventFile,now,send,collector,services});
@@ -35,7 +25,7 @@ export class Agent {
   state(key,fallback){const row=this.db.prepare('SELECT value FROM state WHERE key=?').get(key);return row?JSON.parse(row.value):fallback;}
   save(key,value){this.db.prepare('INSERT OR REPLACE INTO state VALUES(?,?)').run(key,JSON.stringify(value));}
   async request(route,data){const raw=JSON.stringify(data);return this.send(this.identity.hub,route,raw,{...signedHeaders(this.identity.privateKey,route,raw,this.now()),'x-nexus-agent':this.identity.id??''});}
-  async register(){if(this.identity.id)return;const result=await this.request('/api/agents/register',{code:this.identity.code,publicKey:this.identity.publicKey});if(!uuid(result.id))throw Error('Неверная регистрация');this.identity={...this.identity,id:result.id};delete this.identity.code;durable(this.file,this.identity);}
+  async register(){if(this.identity.id)return;const result=await this.request('/api/agents/register',{code:this.identity.code,publicKey:this.identity.publicKey});if(!uuid(result.id))throw Object.assign(Error('Неверный ответ регистрации'),{code:'EAGENT_RESPONSE',phase:'response'});this.identity={...this.identity,id:result.id};delete this.identity.code;durable(this.file,this.identity);}
   sample(){
     const status=readState(this.control+'/status/status.json',null);
     const selected=status?agentConfig(status.config).services:['ssh.service','fail2ban.service','nexus404-agent.service'];
@@ -80,6 +70,21 @@ export class Agent {
   disconnected(){if(!this.state('disconnected',false)){this.db.exec('BEGIN IMMEDIATE');try{this.enqueue({id:randomUUID(),time:this.now(),key:'agent.disconnected',title:'Нет связи с хабом',body:'Расписание продолжает выполняться локально.',level:'warning',category:'services'});this.save('disconnected',true);this.db.exec('COMMIT');}catch(e){this.db.exec('ROLLBACK');throw e;}}}
   close(){this.db.close();}
 }
-export async function runAgent(){const release=await lock('/var/lib/nexus404-agent/run.lock',true);const agent=new Agent();let running=true,pending=null,next=0,backoff=5000;for(const sig of ['SIGTERM','SIGINT'])process.once(sig,()=>{running=false;});
-  try{while(running){try{agent.sample();if(!pending&&Date.now()>=next){pending=agent.exchange().then(()=>{backoff=5000;next=Date.now()+5000;},()=>{agent.disconnected();next=Date.now()+backoff+Math.random()*1000;backoff=Math.min(60000,backoff*2);}).finally(()=>{pending=null;});}}catch{console.error('Не удалось сохранить данные агента');}for(let i=0;i<25&&running;i++)await sleep(200);}await pending;}finally{agent.close();await release();}}
-if(direct(import.meta.url))runAgent().catch(()=>{console.error('Агент остановлен');process.exitCode=1;});
+export async function runAgent(){const release=await lock('/var/lib/nexus404-agent/run.lock',true);const agent=new Agent();let running=true,pending=null,next=0,backoff=5000,lastError='';for(const sig of ['SIGTERM','SIGINT'])process.once(sig,()=>{running=false;});
+  try{while(running){try{agent.sample();if(!pending&&Date.now()>=next){pending=agent.exchange().then(()=>{backoff=5000;next=Date.now()+5000;lastError='';},error=>{const detail=connectionError(error);if(detail!==lastError){console.error(detail);lastError=detail;}agent.disconnected();next=Date.now()+Math.max(backoff,error.retryAfter??0)+Math.random()*1000;backoff=Math.min(60000,backoff*2);}).finally(()=>{pending=null;});}}catch{console.error('Не удалось сохранить данные агента');}for(let i=0;i<25&&running;i++)await sleep(200);}await pending;}finally{agent.close();await release();}}
+export async function registerWithRetry(agent,{pause=sleep,attempts=3}={}) {
+  for(let n=0;n<attempts;n++){
+    try{await agent.register();return;}catch(error){if(n===attempts-1||!retryable(error))throw error;await pause(1000*(n+1));}
+  }
+}
+export async function registrationCLI(attempt,{directory=AGENT_DATA,create=()=>new Agent({directory}),pause=sleep,report=console.error}={}) {
+  if(!uuid(attempt))throw Error('Некорректный идентификатор попытки');
+  let agent,result;
+  try{agent=create();await registerWithRetry(agent,{pause});result={attempt,ok:true};}
+  catch(error){result={attempt,ok:false,code:String(error.code??'').slice(0,80),phase:error.phase,status:error.status,retryAfter:error.retryAfter};report(connectionError(result));}
+  finally{agent?.close();}
+  durable(directory+'/registration-result.json',result);return result.ok;
+}
+if(direct(import.meta.url)){
+  (process.argv[2]==='--register'?registrationCLI(process.argv[3]).then(ok=>{if(!ok)process.exitCode=1;}):runAgent()).catch(()=>{console.error('Агент остановлен: не удалось открыть или сохранить локальное состояние');process.exitCode=1;});
+}

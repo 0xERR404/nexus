@@ -153,7 +153,7 @@ export function supported() {
 }
 export function installHost(directory = '/opt/nexus404', {agent=false} = {}) {
   if(agent){
-    const files=['common','ssh','security','maintenance','maintenance-control','events','metrics','signal-rules','event-reader','agent','agent-control','agent-jobs'];
+    const files=['common','ssh','security','maintenance','maintenance-control','events','metrics','signal-rules','event-reader','agent','agent-http','agent-control','agent-jobs'];
     for(const [folder,names]of [['host',files],['02-hub/src',['maintenance-schema','agent-protocol']]]){
       fs.mkdirSync(path.join(directory,folder),{recursive:true,mode:0o755});
       for(const name of names){const source=path.join(ROOT,folder,name+'.mjs'),target=path.join(directory,folder,name+'.mjs');if(source!==target)fs.copyFileSync(source,target);fs.chmodSync(target,0o644);}
