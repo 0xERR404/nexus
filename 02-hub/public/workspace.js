@@ -1,7 +1,7 @@
 (() => {
   const frame=document.getElementById('hubFrame');if(!frame)return;
   const links=[...document.querySelectorAll('[data-workspace-group]')],positions=new Map();
-  const groups={media:['wave','anime','cinema','trophies','reader','gallery'],work:['kanban','articles','storage','chat'],personal:['rhythm','balance','statistics'],system:['pulse','signal','projects']};
+  const groups=Object.fromEntries(links.map(a=>[a.dataset.workspaceGroup,(a.dataset.workspaceModules||'').split(',')]));
   let current;
   const nav=url=>{if(current?.pathname==='/')try{positions.set(current.searchParams.get('group')||'overview',frame.contentWindow.scrollY);}catch{}window.NexusWave?.navigate(url);};
   document.addEventListener('click',e=>{const a=e.target.closest('a[data-workspace-link]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();nav(a.href);});

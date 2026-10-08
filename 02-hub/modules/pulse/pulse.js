@@ -133,7 +133,6 @@
         .join(' / ') || '—'
     );
     text('pulseWait', `${percent(data.cpu?.iowait_percent)} / ${percent(data.cpu?.steal_percent)}`);
-    $('pulseServices')?.replaceChildren(...(data.services?.items??[]).map(s=>element('p',s.id+' · '+s.state)));
     last = data;
   }
   function state(message, error = false) {

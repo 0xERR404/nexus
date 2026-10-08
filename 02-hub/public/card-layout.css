@@ -1,191 +1,230 @@
-:root {
-  --card-gap:12px;
-  --card-padding:12px;
-  --ui-font-size:14px;
-  --ui-small-size:12px;
-  --ui-title-size:15px;
-  --ui-meta-size:12px;
-}
-html body .page,html.embedded-page .page { width:100%; max-width:1280px; margin-inline:auto; min-width:0; }
+/* Shared card layouts. Media grids and text panels have separate minimum widths. */
+:root { --card-gap:16px; --card-padding:16px; --ui-font-size:14px; --ui-small-size:12px; --ui-title-size:16px; --ui-meta-size:12px; }
+html body .page { width:100%; max-width:1280px; margin-inline:auto; min-width:0; }
 html body .page > main { min-width:0; }
-html body :is(.home-grid,.settings-grid,.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList,.activity-grid,.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid) {
-  gap:var(--card-gap); min-width:0; align-items:stretch; grid-auto-rows:auto;
-}
-html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList) {
-  display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),220px)); justify-content:start;
-}
+html body :is(.home-grid,.settings-grid,.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList,.activity-grid,.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid) { gap:var(--card-gap); min-width:0; align-items:stretch; grid-auto-rows:auto; }
+html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr)); }
+html body :is(.storage-folder-grid,#storageFiles,#storageTrash,#projectList) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); }
 html body :is(.home-grid,.settings-grid) { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
-html body :is(.module-card,.home-card,.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.article-card,.project-card,.activity-card,.storage-row) {
-  box-sizing:border-box; min-width:0; max-width:100%; height:auto; min-height:0; padding:var(--card-padding); gap:8px; overflow-wrap:anywhere;
-}
-html body .page > main :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.project-card) {
-  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
-}
-html body :is(.module-heading,.home-card-title) { min-height:36px; gap:8px; margin:0 0 10px; padding:0 0 10px; }
-html body .page > main :is(.module-heading h2,.home-card-title h2) { margin:0; font-size:15px; line-height:1.35; }
-html body .module-heading .ui-icon,html body .home-card-title .ui-icon { width:22px; height:22px; flex:none; }
-html body .module-summary { gap:6px; }
-html body :is(.module-card) { min-height:136px; }
+html body :is(.module-card,.home-card,.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.article-card,.project-card,.activity-card,.storage-row) { box-sizing:border-box; min-width:0; max-width:100%; height:auto; min-height:0; padding:var(--card-padding); gap:10px; overflow-wrap:anywhere; }
+html body .page > main :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.project-card) { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; }
+html body :is(.module-heading,.home-card-title) { min-height:40px; gap:10px; margin:0 0 12px; padding:0 0 10px; }
+html body .page > main :is(.module-heading h2,.home-card-title h2) { margin:0; font-size:16px; line-height:1.4; }
+html body :is(.module-heading,.home-card-title) .ui-icon { width:22px; height:22px; flex:none; }
+html body .module-heading h2 { flex:1; min-width:0; }
+html body .module-summary { gap:10px; }
 html body .home-card.home-full { grid-column:1/-1; }
-html body #homeDashboard[data-group=overview] .home-card[data-home-card] { min-height:0; }
-html body .home-card[data-home-card=chat] { grid-column:auto; }
-html body .home-chat-widget { height:240px; max-height:42dvh; }
-html body #homeTasks { max-height:240px; overflow:auto; }
-html body .home-all-tasks { float:none; margin-top:8px; display:block; }
-html body :is(.home-service,.home-task,.home-file) { min-height:36px; }
-html body .home-service > div { font-size:13px; }
-html body .home-task span { min-width:0; overflow-wrap:anywhere; }
-html body .home-card[data-home-card=pulse] .home-metrics { margin-block:2px 10px; }
-html body .pulse-history-chart { height:104px; }
+html body .home-chat-widget { height:280px; max-height:50dvh; }
+html body #homeTasks { max-height:280px; overflow:auto; }
+html body .home-all-tasks { float:none; margin-top:10px; display:block; }
+html body :is(.home-task,.home-file) { min-height:44px; }
+html body .home-task a { min-width:0; overflow-wrap:anywhere; }
+html body .home-task input { flex:none; }
+html body .home-card[data-home-card=pulse] .home-metrics { margin-block:0 16px; }
 html body :is(.home-metric-label,.home-metric small,.pulse-history-info,.pulse-history-axis,.pulse-history-legend button) { font-size:12px; }
 html body .home-metric strong { font-size:24px; }
-html body .page > main :is(.anime-details h2,.trophy-card > strong,.reader-book strong,.wave-card strong,.cinema-card strong,.watch-card strong,.project-card strong) {
-  font-size:14px; line-height:1.4; font-weight:500; margin:0; min-height:2.8em; max-height:none; white-space:normal;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
-}
-html body :is(.anime-card-meta,.trophy-card small,.reader-book span,.wave-card > span,.cinema-kind,.gallery-card span,.storage-row small,.project-card-description) { font-size:12px; line-height:1.4; }
+html body .pulse-history-chart { height:130px; }
+html body .page > main :is(.anime-details h2,.trophy-card > strong,.reader-book strong,.wave-card strong,.cinema-card strong,.watch-card strong,.project-card strong) { font-size:14px; line-height:1.45; font-weight:500; margin:0; min-height:2.9em; max-height:none; white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+html body :is(.anime-card-meta,.trophy-card small,.reader-book span,.wave-card > span,.cinema-kind,.gallery-card span,.storage-row small,.project-card-description) { font-size:12px; line-height:1.5; }
 html body .anime-cover { flex:none; width:100%; height:auto; aspect-ratio:3/2; max-height:none; }
 html body .anime-cover img { object-fit:contain; }
-html body .anime-details { gap:8px; }
+html body .anime-details { gap:10px; }
 html body .anime-card .anime-card-meta { flex-wrap:wrap; margin-top:auto; }
-html body .reader-book-open > img,html body .reader-cover { height:180px; width:100%; object-fit:contain; }
-html body .cinema-cover { aspect-ratio:3/4; max-height:244px; }
+html body .reader-book-open > img,html body .reader-cover { height:190px; width:100%; object-fit:contain; }
+html body .cinema-cover { aspect-ratio:3/4; max-height:270px; }
 html body .wave-art,html body .gallery-card img { aspect-ratio:1; height:auto; width:100%; }
 html body #trophiesPage .trophy-card .trophy-art { width:100%; aspect-ratio:460/215; min-height:0; }
 html body #trophiesPage .trophy-card > img { width:100%; height:auto; aspect-ratio:460/215; object-fit:contain; }
-html body :is(.project-card,.article-card,.storage-row),html body #projectList .project-card { min-height:104px; }
-html body #projectList .project-card,html body #trophiesPage .trophy-card { padding:var(--card-padding); gap:8px; }
-html body #trophiesPage .trophy-card > strong { font-size:14px; line-height:1.4; min-height:2.8em; max-height:2.8em; }
+html body #trophiesPage .trophy-card { padding:var(--card-padding); gap:10px; }
 html body :is(.pulse-stat,.pulse-panel,.balance-panel,.rt-panel,.signal-panel,.security-panel,.chat-panel,.anime-panel,.trophy-panel) { min-width:0; padding:var(--card-padding); }
-html body #statisticsPage .activity-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); }
+html body #statisticsPage .activity-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); }
 html body #kbColumns { gap:var(--card-gap); }
-html body .kb-column { flex-basis:290px; padding:var(--card-padding); }
-html body .kb-card { padding:10px; margin-top:10px; }
+html body .kb-column { flex-basis:310px; padding:var(--card-padding); }
+html body .kb-card { padding:12px; margin-top:12px; }
 html body .kb-drop-hint { margin-top:12px; padding:12px 0; }
-@media(max-width:1000px) {
-  html body :is(.home-grid,.settings-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  html body .home-card[data-home-card=chat] { grid-column:1/-1; }
-}
-@media(max-width:650px) {
-  :root { --card-gap:8px; --card-padding:10px; }
-  html.embedded-page body { padding:10px; }
-  html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList,.settings-grid,.home-grid) {
-    grid-template-columns:repeat(2,minmax(0,1fr));
-  }
-  html body .home-card,html body .home-card[data-home-card] { grid-column:auto; }
-  html body .home-card:is(.home-full,[data-home-card=pulse],[data-home-card=chat],[data-home-card=kanban]) { grid-column:1/-1; }
-  html body .home-card[data-home-card=pulse] .home-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  html body .home-metric,html body .home-metric:nth-child(n) { grid-column:auto; padding:0; border:0; }
-  html body .home-metric:nth-child(5) { grid-column:1/-1; }
-  html body .home-metric strong { font-size:22px; }
-  html body .pulse-history-legend { flex-wrap:wrap; gap:8px; }
-  html body .pulse-history-info { margin:8px 0 0; }  html body .home-chat-widget { height:220px; max-height:none; }
-  html body :is(.module-card) { min-height:124px; }
-  html body :is(.module-heading,.home-card-title) { flex-wrap:wrap; }
-  html body .module-heading h2 { overflow-wrap:anywhere; }
-  html body .reader-book-open > img,html body .reader-cover { height:155px; }
-  html body :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card) { padding:8px; }
-  html body :is(.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid,.pulse-charts) { grid-template-columns:minmax(0,1fr); }
-  html body .kb-column { flex-basis:min(290px,calc(100vw - 42px)); }
-  html body .home-open,html body .home-add { width:32px; height:32px; }
-}
-@media(max-width:350px) {
-  html body :is(.settings-grid) { grid-template-columns:minmax(0,1fr); }
-  html body .home-card[data-home-card=statistics] { grid-column:1/-1; }
-}
-
-/* Mosaic: shared rows, deliberate spans, short summaries. */
-html body #homeDashboard .home-grid { gap:12px; align-items:stretch; grid-auto-flow:row; grid-auto-rows:auto; }
-html body #homeDashboard .home-grid > .home-card { min-height:0; height:auto; align-self:stretch; padding:12px; display:flex; flex-direction:column; gap:0; }
-html body #homeDashboard .module-summary { flex:none; gap:8px; }
-html body #homeDashboard :is(.home-card-title,.module-heading) { min-height:36px; padding:0 0 8px; margin:0 0 10px; flex:none; }
-html body #homeDashboard :is(.home-card-title h2,.module-heading h2) { font-size:15px; }
-html body #homeDashboard :is(.home-grid > .module-card > .home-subtitle) { display:none; }
-html body #homeDashboard .home-grid > .module-card .module-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-html body #homeDashboard .home-grid > .module-card .module-stat { display:flex; flex-direction:column; align-items:flex-start; gap:5px; }
-html body #homeDashboard .module-stat span { font-size:12px; line-height:1.3; }
-html body #homeDashboard .module-stat strong { font-size:18px; line-height:1.25; }
-html body #homeDashboard :is(.home-meta,.home-subtitle,.module-summary-note,.home-empty) { font-size:12px; line-height:1.4; }
+/* Keep borders and material on all content surfaces, including newer modules. */
+html[data-carbon-glass] body :is(.vpn-card,.server-manager,.settings-card,.article-card,.watch-card,.storage-folder-card,.project-card,.activity-card,.rt-panel,.pulse-panel,.pulse-stat,.balance-panel,.signal-panel,.kb-column,.anime-panel,.trophy-panel) { border:1px solid var(--line); border-radius:12px; background:var(--glass-light),var(--surface); box-shadow:var(--glass-edge); }
+html body :is(button,input,select,textarea) { max-width:100%; }
+html body :is(button,a,summary,input,select,textarea):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+html body :is(.vpn-toolbar,.vpn-actions,.server-tools,.kb-tools,.content-toolbar,.reader-toolbar,.storage-toolbar,.project-toolbar,.cinema-toolbar,.anime-toolbar,.trophy-toolbar,.balance-toolbar,.wave-toolbar) { gap:10px; min-width:0; }
+html body :is(.vpn-toolbar,.vpn-actions,.server-tools,.kb-tools,.content-toolbar,.reader-toolbar,.storage-toolbar,.project-toolbar,.cinema-toolbar,.balance-toolbar,.wave-toolbar) { flex-wrap:wrap; }
+html body :is(.vpn-connection,.vpn-card-head,.pulse-panel-title) { flex-wrap:wrap; }
+html body .vpn-connection > div { min-width:0; overflow-wrap:anywhere; }
+html body .vpn-connection .vpn-actions { flex-shrink:0; }
+html body dialog { box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; }
+html body :is(.ui-dialog-actions,.dialog-actions) { flex-wrap:wrap; }
+/* The overview includes every installed module exactly once. */
+html body #homeDashboard .home-grid { gap:16px; grid-auto-flow:row; grid-auto-rows:auto; }
+html body #homeDashboard .home-grid > .home-card { min-height:0; height:auto; align-self:stretch; padding:16px; display:flex; flex-direction:column; gap:0; order:0; }
+html body #homeDashboard .module-summary { flex:none; gap:10px; }
+html body #homeDashboard .module-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+html body #homeDashboard .module-stat { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:0; }
+html body #homeDashboard .module-stat span { font-size:12px; line-height:1.4; }
+html body #homeDashboard .module-stat strong { font-size:20px; line-height:1.3; }
+html body #homeDashboard :is(.home-meta,.home-subtitle,.module-summary-note,.home-empty) { font-size:13px; line-height:1.5; }
 html body #homeDashboard .home-empty { padding:0; margin:8px 0; }
-html body #homeDashboard .home-action { display:inline-flex; align-items:center; min-height:30px; font-size:12px; margin-top:auto; padding-top:8px; }
-html body #homeDashboard .home-service { min-height:36px; padding-block:5px; }
-html body #homeDashboard .home-service strong { font-size:13px; }
-html body #homeDashboard .home-service small { font-size:11px; }
-html body #homeDashboard .home-task { min-height:36px; padding-block:5px; }
-html body #homeDashboard .home-task > a { font-size:14px; line-height:1.4; }
-html body #homeDashboard #homeTasks { max-height:none; }
-html body #homeDashboard #homeTasksCount { margin-block:8px 0; }
-html body #homeDashboard .home-all-tasks { margin-top:auto; }
-html body #homeDashboard .home-chat-preview { font-size:14px; line-height:1.45; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin-top:6px; padding:8px; }
-html body #homeDashboard .home-chat-actions { margin-top:auto; padding-top:10px; }
-html body #homeDashboard #homeChatStart { min-height:36px; font-size:13px; }
-html body #homeDashboard .home-chat-actions .home-action { margin:0; padding:0; font-size:11px; }
+html body #homeDashboard .home-action { display:inline-flex; align-items:center; min-height:40px; font-size:13px; margin-top:auto; padding-top:8px; }
+html body #homeDashboard #homeTasks { max-height:280px; }
+html body #homeDashboard #homeTasksCount { margin-block:10px 0; }
+html body #homeDashboard .home-chat-preview { font-size:14px; line-height:1.55; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; margin-top:6px; padding:10px; }
+html body #homeDashboard .home-chat-actions { margin-top:auto; padding-top:12px; gap:10px; flex-wrap:wrap; }
+html body #homeDashboard #homeChatStart { min-height:40px; font-size:14px; }
+html body #homeDashboard .home-chat-actions .home-action { margin:0; padding:0; }
 html body #homeDashboard #homeFiles { display:grid; grid-template-columns:1fr; gap:0; }
-html body #homeDashboard .home-file { min-height:33px; }
 html body #homeDashboard .home-file strong,html body #homeDashboard .home-recent strong { font-size:14px; }
-html body #homeDashboard .home-file small { font-size:11px; }
-html body #homeDashboard .home-value,html body #homeDashboard .home-balance .module-stat strong { font-size:26px; }
-html body #homeDashboard .home-balance .module-stat { gap:4px; }
+html body #homeDashboard .home-file small { font-size:12px; }
+html body #homeDashboard .home-value,html body #homeDashboard .home-balance .module-stat strong { font-size:28px; }
 html body #homeDashboard .home-recent { padding:0; }
-html body #homeDashboard .home-metric strong { font-size:22px; }
-html body #homeDashboard .home-metric { padding-inline:8px; gap:4px; }
-html body #homeDashboard .home-metric:first-child { padding-left:0; }
-html body #homeDashboard .home-metric-label { font-size:11px; }
-html body #homeDashboard .pulse-history-chart { height:85px; }
-html body #homeDashboard .home-card[data-home-card=pulse] .home-card-title { flex-wrap:wrap; }
-@media(min-width:800px) {
-  html body #homeDashboard .home-grid { grid-template-columns:repeat(6,minmax(0,1fr)); }
-  html body #homeDashboard .home-grid > .home-card { grid-column:span 2; order:0; }
-  html body #homeDashboard .home-grid > [data-home-card=pulse] { grid-column:1/-1; }
-  html body #homeDashboard .home-grid > :is([data-home-card=kanban],[data-home-card=chat]) { grid-column:span 3; }
-  html body #homeDashboard[data-group=overview] .home-grid > [data-home-card=storage] { grid-column:1/-1; }
-  html body #homeDashboard[data-group=overview] #homeFiles { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
-  html body #homeDashboard[data-group=work] .home-grid > .home-card { grid-column:span 3; }
-  html body #homeDashboard[data-group=system] .home-grid > .module-card { grid-column:span 3; }
-  html body #homeDashboard[data-group=personal] .home-grid > .home-card { grid-column:span 2; }
-  html body #homeDashboard[data-group=personal] .home-grid > [data-module=rhythm] .module-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+html body #homeDashboard :is(.home-atlas-layout,.home-server-data) { display:block; min-width:0; }
+html body #homeDashboard .home-open,html body #homeDashboard .home-add { width:40px; height:40px; }
+@media(min-width:900px) {
+ html body #homeDashboard .home-grid { grid-template-columns:repeat(6,minmax(0,1fr)); }
+ html body #homeDashboard .home-grid > .home-card { grid-column:span 2; }
+ html body #homeDashboard .home-grid > [data-home-card=pulse] { grid-column:1/-1; }
+ html body #homeDashboard .home-grid > :is([data-home-card=kanban],[data-home-card=chat]) { grid-column:span 3; }
+ html body #homeDashboard .home-grid > [data-home-card=storage] { grid-column:1/-1; }
+ html body #homeDashboard #homeFiles { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
 }
-@media(max-width:799px) {
-  html body #homeDashboard .home-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  html body #homeDashboard .home-grid > .home-card { grid-column:auto; order:0; }
-  html body #homeDashboard .home-grid > :is([data-home-card=pulse],[data-home-card=kanban],[data-home-card=chat],[data-home-card=storage],[data-module=rhythm]) { grid-column:1/-1; }
-  html body #homeDashboard .home-grid > .module-card .module-stats { grid-template-columns:1fr; gap:6px; }
-  html body #homeDashboard .home-grid > .module-card .module-stat { flex-direction:row; align-items:center; }
-  html body #homeDashboard .module-stat strong { font-size:16px; }
-  html body #homeDashboard .home-card-title h2,html body #homeDashboard .module-heading h2 { font-size:14px; }
-  html body #homeDashboard .home-task,html body #homeDashboard .home-service { min-height:42px; }
-  html body #homeDashboard .home-open,html body #homeDashboard .home-add { width:32px; height:32px; }
-  html body #homeDashboard .home-metric-label { font-size:12px; }
+@media(max-width:899px) {
+ html body :is(.home-grid,.settings-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body #homeDashboard .home-grid > .home-card { grid-column:auto; }
+ html body #homeDashboard .home-grid > :is([data-home-card=pulse],[data-home-card=kanban],[data-home-card=chat],[data-home-card=storage]) { grid-column:1/-1; }
+ html body #homeDashboard .home-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+ html body #homeDashboard .home-metric:nth-child(n) { grid-column:auto; padding:0; border:0; }
+ html body #homeDashboard .home-metric:nth-child(5) { grid-column:span 2; }
+ html body #homeDashboard .home-metric strong { font-size:23px; }
+ html body #homeDashboard .home-metric:nth-child(5) small { font-size:12px; }
+ html body #homeDashboard .pulse-history-legend { position:static; flex-wrap:wrap; gap:12px; }
+ html body #homeDashboard .pulse-history-info { margin:8px 0 0; }
+}
+/* Touch navigation stays readable and separate from the scrolling document. */
+@media(max-width:800px) {
+ html body .workspace-header { height:60px; min-height:60px; padding-inline:12px; gap:4px; }
+ html body .workspace-header > a:not(.brand):not(.workspace-section),html body .workspace-logout { width:44px; height:44px; min-height:44px; padding:0; }
+ html body .workspace-header .workspace-search-mobile { display:grid; }
+ html body .workspace-mobile { gap:2px; padding:4px 6px max(4px,env(safe-area-inset-bottom)); background:var(--theme-settings-surface,#161b16ed); }
+ html body .workspace-mobile > a { min-height:54px; border-radius:10px; gap:5px; padding:5px 2px; }
+ html body .workspace-mobile span { font-size:11px; line-height:1.3; }
+ html body .workspace-mobile .ui-icon { width:22px; height:22px; }
+ html body .workspace-mobile [aria-current='page'] { background:var(--accent-soft); }
+ html body .workspace-mobile [aria-current='page']::after { bottom:2px; }
+ html body :is(.page,dialog) :is(button,input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height:44px; }
+ html body :is(.page,dialog) :is(input:not([type=checkbox]):not([type=radio]),select,textarea) { font-size:16px; }
+ html body :is(.page,dialog) button { white-space:normal; }
+ html body :is(.page,dialog) summary { min-height:44px; padding-block:10px; }
+ html body #homeDashboard :is(.home-open,.home-add) { width:44px; height:44px; }
+ html body #kanban .kb-icon,html body :is(#kbEditor,#kbColumnEditor) .kb-icon { width:44px; height:44px; min-height:44px; }
+ html body :is(.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid,.pulse-charts) { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:600px) {
+ :root { --card-gap:12px; --card-padding:14px; }
+ html.embedded-page:not(.chat-widget) body { padding:12px; }
+ html body #homeDashboard .home-grid,html body .settings-grid { grid-template-columns:minmax(0,1fr); gap:12px; }
+ html body #homeDashboard .home-grid > .home-card { grid-column:1/-1; padding:14px; }
+ html body #homeDashboard .home-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body #homeDashboard .home-metric:nth-child(5) { grid-column:1/-1; }
+ html body #homeDashboard .home-card-title { flex-wrap:nowrap; }
+ html body #homeDashboard .home-card-title h2 { font-size:16px; }
+ html body #homeDashboard .module-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+ html body #homeDashboard .home-chat-actions { display:grid; grid-template-columns:minmax(0,1fr); }
+ html body .home-chat-widget { height:320px; max-height:60dvh; }
+ html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body :is(.storage-folder-grid,#storageFiles,#storageTrash,#projectList) { grid-template-columns:minmax(0,1fr); }
+ html body :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card) { padding:10px; }
+ html body .reader-book-open > img,html body .reader-cover { height:160px; }
+ html body :is(.vpn-tabs,.content-tabs,.trophy-tabs,.reader-tabs) { display:flex; flex-wrap:wrap; gap:8px; }
+ html body :is(.vpn-tabs,.content-tabs,.trophy-tabs,.reader-tabs) > :is(button,a) { flex:1 1 calc(50% - 8px); min-height:44px; font-size:13px; text-align:center; justify-content:center; }
+ html body #vpn .vpn-tabs button { font-size:13px!important; }
+ html body #vpn :is(.vpn-toolbar,.vpn-actions) { gap:8px; }
+ html body #vpn .vpn-toolbar h2 { flex-basis:100%; margin-bottom:4px; }
+ html body #vpn button { min-height:44px; font-size:14px; }
+ html body .vpn-connection { align-items:stretch; flex-direction:column; gap:12px; }
+ html body .vpn-connection .vpn-actions button { flex:1 1 auto; }
+ html body dialog { max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:16px; }
+ html body #vpnDialog { padding:16px; }
+ html body #vpnDialog :is(.vpn-fields,.vpn-checks) { grid-template-columns:minmax(0,1fr); }
+ html body #vpnDialog label { font-size:14px; line-height:1.5; }
+ html body #vpnDialog .vpn-actions { flex-wrap:wrap; gap:8px; }
+ html body #vpnDialog .vpn-actions button { flex:1 1 auto; }
+ html body .kb-column { flex-basis:calc(100vw - 48px); }
+ html body .pulse-resources { grid-template-columns:minmax(0,1fr); }
+ html body .pulse-panel-title { align-items:flex-start; gap:8px; }
+ html body .pulse-details > div { min-width:0; }
+ html body .pulse-details dd { overflow-wrap:anywhere; }
+}
+@media(max-width:359px) {
+ html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { grid-template-columns:minmax(0,1fr); }
+ html body .workspace-header .brand-name { font-size:13px; letter-spacing:.3px; }
+ html body .workspace-header .brand { gap:5px; }
+ html body #homeDashboard .module-stats { grid-template-columns:1fr; }
+ html body #homeDashboard .module-stat { flex-direction:row; justify-content:space-between; align-items:center; }
+}
+/* Navigation and filters are visible work surfaces, not loose controls on the scene. */
+html body :is(.vpn-tabs,.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); gap:10px; }
+html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) { flex-wrap:wrap; min-width:0; }
+html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) > :is(input,select,label) { min-width:0; max-width:100%; }
+html body :is(.activity-tabs,.trophy-tabs) { display:flex; flex-wrap:wrap; gap:8px; }
+html body :is(.activity-tabs,.trophy-tabs) > :is(a,button) { display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; border:1px solid var(--line); border-radius:8px; text-decoration:none; }
+html body :is(.activity-tabs,.trophy-tabs) > [aria-current],html body .activity-tabs > [aria-pressed=true] { border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
+@media(max-width:800px) {
+ html body :is(#wavePage,#chatPage,#trophiesPage,#animePage,#readerPage,#contentPage,#kanban,#cinemaPage,#rhythmPage,#statisticsPage,.storage-app,.projects-app) :is(button,input:not([type=checkbox]):not([type=radio]):not([type=range]),select,.content-upload,.storage-upload,.projects-upload) { min-height:44px; }
+ html body :is(#wavePage,#chatPage,#trophiesPage,#animePage,#readerPage,#contentPage,#kanban,#cinemaPage,#rhythmPage,#statisticsPage,.storage-app,.projects-app) :is(input:not([type=checkbox]):not([type=radio]),select,textarea) { font-size:16px; }
+ html body :is(.activity-tabs,.trophy-tabs) > :is(a,button) { min-height:44px; flex:1 1 auto; font-size:14px; }
+ html body #wavePage .wave-sidebar { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); }
+ html body #wavePage #waveNav a { display:flex; align-items:center; min-height:44px; font-size:14px; white-space:normal; }
+ html body #wavePage #waveNav .wave-playlist-heading { gap:8px; }
+ html body #wavePage #waveNav #waveCreate { width:44px; min-width:44px; height:44px; }
+ html body #wavePage .wave-toolbar #waveUploadButton { min-height:44px; font-size:14px; }
+ html body #chatPage .chat-icon { width:44px; height:44px; min-height:44px; }
+ html body #chatPage .chat-mobile-nav a { min-width:44px; min-height:44px; display:grid; place-items:center; }
+ html body #chatPage .chat-toolbar { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+ html body #chatPage .chat-toolbar > select { grid-column:span 3; width:100%; min-height:44px; padding:8px; font-size:16px; }
+ html body #chatPage .chat-toolbar > #chatTopics { grid-column:1/-1; width:100%; }
+ html body #chatPage .chat-toolbar > #chatModel { width:100%; }
+ html body #chatPage .chat-toolbar > .chat-icon { grid-column:span 2; width:100%; height:44px; }
+ html body #chatPage .chat-toolbar:not(:has(#chatModel:not([hidden]):not([type=hidden]))) > #chatProvider { grid-column:1/-1; }
+ html body #chatPage #chatInput { font-size:16px; }
+ html body :is(.storage-menu,.wave-track-menu) > summary { min-width:44px; min-height:44px; }
+}
+@media(max-width:600px) {
+ html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.kb-tools,.rt-toolbar) { gap:8px; }
+ html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.kb-tools,.rt-toolbar) > input:not([type=checkbox]):not([type=radio]) { flex:1 1 100%; width:100%; min-width:0; }
+ html body .content-toolbar > select { flex:1 1 calc(50% - 8px); width:0; }
+ html body .projects-toolbar > label { flex:1 1 100%; }
+ html body .storage-toolbar .storage-upload { margin-left:0; }
+ html body .storage-toolbar > :is(button,label) { flex:1 1 auto; }
+ html body #kanban .kb-tools > select { flex:1 1 100%; }
+ html body .home-card[data-home-card=pulse] .pulse-history-chart { height:104px; }
+}
+/* Text-heavy lists need a full reading width; a kanban column keeps its own scroll. */
+html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) { grid-template-columns:minmax(0,1fr); }
+html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) .article-list { grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); max-height:none; overflow:visible; }
+html body #kanban .kb-column-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+html body #kanban .kb-column-head h3 { grid-column:1; font-size:15px; line-height:1.45; }
+html body #kanban .kb-column-actions { grid-column:1/-1; flex-wrap:wrap; }
+html body #kanban .kb-count { grid-column:2; grid-row:1; }
+@media(max-width:800px) { html body #chatPage #chatProvider { max-width:none; } }
+@media(max-width:700px) {
+ html body #articleLayout .article-list { grid-template-columns:minmax(0,1fr); max-height:260px; }
+ html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) .article-list { grid-template-columns:minmax(0,1fr); max-height:none; }
+ html body #contentPage .article-card { padding:14px; }
+ html body #contentPage .article-card strong { font-size:15px; line-height:1.45; }
+ html body #contentPage .article-card :is(span,small) { font-size:13px; }
+ html body #contentPage :is(#articleEditor,#articleReading) { padding:14px; }
+ html body #wavePage .wave-toolbar input[type=search] { flex:1 1 100%; width:100%; }
+ html body #wavePage .wave-toolbar #waveUploadButton { flex:1 1 auto; }
+}
+@media(max-width:800px) {
+ html body #vpnDialog #vpnForm > .vpn-actions { position:sticky; bottom:-16px; z-index:2; padding:12px 0; margin-bottom:-16px; border-top:1px solid var(--line); background:linear-gradient(var(--theme-solid,#191b19),var(--theme-solid,#191b19)),#191b19; }
+}
+@media(max-width:800px) {
+ html body :is(#balancePage,#balanceRoot,.balance-app) :is(button,select),html body #bankRefresh { min-height:44px; }
+ html body #chatPage #chatSend,html body #readerPage .reader-card-edit,html body #storageRefresh { min-width:44px; width:44px; min-height:44px; }
+ html body :is(.pulse-periods,.pulse-history-legend) button { min-width:44px; min-height:44px; }
+ html body #readerControls button[aria-label] { min-width:44px; }
+}
+@media(max-width:800px) {
+ html body .page :is(.balance-toolbar,.balance-pagination,.balance-title,.balance-actions) button { min-height:44px; }
+ html body .page .balance-toolbar input,html body .page .balance-toolbar select { font-size:16px; min-height:44px; }
 }
 
-html body #homeDashboard .home-atlas-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:14px;min-width:0}
-html body #homeDashboard .home-server-data{min-width:0}
-html body #homeDashboard .home-services{border-right:1px solid var(--line-soft);padding-right:14px;min-width:0}
-html body #homeDashboard .home-services-heading{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;margin-bottom:6px}
-html body #homeDashboard .home-services-heading h3{font:500 12px/1.4 var(--sans);margin:0;color:var(--muted)}
-html body #homeDashboard #homeServices{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
-html body #homeDashboard #homeServices .home-service{display:grid;grid-template-columns:18px minmax(0,1fr);gap:3px 8px;align-content:start;border:0;min-width:0;min-height:0;padding:5px 0}
-html body #homeDashboard #homeServices .home-service>.ui-icon{grid-row:1/3;width:18px;height:18px;align-self:center}
-html body #homeDashboard #homeServices .home-service>div{min-width:0;line-height:1.3;overflow-wrap:anywhere}
-html body #homeDashboard #homeServices .home-service strong{font-size:12px}
-html body #homeDashboard #homeServices .home-service small{grid-column:2;margin:0;font-size:11px;line-height:1.3}
-@media(max-width:799px){
- html body #homeDashboard .home-atlas-layout{grid-template-columns:112px minmax(0,1fr);gap:12px}
- html body #homeDashboard .home-services{grid-column:1;grid-row:1;padding-right:10px}
- html body #homeDashboard .home-services-heading{display:block}
- html body #homeDashboard .home-services-heading .home-count{display:block;margin:3px 0 0}
- html body #homeDashboard .home-server-data{display:contents}
- html body #homeDashboard .home-server-data>.home-metrics{grid-column:2;grid-row:1;align-content:start;margin:0;gap:12px 8px}
- html body #homeDashboard .home-server-data>[data-pulse-history]{grid-column:1/-1;grid-row:2;min-width:0}
- html body #homeDashboard #homeServices .home-service{grid-template-columns:14px minmax(0,1fr);gap:3px 5px}
- html body #homeDashboard #homeServices .home-service>.ui-icon{width:14px;height:14px}
- html body #homeDashboard #homeServices .home-service small{font-size:10px;gap:3px}
-}
-
-@media(min-width:800px){
- html body #homeDashboard .home-server-data{display:flex;flex-direction:column}
- html body #homeDashboard .home-server-data>[data-pulse-history]{flex:1;display:flex;min-height:85px}
- html body #homeDashboard .home-server-data .pulse-history-plot{flex:1;min-width:0;min-height:85px;margin-top:0;position:relative}
- html body #homeDashboard .home-server-data .pulse-history-chart{position:absolute;left:29px;top:0;width:calc(100% - 29px);height:100%}
- html body #homeDashboard .home-server-data .pulse-history-legend{top:0;bottom:0;justify-content:center}
-}

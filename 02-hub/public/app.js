@@ -282,3 +282,13 @@ addEventListener('keydown', (event) => {
   else history.back();
 });
 
+
+// Standalone pages use the same group metadata as the persistent player shell.
+if (parent === window && !document.getElementById('hubFrame')) {
+  const links=[...document.querySelectorAll('[data-workspace-group]')];
+  const current=new URL(location.href), id=current.pathname.split('/')[2];
+  const group=current.pathname==='/'?(current.searchParams.get('group')||'overview'):links.find(a=>(a.dataset.workspaceModules||'').split(',').includes(id))?.dataset.workspaceGroup;
+  for (const link of links) if(link.dataset.workspaceGroup===group)link.setAttribute('aria-current','page');
+  const section=document.getElementById('workspaceSection'), selected=links.find(a=>a.dataset.workspaceGroup===group);
+  if(section && selected){section.replaceChildren(...[...selected.childNodes].map(n=>n.cloneNode(true)));section.href=selected.href;}
+}

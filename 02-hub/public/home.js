@@ -62,12 +62,7 @@
       for(const file of files.slice(0,3)){const a=link('',`/modules/storage/?file=${encodeURIComponent(file.id)}`);a.className='home-file';
         const text=node('div');text.append(node('strong',file.name),node('small',`${Math.max(1,Math.round(file.size/1024))} КБ`));a.append(symbol('file'),text,node('span','›'));box.append(a);}
     });
-    draw('homeServices',data.pulse?.services,(box,services)=>{
-      box.replaceChildren();if($('homeServicesCount'))$('homeServicesCount').textContent='';if(!services?.items?.length){box.append(node('p','—','home-empty'));return;}
-      const stale=Date.now()-services.checkedAt>180000;if($('homeServicesCount'))$('homeServicesCount').textContent=stale?'':services.items.filter(s=>s.state==='active').length+'/'+services.items.length+' активно';
-      const titles={'docker.service':'Docker','nexus404-pulse.service':'Сборщик Атланта','ssh.service':'SSH','fail2ban.service':'Fail2ban'};
-      for(const item of services.items){const row=node('div','','home-service'),label=node('small',stale?'—':({active:'Работает',inactive:'Остановлена',failed:'—','not-found':'—',unknown:'—'}[item.state]||'—'));label.dataset.state=stale?'unknown':item.state;const icons={'docker.service':'services','nexus404-pulse.service':'pulse','ssh.service':'terminal','fail2ban.service':'shield'};const icon=icons[item.id],text=node('div');text.append(node('strong',titles[item.id]||item.id));row.append(symbol(icon||'services'),text,label);box.append(row);}
-    });
+
   }
   $('homeChatStart')?.addEventListener('click',()=>{
     const box=$('homeChatWidget');if(!box.firstChild){const f=node('iframe');f.className='home-chat-widget';f.title='Сократ';f.src='/modules/chat/?_view=1&widget=1';f.allow='clipboard-write';box.append(f);}

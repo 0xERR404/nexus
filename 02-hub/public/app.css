@@ -831,7 +831,6 @@ dialog {
     opacity: 1;
   }
 }
-::view-transition-group(root),
 
 @media (prefers-reduced-motion: reduce) {
   #hubFrame.hub-navigating {
