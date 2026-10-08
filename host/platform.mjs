@@ -442,12 +442,25 @@ export function moduleFiles(
   let activated = false;
   try {
     fs.mkdirSync(staged, {mode: 0o755});
-    for (const file of fs.readdirSync(source, {withFileTypes: true})) {
-      if (!file.isFile()) throw new Error('Ожидался файл модуля: ' + file.name);
-      if (file.name === 'manifest.json') continue;
-      copy(source + '/' + file.name, staged + '/' + file.name);
-      fs.chmodSync(staged + '/' + file.name, 0o644);
-    }
+    // Build the complete asset tree before switching the installed module.
+    // Keep the root manifest's local settings; nested manifests are ordinary assets.
+    const copyTree = (from, to) => {
+      for (const file of fs.readdirSync(from, {withFileTypes: true})) {
+        const input = from + '/' + file.name, output = to + '/' + file.name;
+        if (file.isDirectory()) {
+          fs.mkdirSync(output, {mode: 0o755});
+          fs.chmodSync(output, 0o755);
+          copyTree(input, output);
+        } else if (file.isFile()) {
+          if (from === source && file.name === 'manifest.json') continue;
+          copy(input, output);
+          fs.chmodSync(output, 0o644);
+        } else {
+          throw new Error('Недопустимый тип файла модуля: ' + file.name);
+        }
+      }
+    };
+    copyTree(source, staged);
     saveJSON(staged + '/manifest.json', manifest, 0o644);
     fs.chmodSync(staged, 0o755);
     if (fs.existsSync(target)) fs.renameSync(target, previous);
