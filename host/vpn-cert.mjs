@@ -3,6 +3,7 @@ import path from 'node:path';
 import {isIP} from 'node:net';
 import {X509Certificate,createPrivateKey} from 'node:crypto';
 import {atomic,query,direct,withLock} from './common.mjs';
+import {ACME_SOURCE} from './vpn-acme.mjs';
 export function validateCertificatePair(chain,key,{name,now=Date.now()}={}) {
   const certificate=new X509Certificate(chain);
   if(!certificate.checkPrivateKey(createPrivateKey(key))||Date.parse(certificate.validFrom)>now||Date.parse(certificate.validTo)<=now)
@@ -27,10 +28,20 @@ export function renewVPNCertificate({source='/etc/letsencrypt/live/nexus404-vpn'
     for(const entry of fs.readdirSync(root+'/certs'))if(/^pair-[A-Za-z0-9]+$/.test(entry)&&entry!==path.basename(directory))fs.rmSync(root+'/certs/'+entry,{recursive:true,force:true});
   } finally {fs.rmSync(next,{force:true});}
 }
-export const applyVPNCertificate=options=>withLock('/run/lock/nexus404-vpn-cert.lock',()=>renewVPNCertificate(options));
-if(direct(import.meta.url)){
-  const source=process.argv[2];
-  if(source&&!path.isAbsolute(source))throw Error('Нужен абсолютный каталог fullchain.pem и privkey.pem');
-  // Other Certbot lineages must never replace this node's TLS pair.
-  if(source||!process.env.RENEWED_LINEAGE||process.env.RENEWED_LINEAGE==='/etc/letsencrypt/live/nexus404-vpn')await applyVPNCertificate(source?{source}:{});
+export const applyVPNCertificate=options=>withLock('/run/lock/nexus404-vpn-cert.lock',()=>{
+  renewVPNCertificate(options);
+  if(options?.activate)atomic((options.root??'/var/lib/nexus404-vpn')+'/tls-source.json',JSON.stringify({source:options.source}),0o600);
+});
+export function certificateHookSource(argument,{root='/var/lib/nexus404-vpn',lineage=process.env.RENEWED_LINEAGE}={}) {
+  if(argument&&argument!=='--acme'){if(!path.isAbsolute(argument))throw Error('Нужен абсолютный каталог сертификата');return argument;}
+  const expected=argument==='--acme'?ACME_SOURCE:'/etc/letsencrypt/live/nexus404-vpn';
+  let active;try{active=JSON.parse(fs.readFileSync(root+'/tls-source.json','utf8')).source;}catch(e){if(e.code!=='ENOENT')throw e;}
+  if(active!==undefined&&active!==expected)return null;
+  if(argument==='--acme'&&active===undefined)return null;
+  if(lineage&&lineage!==expected)return null;
+  return expected;
 }
+if(direct(import.meta.url))await withLock('/run/lock/nexus404-vpn-cert.lock',()=>{
+  // Resolve under the lock: a concurrent switch to imported TLS invalidates old hooks.
+  const source=certificateHookSource(process.argv[2]);if(source)renewVPNCertificate({source});
+});

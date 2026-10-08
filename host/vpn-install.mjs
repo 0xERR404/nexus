@@ -5,6 +5,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {BASE,HOST,NODE,HUB,ROOT,atomic,query,exec,supported,apt} from './common.mjs';
 import {applyVPNCertificate} from './vpn-cert.mjs';
+import {ensureCertbot,prepareACME,acmeDirectories,installRenewal,ACME_SOURCE} from './vpn-acme.mjs';
 import {installAgent} from './agent-install.mjs';
 import {installModule} from './platform.mjs';
 import {readState,durable} from '../02-hub/src/agent-protocol.mjs';
@@ -53,7 +54,7 @@ export async function installVPNNode(ui,{update=false}={}){
   const uid=+query('id',['-u','nexus404-vpn']).text,gid=+query('id',['-g','nexus404-vpn']).text,agent=+query('id',['-u','nexus404-agent']).text,agentGroup=+query('id',['-g','nexus404-agent']).text;
   check([uid,gid,agent,agentGroup].every(n=>Number.isInteger(n)&&n>0));
   for(const [folder,owner,group,mode]of [['',0,0,0o755],['private',uid,gid,0o700],['status',uid,agentGroup,0o2750],['requests',agent,gid,0o2750],['certs',0,gid,0o750]]){const dir=path.join(VPN_DIR,folder);fs.mkdirSync(dir,{recursive:true});fs.chownSync(dir,owner,group);fs.chmodSync(dir,mode);}
-  for(const file of ['host/vpn-node.mjs','02-hub/src/vpn-protocol.mjs']){const target='/opt/nexus404/'+file;fs.copyFileSync(ROOT+'/'+file,target);fs.chmodSync(target,0o644);}
+  for(const file of ['host/vpn-node.mjs','host/vpn-acme.mjs','02-hub/src/vpn-protocol.mjs']){const target='/opt/nexus404/'+file;fs.copyFileSync(ROOT+'/'+file,target);fs.chmodSync(target,0o644);}
   durable(VPN_DIR+'/settings.json',{node:identity.id},0o644);
   const arch={x64:'64',arm64:'arm64-v8a'}[os.arch()];check(arch,'VPN-нода поддерживает amd64 и arm64');
   const target='/opt/nexus404/vpn';fs.mkdirSync(target,{recursive:true,mode:0o755});fs.chmodSync(target,0o755);
@@ -93,10 +94,13 @@ export async function openVPNPorts(ui,ports,{inspect=query}={}) {
 }
 export function certificateArguments(address,email,{ip=false,help=''}={}) {
   hostname(address);check(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),'Неверный email');
-  if(ip){check(isIP(address),'Нужен публичный IPv4 / IPv6');check(help.includes('--ip-address')&&help.includes('--required-profile'),'Установленный Certbot не поддерживает IP-сертификаты. Обнови Certbot или выбери готовый сертификат; домен не требуется.');}
+  if(ip){check(isIP(address),'Нужен публичный IPv4 / IPv6');check(help.includes('--ip-address')&&help.includes('--required-profile'),'Certbot не прошёл проверку поддержки IP-сертификатов');}
   return ['certonly','--standalone','--preferred-challenges','http','--non-interactive','--agree-tos','--email',email,'--cert-name','nexus404-vpn',...(ip?['--ip-address',address,'--required-profile','shortlived']:['-d',address]),'--keep-until-expiring'];
 }
-export async function configureNodeTLS(ui,{inspect=query,packages=apt,renew=applyVPNCertificate,write=atomic,copy=()=>{fs.copyFileSync(ROOT+'/host/vpn-cert.mjs',HOST+'/vpn-cert.mjs');fs.chmodSync(HOST+'/vpn-cert.mjs',0o644);}}={}) {
+function copyCertificateRuntime(){
+  for(const name of ['vpn-cert','vpn-acme']){const source=ROOT+'/host/'+name+'.mjs',target=HOST+'/'+name+'.mjs';if(source!==target)fs.copyFileSync(source,target);fs.chmodSync(target,0o644);}
+}
+export async function configureNodeTLS(ui,{inspect=query,packages=apt,renew=applyVPNCertificate,write=atomic,copy=copyCertificateRuntime,ensure=ensureCertbot,prepare=prepareACME,schedule=installRenewal}={}) {
   ui.line('Домен ноды не нужен. Reality работает по IP без собственного TLS-сертификата.');
   ui.line('Trojan / Hysteria 2: 1 — TLS на IP, 2 — готовый сертификат, 3 — свой домен (необязательно).');
   const mode=await ui.ask('TLS · Enter — сохранить текущий / настроить позже',v=>['','1','2','3'].includes(v),'?');
@@ -105,7 +109,8 @@ export async function configureNodeTLS(ui,{inspect=query,packages=apt,renew=appl
     const source=await ui.prompt('Абсолютный каталог с fullchain.pem и privkey.pem');
     check(path.isAbsolute(source),'Нужен абсолютный путь');
     const name=hostname(await ui.prompt('IP или имя из сертификата'));
-    await renew({source,name});
+    await renew({source,name,activate:true});
+    if(inspect('systemctl',['show','-p','LoadState','--value','nexus404-vpn-cert-renew.timer']).text==='loaded')await ui.run('Ручное продление TLS','systemctl',['disable','--now','nexus404-vpn-cert-renew.timer']);
     // A prior Certbot hook must not overwrite a deliberately imported pair.
     write('/etc/letsencrypt/renewal-hooks/deploy/nexus404-vpn','#!/bin/sh\n# Certificate is managed by the operator.\nexit 0\n',0o755);
     ui.line('[✓] TLS установлен. Клиенты должны доверять его CA. Продление — своим ACME-клиентом и вызовом nexus404-node /opt/nexus404/host/vpn-cert.mjs /каталог/сертификата.');
@@ -116,15 +121,14 @@ export async function configureNodeTLS(ui,{inspect=query,packages=apt,renew=appl
   const email=await ui.prompt('Email для Let’s Encrypt');
   // Validate input before installing an optional component.
   certificateArguments(address,email);
-  if(!inspect('certbot',['--version']).ok){await packages(ui,'Список пакетов','update');await packages(ui,'Certbot для TLS','install','-y','--no-install-recommends','certbot');}
-  const args=certificateArguments(address,email,{ip:mode==='1',help:inspect('certbot',['--help','all']).text});
+  const binary=await ensure(ui,{ip:mode==='1',inspect,packages});
+  const args=certificateArguments(address,email,{ip:mode==='1',help:inspect(binary,['--help','all']).text});
   ui.line('Для выпуска и продления нужен свободный TCP/80, доступный из Интернета. IP-сертификат короткоживущий; порт нужен и впоследствии.');
   const port=inspect('ss',['-H','-ltn','sport = :80']);check(port.ok&&!port.text,'TCP/80 занят или проверка недоступна. Освободи порт либо импортируй сертификат.');
   await openVPNPorts(ui,'80/tcp',{inspect});
-  await ui.run('Выпуск TLS','certbot',args);
-  copy();
+  copy();prepare({write});
+  await ui.run('Выпуск TLS',binary,[...args,...acmeDirectories()]);
   write('/etc/letsencrypt/renewal-hooks/deploy/nexus404-vpn','#!/bin/sh\nexec '+NODE+' '+HOST+'/vpn-cert.mjs\n',0o755);
-  await renew({name:address});
-  await ui.run('Автообновление TLS','systemctl',['enable','--now','certbot.timer']);
-  check(inspect('systemctl',['is-active','--quiet','certbot.timer']).ok,'Таймер продления TLS не запущен');
+  await renew({source:ACME_SOURCE,name:address,activate:true});
+  await schedule(ui,binary,{inspect,write});
 }

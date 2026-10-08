@@ -54,6 +54,7 @@ export const projectFiles = [
   "02-hub/src/vpn-protocol.mjs",
   "host/vpn-node.mjs",
   "host/vpn-install.mjs",
+  "host/vpn-acme.mjs",
   "host/vpn-cert.mjs",
   "02-hub/modules/vpn/app.js",
   "02-hub/modules/vpn/index.mjs",
