@@ -1,4 +1,5 @@
 import {installRemote} from './host/remote-install.mjs';
+import {diagnoseVPN} from './host/vpn-diagnose.mjs';
 import {installVPNPanel,installVPNNode} from './host/vpn-install.mjs';
 import {installAgent} from './host/agent-install.mjs';
 import fs from 'node:fs';
@@ -160,6 +161,7 @@ async function main() {
   process.umask(0o077);
   const ui = new UI('/var/lib/nexus404-menu/menu.log');
   try {
+    if(process.argv[2]==='--vpn-check'){await diagnoseVPN(ui);return;}
     if(['--vpn-panel','--vpn-node','--vpn-update'].includes(process.argv[2])){await withLock('/run/lock/nexus404-setup.lock',()=>process.argv[2]==='--vpn-panel'?installVPNPanel(ui):installVPNNode(ui,{update:process.argv[2]==='--vpn-update'}),true);return;}
     if(process.argv[2]==='--remote'){await withLock('/run/lock/nexus404-setup.lock',()=>installRemote(ui),true);return;}
     if(process.argv[2]==='--agent'){await withLock('/run/lock/nexus404-setup.lock',()=>installAgent(ui),true);return;}

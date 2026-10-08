@@ -10,13 +10,13 @@ import {PROFILES,check,serverConfig} from '../../src/vpn-protocol.mjs';
 let instance,timer,pending;
 export const store=()=>instance??=new VPN(path.join(process.env.DATA_DIR??'/app/data','vpn'));
 export const agentExchange=(id,report)=>store().exchange(id,report);
-const content=`<link rel="stylesheet" href="/modules/vpn/style.css"><script src="/modules/vpn/app.js" defer></script><section id="vpn"><nav class="vpn-tabs" aria-label="Разделы Арго"><button data-tab="users">Пользователи</button><button data-tab="nodes">Серверы и подключения</button><button data-tab="routing">Маршрутизация</button><button data-tab="settings">Подписки и настройки</button></nav><p id="vpnStatus" role="status"></p><div id="vpnView"></div><dialog id="vpnDialog"><form id="vpnForm"><div id="vpnFields"></div><div class="vpn-actions"><button type="submit">Сохранить</button><button id="vpnCancel" type="button">Отмена</button></div></form></dialog></section>`;
+const content=`<link rel="stylesheet" href="/modules/vpn/style.css"><script src="/modules/vpn/routing-fields.js" defer></script><script src="/modules/vpn/app.js" defer></script><section id="vpn"><nav class="vpn-tabs" aria-label="Разделы Арго"><button data-tab="users">Пользователи</button><button data-tab="nodes">Серверы и подключения</button><button data-tab="routing">Маршрутизация</button><button data-tab="settings">Подписки и настройки</button></nav><p id="vpnStatus" role="status"></p><div id="vpnView"></div><dialog id="vpnDialog"><form id="vpnForm"><div id="vpnFields"></div><div class="vpn-actions"><button type="submit">Сохранить</button><button id="vpnCancel" type="button">Отмена</button></div></form></dialog></section>`;
 export async function handle({request,path:route,user,searchParams,authorized=()=>false,agents,origin}){
   try{
     if(!authorized())return Response.json({error:'Нужен вход'},{status:401});
     if(request.method==='GET'){
       if(route==='/')return new Response(modulePage({embedded:user.embedded,username:user.username,title:'Арго',content}),{headers:{'content-type':'text/html; charset=utf-8'}});
-      if(['/app.js','/style.css'].includes(route))return new Response(fs.readFileSync(new URL('.'+route,import.meta.url)),{headers:{'content-type':route.endsWith('.js')?'text/javascript':'text/css'}});
+      if(['/app.js','/routing-fields.js','/style.css'].includes(route))return new Response(fs.readFileSync(new URL('.'+route,import.meta.url)),{headers:{'content-type':route.endsWith('.js')?'text/javascript':'text/css'}});
       if(route==='/api')return Response.json({...store().snapshot(agents?.list()??[]),profiles:PROFILES,countries});
       if(route==='/api/history')return Response.json({rows:store().history(searchParams.get('user'))});
       if(route==='/api/subscription'){

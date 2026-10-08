@@ -3,7 +3,7 @@ import {connectionLabel,proxyNames} from './countries.mjs';
 import {xrayProfiles} from './xray-client.mjs';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
-import {check,destination} from '../../src/vpn-protocol.mjs';
+import {check,routingEntry} from '../../src/vpn-protocol.mjs';
 export function uri(c,u){
   const p=new URLSearchParams({sni:c.sni});let scheme,credential;
   if(c.profile.startsWith('vless')){scheme='vless';credential=u.uuid;p.set('encryption','none');p.set('security','reality');p.set('pbk',c.publicKey);p.set('sid',c.shortId);p.set('fp',c.fingerprint);p.set('type',c.profile.slice(6)==='raw'?'tcp':c.profile.slice(6));if(c.profile==='vless-raw')p.set('flow','xtls-rprx-vision');if(c.profile==='vless-xhttp'){p.set('path',c.path);p.set('mode','auto');}if(c.profile==='vless-grpc')p.set('serviceName',c.serviceName);}
@@ -37,12 +37,13 @@ export function exportSubscription(store,u,format='mihomo'){
     for(const c of connections){const name='fallback-'+c.id;fallbackNames.set(c.id,name);groups.push({name,type:'fallback',proxies:[c.id,'DIRECT'],url:'https://www.gstatic.com/generate_204',interval:60});}
   }
   const targets=new Set(['DIRECT','REJECT','VPN',...allowed,...groups.map(g=>g.name)]);
-  const formatted=rules.map(r=>{const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??fallbackNames.get(r.target)??r.target;check(targets.has(target),'Маршрутизация ссылается на недоступное пользователю подключение или группу');const type=r.type==='domain'?'DOMAIN':r.type==='suffix'?'DOMAIN-SUFFIX':r.value.includes(':')?'IP-CIDR6':'IP-CIDR';return `${type},${r.value},${label(target)}${r.type==='ip'?',no-resolve':''}`;});
+  const formatted=rules.map(r=>{const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??fallbackNames.get(r.target)??r.target;check(targets.has(target),'Маршрутизация ссылается на недоступное пользователю подключение или группу');const type=r.type==='geosite'?'GEOSITE':r.type==='geoip'?'GEOIP':r.type==='domain'?'DOMAIN':r.type==='suffix'?'DOMAIN-SUFFIX':r.value.includes(':')?'IP-CIDR6':'IP-CIDR';return `${type},${r.value},${label(target)}`;});
   const resolver=route.dns,policy={};
   // Use the selected tunnel for DNS of VPN destinations, including fake-IP lookups.
   // Process lowest priority first because a later exception must override it.
-  for(const r of [...rules].reverse()){if(r.type==='ip')continue;const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??r.target;policy[(r.type==='suffix'?'+.':'')+r.value]=target==='DIRECT'?[resolver]:target==='REJECT'?['rcode://refused']:[resolver+'#'+label(target)];}
-  return JSON.stringify({'mixed-port':7890,'allow-lan':false,mode:'rule','log-level':'warning',ipv6:true,tun:{enable:true,stack:'mixed','auto-route':true,'auto-detect-interface':true,'dns-hijack':['any:53']},dns:{enable:true,listen:'127.0.0.1:1053',ipv6:true,'enhanced-mode':'fake-ip','respect-rules':true,'default-nameserver':[resolver],'nameserver':[resolver],'proxy-server-nameserver':[resolver],'direct-nameserver':[resolver],'nameserver-policy':policy},proxies:connections.map(c=>({...proxy(c,u),name:label(c.id)})),'proxy-groups':groups.map(g=>({...g,proxies:g.proxies.map(label)})),rules:[...formatted,'MATCH,DIRECT']},null,2);
+  for(const r of [...rules].reverse()){if(r.type==='ip'||r.type==='geoip')continue;const target={direct:'DIRECT',block:'REJECT',vpn:'VPN'}[r.target]??r.target;policy[(r.type==='geosite'?'geosite:':r.type==='suffix'?'+.':'')+r.value]=target==='DIRECT'?[resolver]:target==='REJECT'?['rcode://refused']:[resolver+'#'+label(target)];}
+  const geodata=rules.some(r=>r.type==='geosite'||r.type==='geoip')?{'geodata-mode':true,'geox-url':{geoip:'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat',geosite:'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat'}}:{};
+  return JSON.stringify({...geodata,'mixed-port':7890,'allow-lan':false,mode:'rule','log-level':'warning',ipv6:true,tun:{enable:true,stack:'mixed','auto-route':true,'auto-detect-interface':true,'dns-hijack':['any:53']},dns:{enable:true,listen:'127.0.0.1:1053',ipv6:true,'enhanced-mode':'fake-ip','respect-rules':true,'default-nameserver':[resolver],'nameserver':[resolver],'proxy-server-nameserver':[resolver],'direct-nameserver':[resolver],'nameserver-policy':policy},proxies:connections.map(c=>({...proxy(c,u),name:label(c.id)})),'proxy-groups':groups.map(g=>({...g,proxies:g.proxies.map(label)})),rules:[...formatted,'MATCH,DIRECT']},null,2);
 }
 export function publicAddress(address){
   if(isIP(address)===4){const [a,b]=address.split('.').map(Number);return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&(b===168||b===0)||a===100&&b>=64&&b<=127||a===198&&(b===18||b===19));}
@@ -59,7 +60,7 @@ export async function downloadList(address,{resolve=lookup}={}){
     });const timer=setTimeout(()=>req.destroy(Error('Истекло время загрузки списка')),10000);req.on('close',()=>clearTimeout(timer));req.on('error',reject);
   });
 }
-export function parseList(body,type){const lines=body.split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));check(lines.length>0&&lines.length<=2000,'Список: от 1 до 2000 правил');return [...new Set(lines)].map(value=>{const d=destination(value);check((type==='ip')===(d.type==='ip'),'В списке смешаны разные типы правил');return {type,value:d.value};});}
+export function parseList(body,type){const lines=body.split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));check(lines.length>0&&lines.length<=2000,'Список: от 1 до 2000 правил');return [...new Set(lines)].map(value=>routingEntry(type,value));}
 export async function refreshSources(store,fetcher=downloadList){
   for(const profile of store.all('routing'))for(const source of profile.sources){
     const cached=store.sourceData(source.id),old=cached?.url===source.url&&cached?.type===source.type?cached:null;if(old?.checked&&store.now()-old.checked<3600000)continue;

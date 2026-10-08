@@ -12,14 +12,25 @@ export const VPN_DIR='/var/lib/nexus404-vpn';
 const execute=promisify(execFile);
 export class Xray {
   constructor(directory,binary='/opt/nexus404/vpn/xray'){this.directory=directory;this.binary=binary;this.child=null;}
-  async command(args){return execute(this.binary,args,{timeout:10000,maxBuffer:1024*1024,env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});}
+  async command(args,timeout=10000){return execute(this.binary,args,{timeout,maxBuffer:1024*1024,env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});}
   async validate(config){
     for(const inbound of config.inbounds){const tls=inbound.streamSettings?.tlsSettings;if(!tls)continue;const c=tls.certificates[0];try{validateCertificatePair(fs.readFileSync(c.certificateFile),fs.readFileSync(c.keyFile),{name:tls.serverName});}catch{throw Object.assign(Error('TLS: нужен действующий сертификат ноды на '+tls.serverName+'. Настрой TLS через меню VPN-ноды.'),{vpnTLS:true});}}
     durable(this.directory+'/candidate.json',config);const version=await this.command(['version']);check(new RegExp('Xray '+CORE_VERSION.replaceAll('.','\\.')+'(?:\\s|$)').test(version.stdout),'Установлена другая версия Xray');await this.command(['run','-test','-config',this.directory+'/candidate.json']);}
-  async start(config){await this.stop();durable(this.directory+'/running.json',config);this.child=spawn(this.binary,['run','-config',this.directory+'/running.json'],{stdio:'ignore',env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});this.child.on('error',()=>{});for(let n=0;n<30;n++){await sleep(100);if(this.child.exitCode!==null)throw Error('Ядро не запустилось');try{await this.stats();return;}catch{}}await this.stop();throw Error('API ядра не отвечает');}
+  async start(config){await this.stop();durable(this.directory+'/running.json',config);this.child=spawn(this.binary,['run','-config',this.directory+'/running.json'],{stdio:'ignore',env:{...process.env,XRAY_LOCATION_ASSET:'/opt/nexus404/vpn'}});this.child.on('error',()=>{});const deadline=Date.now()+10000;while(Date.now()<deadline){await sleep(100);if(!this.alive())throw Error('Ядро не запустилось');const remaining=deadline-Date.now();if(remaining<=0)break;try{await this.stats(Math.min(1000,remaining));return;}catch{}}await this.stop();throw Error('API ядра не отвечает');}
   alive(){return !!this.child&&this.child.exitCode===null&&this.child.signalCode===null;}
   async stop(){const c=this.child;if(!c)return;this.child=null;if(c.exitCode===null&&c.signalCode===null){const closed=once(c,'close').catch(()=>{});c.kill('SIGTERM');const timer=setTimeout(()=>c.kill('SIGKILL'),3000);try{await closed;}finally{clearTimeout(timer);}}}
-  async stats(){check(this.alive(),'Ядро остановлено');const {stdout}=await this.command(['api','statsquery','--server=127.0.0.1:'+API_PORT,'-pattern','user>>>']);const value=JSON.parse(stdout);check(Array.isArray(value.stat??[]));const users={};for(const item of value.stat??[]){const m=/^user>>>([a-f0-9-]{36})>>>traffic>>>(uplink|downlink)$/.exec(item.name);if(!m)continue;const n=Number(item.value);check(integer(n),'Неверный счётчик ядра');users[m[1]]??={up:0,down:0};users[m[1]][m[2]==='uplink'?'up':'down']=n;}return users;}
+  async stats(budget=10000){
+    const deadline=Date.now()+budget;let result;
+    // Counters are cumulative: retry a failed read without resetting them.
+    // Invalid data still fails closed; both reads share one time budget.
+    for(let attempt=0;attempt<2;attempt++){
+      check(this.alive(),'Ядро остановлено');
+      const remaining=deadline-Date.now();check(remaining>0,'API ядра не отвечает');
+      try{result=await this.command(['api','statsquery','--server=127.0.0.1:'+API_PORT,'-pattern','user>>>'],Math.max(1,Math.floor(remaining/(2-attempt))));break;}
+      catch(error){if(attempt===1||!this.alive()||deadline-Date.now()<=100)throw error;await sleep(100);}
+    }
+    const value=JSON.parse(result.stdout);check(Array.isArray(value.stat??[]));const users={};for(const item of value.stat??[]){const m=/^user>>>([a-f0-9-]{36})>>>traffic>>>(uplink|downlink)$/.exec(item.name);if(!m)continue;const n=Number(item.value);check(integer(n),'Неверный счётчик ядра');users[m[1]]??={up:0,down:0};users[m[1]][m[2]==='uplink'?'up':'down']=n;}return users;
+  }
 }
 export class VPNNode {
   constructor({directory=VPN_DIR,node,core,now=Date.now}={}){
@@ -47,10 +58,10 @@ export class VPNNode {
   async apply(bundle){
     const active=this.active(bundle),config=serverConfig(bundle,active,this.directory+'/certs');let renewal='';try{renewal=fs.readFileSync(this.directory+'/certs/renewed','utf8');}catch{}const digest=hash([config,renewal]);
     if(this.configHash===digest&&this.core.alive()){this.set('working',bundle);return;}
-    const rejectionKey=hash([digest,bundle.revision]);if(this.rejectionKey===rejectionKey){this.set('rollback',this.core.alive());this.phase=this.rejectionPhase;throw Object.assign(Error(this.rejectionMessage||'Эта версия уже отклонена'),{vpnTLS:!!this.rejectionMessage});}
+    const rejectionKey=hash([digest,bundle.revision]);if(this.rejectionKey===rejectionKey&&this.now()<this.retryAt){this.set('rollback',this.core.alive());this.phase=this.rejectionPhase;throw Object.assign(Error(this.rejectionMessage||'Эта версия уже отклонена'),{vpnTLS:!!this.rejectionMessage});}
     const previous=this.get('working');
-    try{this.phase='validate';await this.core.validate(config);check(bundle.expires>this.now(),'Разрешение истекло во время проверки');await this.stop();this.set('running',true);this.phase='start';await this.core.start(config);check(bundle.expires>this.now(),'Разрешение истекло во время запуска');this.configHash=digest;this.last={};this.set('working',bundle);this.set('running',true);}
-    catch(error){this.rejectionKey=rejectionKey;this.rejectionPhase=this.phase;this.rejectionMessage=error.vpnTLS?error.message:null;
+    try{this.phase='validate';await this.core.validate(config);check(bundle.expires>this.now(),'Разрешение истекло во время проверки');await this.stop();this.set('running',true);this.phase='start';await this.core.start(config);check(bundle.expires>this.now(),'Разрешение истекло во время запуска');this.configHash=digest;this.last={};this.set('working',bundle);this.set('running',true);this.rejectionKey='';this.retryAt=0;}
+    catch(error){this.retryFailures=this.rejectionKey===rejectionKey?(this.retryFailures??0)+1:1;this.rejectionKey=rejectionKey;this.retryAt=this.now()+Math.min(300000,30000*2**Math.min(this.retryFailures-1,4));this.rejectionPhase=this.phase;this.rejectionMessage=error.vpnTLS?error.message:null;
       if(previous&&bundle.expires>this.now()){
         // Roll back transport settings, never resurrect withdrawn user credentials.
         const allowed=new Map(active.map(u=>[u.id,u]));

@@ -16,6 +16,17 @@ export const integer=(v,min=0,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger
 export function text(value,max=80){check(typeof value==='string'&&value.trim().length>0&&value.length<=max&&!/[\x00-\x1f]/.test(value));return value.trim();}
 export function hostname(value){check(typeof value==='string'&&value.length<=253&&(isIP(value)||/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value)),'Неверный адрес / SNI');return value.toLowerCase();}
 export function destination(value){const [host,prefix,...tail]=String(value).split('/');if(isIP(host)){check(!tail.length&&(prefix===undefined||integer(Number(prefix),0,isIP(host)===4?32:128)),'Неверная подсеть');return {type:'ip',value:prefix===undefined?host+'/'+(isIP(host)===4?'32':'128'):value};}check(prefix===undefined);return {type:'domain',value:hostname(host)};}
+export function routingEntry(type,value){
+  check(['domain','suffix','ip','geosite','geoip'].includes(type),'Неизвестный тип правила');
+  check(typeof value==='string','Правило должно быть строкой');value=value.trim();
+  const ipField=type==='ip'||type==='geoip',prefix=/^(geosite|geoip|domain|full):(.+)$/i.exec(value);
+  if(prefix){const kind=prefix[1].toLowerCase();check(ipField===(kind==='geoip'),'Домены и IP нужно указывать в разных полях');type={domain:'suffix',full:'domain',geosite:'geosite',geoip:'geoip'}[kind];value=prefix[2];}
+  if(type==='geosite'||type==='geoip'){
+    value=value.toLowerCase();check((type==='geosite'?/^[a-z0-9][a-z0-9_-]{0,79}(?:@[a-z0-9_-]{1,32})?$/:/^[a-z0-9][a-z0-9_-]{0,79}$/).test(value),'Неверное имя группы '+type);
+    return {type,value};
+  }
+  const d=destination(value);check(ipField===(d.type==='ip'),'Домены и IP нужно указывать в разных полях');return {type,value:d.value};
+}
 export function connection(v){
   check(v&&id(v.id)&&id(v.node)&&Object.hasOwn(PROFILES,v.profile));
   const c={id:v.id,node:v.node,name:text(v.name),profile:v.profile,address:hostname(v.address),port:Number(v.port),sni:hostname(v.sni||v.address),enabled:v.enabled!==false,path:v.path||'/nexus',serviceName:v.serviceName||'nexus'};
@@ -38,8 +49,8 @@ export function routing(value){
   check(Array.isArray(value.rules)&&value.rules.length<=2000);
   result.groups=(value.groups??[]).map(g=>{check(id(g.id)&&Array.isArray(g.connections)&&g.connections.length>0&&g.connections.length<=32&&g.connections.every(id));return {id:g.id,name:text(g.name),connections:[...new Set(g.connections)]};});check(result.groups.length<=16);
   const targets=['direct','block','vpn',...result.groups.map(g=>g.id)];
-  result.rules=value.rules.map(r=>{check(['domain','suffix','ip'].includes(r.type)&&typeof r.target==='string'&&(targets.includes(r.target)||id(r.target)));const d=destination(r.value);check((d.type==='ip')===(r.type==='ip'));return {type:r.type,value:d.value,target:r.target,exception:!!r.exception};});
-  result.sources=(value.sources??[]).map(s=>{const url=new URL(s.url);check(url.protocol==='https:'&&!url.username&&!url.password&&!url.hash&&url.href.length<1500,'Списки доступны только по HTTPS');check(['domain','suffix','ip'].includes(s.type)&&typeof s.target==='string'&&(targets.includes(s.target)||id(s.target)));return {id:id(s.id)?s.id:null,url:url.href,type:s.type,target:s.target,exception:!!s.exception};});check(result.sources.length<=8);return result;
+  result.rules=value.rules.map(r=>{check(typeof r.target==='string'&&(targets.includes(r.target)||id(r.target)));return {...routingEntry(r.type,r.value),target:r.target,exception:!!r.exception};});
+  result.sources=(value.sources??[]).map(s=>{const url=new URL(s.url);check(url.protocol==='https:'&&!url.username&&!url.password&&!url.hash&&url.href.length<1500,'Списки доступны только по HTTPS');check(['domain','suffix','ip','geosite','geoip'].includes(s.type)&&typeof s.target==='string'&&(targets.includes(s.target)||id(s.target)));return {id:id(s.id)?s.id:null,url:url.href,type:s.type,target:s.target,exception:!!s.exception};});check(result.sources.length<=8);return result;
 }
 export function envelope(v,node,now=Date.now()){
   check(v&&v.node===node&&id(v.id)&&integer(v.revision,1)&&integer(v.created)&&integer(v.expires)&&v.created<=now+30000&&v.expires>now&&v.expires-v.created<=LEASE_MS&&v.core===CORE_VERSION,'Просроченное или несовместимое задание VPN');

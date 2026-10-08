@@ -12,7 +12,19 @@ export function clientOutbound(c,u){
   const settings=vless?{vnext:[{address:c.address,port:c.port,users:[{id:u.uuid,encryption:'none',...(network==='raw'?{flow:'xtls-rprx-vision'}:{})}]}]}:network==='hysteria'?{version:2,address:c.address,port:c.port}:{servers:[{address:c.address,port:c.port,password:u.password}]};
   return {tag:'proxy-'+c.id,protocol:vless?'vless':network==='hysteria'?'hysteria':'trojan',settings,streamSettings};
 }
-const domain = rule => (rule.type === 'suffix' ? 'domain:' : 'full:') + rule.value;
+const isIPRule = rule => rule.type === 'ip' || rule.type === 'geoip';
+const domain = rule => (rule.type === 'geosite' ? 'geosite:' : rule.type === 'suffix' ? 'domain:' : 'full:') + rule.value;
+export function xrayRuleGroups(rules,target){
+  const result=[];let previousKey;
+  for(const rule of rules){
+    const field=isIPRule(rule)?'ip':'domain',route=target(rule.target),key=JSON.stringify([field,route,!!rule.exception]);
+    const value=field==='ip'?(rule.type==='geoip'?'geoip:':'')+rule.value:domain(rule);
+    if(key===previousKey){const list=result.at(-1)[field];if(!list.includes(value))list.push(value);}
+    else result.push({type:'field',[field]:[value],...route});
+    previousKey=key;
+  }
+  return result;
+}
 
 // This is a client profile, not a node/server configuration.
 // DNS and transport values come from the assigned panel profile and connection.
@@ -24,7 +36,7 @@ export function xrayProfiles(connections, user, route, rules) {
   const orderedRules = rules.map((rule, index) => ({...rule, index}))
     .sort((a, b) => Number(!!b.exception) - Number(!!a.exception) || a.index - b.index);
   for (const rule of orderedRules) {
-    check(['domain', 'suffix', 'ip'].includes(rule.type), 'Неизвестный тип правила');
+    check(['domain', 'suffix', 'ip', 'geosite', 'geoip'].includes(rule.type), 'Неизвестный тип правила');
     check(['vpn', 'direct', 'block'].includes(rule.target) ||
       allowed.has(rule.target) || groups.get(rule.target)?.length,
       'Маршрутизация ссылается на недоступное пользователю подключение или группу');
@@ -47,11 +59,7 @@ export function xrayProfiles(connections, user, route, rules) {
       return {balancerTag: tag};
     };
 
-    const routingRules = orderedRules.map(rule => ({
-      type: 'field',
-      ...(rule.type === 'ip' ? {ip: [rule.value]} : {domain: [domain(rule)]}),
-      ...target(rule.target)
-    }));
+    const routingRules = xrayRuleGroups(orderedRules,target);
     // Unlisted destinations use DIRECT for both TCP and UDP (including QUIC).
     // Never add a catch-all UDP proxy or hard-code a user's domains here.
     routingRules.push({type: 'field', network: 'tcp,udp', outboundTag: 'direct'});
@@ -74,7 +82,7 @@ export function xrayProfiles(connections, user, route, rules) {
         {tag: 'block', protocol: 'blackhole'}
       ],
       routing: {
-        domainMatcher: 'hybrid', domainStrategy: 'IPIfNonMatch', rules: routingRules,
+        domainMatcher: 'hybrid', domainStrategy: orderedRules.some(isIPRule)?'IPOnDemand':'IPIfNonMatch', rules: routingRules,
         ...(balancers.size ? {balancers: [...balancers.values()]} : {})
       }
     };
