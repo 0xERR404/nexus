@@ -730,17 +730,17 @@ body:has(#chatPage.chat-short) #chatInput { height: calc(2 * 1.5em + 16px); }
 
 .chat-mobile-nav { display: none; }
 @media (max-width: 650px), (max-height: 500px) and (pointer: coarse) {
-  html:has(#chatPage) { scrollbar-gutter: auto; }
+  /* Keep the shared scrollbar gutter so switching modules does not shift their edges. */
   body:has(#chatPage) {
     position: fixed;
     top: var(--chat-viewport-top, 0px);
     left: 0;
     right: 0;
     width: 100%;
-    padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    padding: max(4px, env(safe-area-inset-top)) max(var(--page-gutter), env(safe-area-inset-right)) 0 max(var(--page-gutter), env(safe-area-inset-left));
   }
   body:has(#chatPage) > :is(.workspace-header,.workspace-mobile) { display: none; }
-  body:has(#chatPage) .page { width: 100%; max-width: none; margin: 0; padding: 0; }
+  body:has(#chatPage) .page { width: 100%; max-width: var(--page-max-width); margin-inline: auto; padding: 0; }
   body:has(#chatPage) .page > .page-foot,
   body:has(#chatPage) .page > main > .section-line { display: none; }
   body:has(#chatPage) .page > main { padding: 0; border: 0; border-radius: 0; }

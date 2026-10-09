@@ -5,9 +5,6 @@ body {
   background-color: var(--bg);
   background-image: none;
 }
-body .page {
-  max-width: 1120px;
-}
 body
   :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) {
   color: var(--text);

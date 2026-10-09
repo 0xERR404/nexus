@@ -1,6 +1,6 @@
 /* Shared card layouts. Media grids and text panels have separate minimum widths. */
 :root { --card-gap:10px; --card-padding:12px; --ui-font-size:14px; --ui-small-size:12px; --ui-title-size:16px; --ui-meta-size:12px; }
-html body .page { width:100%; max-width:1280px; margin-inline:auto; min-width:0; }
+html body .page { width:100%; max-width:var(--page-max-width); margin-inline:auto; min-width:0; }
 html body .page > main { min-width:0; }
 html body :is(.home-grid,.settings-grid,.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList,.activity-grid,.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid) { gap:var(--card-gap); min-width:0; align-items:stretch; grid-auto-rows:auto; }
 html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),1fr)); }
@@ -266,7 +266,7 @@ html body #homeDashboard[data-group=overview] .home-balance .module-stat strong 
 
 /* Compact spacing: density comes from gutters and summaries, not tiny text. */
 html body .workspace-header { height:54px; min-height:54px; padding-inline:14px; gap:10px; }
-html.embedded-page:not(.chat-widget) body { padding:10px 12px; }
+html.embedded-page:not(.chat-widget) body { padding:10px max(var(--page-gutter),env(safe-area-inset-right)) 10px max(var(--page-gutter),env(safe-area-inset-left)); }
 html body .page > .page-foot { margin-top:12px; padding-top:8px; }
 html body :is(.section-line,.content-heading) { margin-bottom:10px; padding-bottom:8px; }
 html body :is(.module-heading,.home-card-title) { min-height:32px; margin-bottom:8px; padding-bottom:6px; gap:8px; }
@@ -302,7 +302,8 @@ html body #homeDashboard[data-group=overview] .home-balance .module-stat { gap:3
 }
 @media(max-width:800px) {
   html body .workspace-header { height:52px; min-height:52px; gap:4px; padding-inline:8px; }
-  html.embedded-page:not(.chat-widget) body { padding:8px; }
+  :root { --page-gutter:8px; }
+  html.embedded-page:not(.chat-widget) body { padding:8px max(var(--page-gutter),env(safe-area-inset-right)) 8px max(var(--page-gutter),env(safe-area-inset-left)); }
   html body :is(.vpn-card,.server-manager,.article-card,.project-card,.activity-card,.storage-row,.storage-folder-card) { padding:10px; }
   html body #homeDashboard .home-grid,
   html body #homeDashboard[data-group=overview] .home-grid { gap:8px; }

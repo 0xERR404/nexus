@@ -29,7 +29,7 @@ html[data-carbon-glass='false'] :is(.module-card,.home-card,.workspace-header,.w
 .page > main { border:0; padding:0; background:none; }
 .page-foot { border-top:1px solid var(--line-soft); color:var(--muted); font-size:10px; }
 .embedded-page body { padding:12px 18px; min-height:100dvh; }
-.embedded-page .page { max-width:1480px; }
+/* Page width is shared with standalone pages through --page-max-width. */
 .embedded-page .page > .page-foot { margin-top:20px; padding-top:12px; }
 .workspace-header { height:68px; min-height:68px; display:flex; align-items:center; gap:16px; padding:0 22px; border:0; border-bottom:1px solid var(--line); border-radius:0; }
 .workspace-header .brand { flex:none; gap:10px; }
@@ -335,9 +335,9 @@ html[data-carbon-glass] body :is(.home-card,.chat-panel,.trophy-panel,.balance-p
 }
 /* Shared navigation when the music shell is unavailable. */
 body.standalone-page { display:block; padding:0 0 72px; }
-.standalone-page > .page { max-width:1480px; margin:auto; padding:12px 18px; }
+.standalone-page > .page { max-width:calc(var(--page-max-width) + max(var(--page-gutter),env(safe-area-inset-left)) + max(var(--page-gutter),env(safe-area-inset-right))); margin:auto; padding:10px max(var(--page-gutter),env(safe-area-inset-right)) 10px max(var(--page-gutter),env(safe-area-inset-left)); }
 .standalone-page > .workspace-header { position:sticky; top:0; z-index:5; }
-@media (max-width:600px) { .standalone-page > .page { padding:9px; } }
+@media (max-width:800px) { .standalone-page > .page { padding-block:8px; } }
 
 /* Compact, actionable empty lists; no fixed card heights or filler rows. */
 .ui-empty { grid-column:1/-1; min-width:0; padding:16px; border:1px solid var(--line); border-radius:10px; text-align:left; }

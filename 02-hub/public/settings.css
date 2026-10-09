@@ -1,6 +1,6 @@
 /* Settings are a work surface; module styles remain scoped to their own pages. */
 body.settings-page{--control-height:42px;--button-padding:10px 15px;--button-font:500 .875rem/1.4 var(--sans);font-size:1rem}
-body.settings-page .page{max-width:1240px;width:100%;padding:20px 24px}
+/* Settings use the shared page width and gutters. */
 body.settings-page .page>main{padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
 .settings-heading{padding:0 0 24px;border-bottom:1px solid var(--line);margin-bottom:24px}
 .settings-heading h1{font:500 1.6rem/1.25 var(--sans);letter-spacing:-.02em;margin:0}
@@ -85,7 +85,6 @@ body.settings-page .page>main{padding:0;border:0;background:none;box-shadow:none
  #settingsContent :is(.settings-card,.security-panel,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.maintenance-grid>section,#readerSettings,.settings-panels>section:not([id]),.settings-group){padding:16px}
 }
 @media(max-width:760px){
- body.settings-page .page{padding:16px 12px}
  .settings-heading{margin-bottom:14px;padding-bottom:14px}
  .settings-heading h1{font-size:1.375rem}
  .settings-layout{grid-template-columns:minmax(0,1fr);gap:20px}
@@ -158,7 +157,6 @@ html[data-carbon-color] .background-ribbons{background-image:repeating-linear-gr
 }
 
 /* Compact settings: retain touch targets and input font sizes. */
-html body.settings-page .page { padding:12px; }
 html body .settings-heading { padding-bottom:12px; margin-bottom:12px; }
 html body .settings-layout { gap:18px; grid-template-columns:190px minmax(0,1fr); }
 html body .settings-sidebar { padding:10px 6px; }
@@ -172,7 +170,6 @@ html body #settingsContent :is(.settings-card,.security-panel,.maintenance-panel
   html body #settingsContent :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height:36px; padding:7px 9px; }
 }
 @media(max-width:800px) {
-  html body.settings-page .page { padding:8px; }
   html body #settingsContent :is(.settings-card,.security-panel,.maintenance-panel,.chat-panel,.signal-panel) { padding:10px; }
   html body #settingsContent[data-settings-section] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,button) { min-height:44px; }
   html body #settingsContent[data-settings-section] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size:16px; }
