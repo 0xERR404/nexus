@@ -6,7 +6,29 @@
   });
 })();
 
-document.querySelectorAll('#settingsContent :is(.settings-card,.security-panel,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.maintenance-grid>section,.settings-group)').forEach(card=>{
- const paragraphs=[...card.children].filter(e=>e.tagName==='P'&&!e.id&&!e.hasAttribute('role')&&!e.querySelector('a,button,input')&&!/error|warning|status/.test(e.className)&&e.textContent.trim().length>45);
- if(!paragraphs.length)return;const help=document.createElement('details'),title=document.createElement('summary');help.className='settings-help';title.textContent='Справка';help.append(title,...paragraphs);card.append(help);
-});
+(() => {
+  const content = document.getElementById('settingsContent');
+  if (!content) return;
+  // Keep details nodes and toggle events for modules that load their data on open.
+  // Their summaries are now headings, and settings cannot be collapsed.
+  function revealSections() {
+    for (const section of content.querySelectorAll('details')) {
+      section.removeAttribute('name');
+      if (!section.open) section.open = true;
+      const heading = section.querySelector(':scope > summary');
+      if (!heading) continue;
+      heading.setAttribute('role', 'heading');
+      heading.setAttribute('aria-level', '3');
+      heading.setAttribute('tabindex', '-1');
+    }
+  }
+  content.addEventListener('click', event => {
+    const heading = event.target.closest('summary');
+    if (heading?.parentElement?.tagName === 'DETAILS' && content.contains(heading) &&
+        !event.target.closest('a,button,input,select,textarea')) event.preventDefault();
+  });
+  revealSections();
+  new MutationObserver(revealSections).observe(content, {
+    subtree: true, childList: true, attributes: true, attributeFilter: ['open']
+  });
+})();

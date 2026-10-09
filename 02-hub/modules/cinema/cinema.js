@@ -67,6 +67,7 @@
       ...items.map((item) => {
         const card = node('a', undefined, 'cinema-card');
         card.href = '/modules/cinema/?id=' + encodeURIComponent(item.id);
+        card.title = item.title;
         const art = node('span', undefined, 'cinema-cover'),
           mark = node('span', item.title.trim().slice(0, 1).toLocaleUpperCase(), 'cinema-monogram');
         art.setAttribute('aria-hidden', 'true');
@@ -79,12 +80,12 @@
           img.onerror = () => img.replaceWith(mark);
           art.append(img);
         } else art.append(mark);
-        art.append(node('span', '▶', 'cinema-cover-play'));
-        card.append(
-          art,
-          node('strong', item.title),
-          node('span', item.kind === 'anime' ? 'Аниме' : 'Кино', 'cinema-kind')
+        const info = node('span', undefined, 'cinema-card-info');
+        info.append(
+          node('span', item.kind === 'anime' ? 'Аниме' : 'Кино', 'cinema-kind'),
+          node('strong', item.title)
         );
+        card.append(art, info);
         return card;
       })
     );

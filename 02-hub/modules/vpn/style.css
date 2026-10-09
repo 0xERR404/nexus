@@ -31,7 +31,8 @@ html body #vpnDialog { width:min(660px,calc(100vw - 24px)); padding:12px; max-he
 html body #vpnDialog[data-editor=routing] { width:min(800px,calc(100vw - 24px)); }
 html body #vpnDialog #vpnForm { display:flex; flex-direction:column; max-height:calc(100dvh - 50px); min-height:0; margin:0; }
 html body #vpnDialog #vpnFields { min-height:0; overflow:auto; padding:0 3px 2px; scrollbar-gutter:stable; }
-html body #vpnDialog h2 { margin:0 0 8px; font-size:1rem; }
+html body #vpnDialog > .nexus-screen-close { position:absolute; top:12px; right:12px; float:none; margin:0; }
+html body #vpnDialog h2 { margin:0 0 8px; padding-right:52px; min-height:44px; display:flex; align-items:center; font-size:1rem; }
 html body #vpnDialog h3 { font-size:.9rem; }
 html body #vpn :is(.vpn-section,.vpn-rule-block) { min-width:0; margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:9px; }
 html body #vpn :is(.vpn-section,.vpn-rule-block) legend { padding:0 5px; font-size:.78rem; color:var(--muted); }
@@ -115,4 +116,14 @@ html body #vpn .vpn-icon-button svg {
 @media(max-width:800px) {
   html body #vpn .vpn-user-actions .vpn-icon-button { flex-basis:44px; width:44px; min-width:44px; height:44px; min-height:44px; }
   html body #vpn .vpn-icon-button svg { width:20px; height:20px; }
+}
+
+/* User cards keep their compact width even when the last row is nearly empty. */
+html body #vpn .vpn-grid.vpn-user-grid {
+  grid-template-columns:repeat(auto-fill,minmax(0,min(100%,300px)));
+  justify-content:start;
+}
+html body #vpn .vpn-user-grid .vpn-card-head h3 { min-width:0; overflow-wrap:anywhere; }
+@media(max-width:650px) {
+  html body #vpn .vpn-grid.vpn-user-grid { grid-template-columns:minmax(0,1fr); }
 }

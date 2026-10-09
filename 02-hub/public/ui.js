@@ -374,6 +374,7 @@ window.Nexus = Object.freeze({
 
 (() => {
   const root = document.documentElement;
+  const separateSurface = 'dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const own = window.parent === window || !window.parent.NexusUI;
   const stack = [],
@@ -498,9 +499,10 @@ window.Nexus = Object.freeze({
         watched.set(d, editable(d) ? fields(d) : null);
         owner.register(d, controller);
       }
-    // Only the top window reveals the shared background; lower windows keep their fields.
-    const top = [...watched.keys()].at(-1);
-    for (const d of watched.keys()) d.classList.toggle('nexus-dialog-covered', d !== top);
+    // A compact child dialog leaves its reader/editor visible underneath it.
+    const ordered = [...watched.keys()];
+    const surfaceIndex = ordered.findLastIndex(d => d.matches(separateSurface));
+    ordered.forEach((d, index) => d.classList.toggle('nexus-dialog-covered', index < surfaceIndex));
   }
   if (own) {
     window.NexusUI = {
@@ -641,6 +643,7 @@ window.Nexus = Object.freeze({
   let locked, dialogFocusState,
     suspended = false;
   function unlockScroll() {
+    root.classList.remove('nexus-surface-open');
     if (!locked) return;
     const saved = locked;
     locked = null;
@@ -657,6 +660,8 @@ window.Nexus = Object.freeze({
   function syncDialogs() {
     if (suspended) return;
     const open = [...document.querySelectorAll('dialog[open]')].some((d) => d.matches(':modal'));
+    const surfaceOpen = !!document.querySelector(`${separateSurface}[open]:modal`);
+    root.classList.toggle('nexus-surface-open', surfaceOpen);
     if (!open) unlockScroll();
     else if (!locked) {
       locked = {x: scrollX, y: scrollY};
@@ -664,9 +669,9 @@ window.Nexus = Object.freeze({
       root.style.setProperty('--nexus-dialog-y', `-${locked.y}px`);
       root.classList.add('nexus-dialog-open');
     }
-    if (parent !== window && dialogFocusState !== open) {
-      dialogFocusState = open;
-      parent.postMessage({type:'nexus:dialog-focus', active:open}, location.origin);
+    if (parent !== window && dialogFocusState !== surfaceOpen) {
+      dialogFocusState = surfaceOpen;
+      parent.postMessage({type:'nexus:dialog-focus', active:surfaceOpen}, location.origin);
     }
     watchDialogs();
   }

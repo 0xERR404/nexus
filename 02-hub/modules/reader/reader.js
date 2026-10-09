@@ -129,7 +129,7 @@
         progress.value = b.progress;
         progress.setAttribute('aria-label', 'Прочитано');
         progressRow.append(progress, node('small', b.progress + '%'));
-        info.append(progressRow, node('strong', b.title), node('span', b.author || 'Автор не указан', 'reader-author'));
+        info.append(node('span', b.author || 'Автор не указан', 'reader-author'), node('strong', b.title), progressRow);
         button.append(info);
         button.onclick = () => void bookAction(() => openBook(b.id));
         const edit = node('button', '✎', 'reader-card-edit');

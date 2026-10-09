@@ -333,13 +333,14 @@ html body [data-card-link]{cursor:pointer}
 html body [data-card-link]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 html body [data-card-link]:hover{border-color:var(--line-strong)}
 html[data-carbon-glass=true] body :is(.settings-sidebar,.settings-card,.security-panel,.maintenance-grid>section,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.server-manager,.server-report,.server-registration,#readerSettings,.settings-group){background:var(--glass-light),var(--surface);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
-/* Separate full-screen surfaces. The shared background remains behind them,
-   while the module itself is hidden and its scroll position stays intact. */
-html.nexus-dialog-open body > :not(canvas):not(dialog) { visibility:hidden; }
-html.nexus-dialog-open { scrollbar-gutter:auto; }
-html.nexus-dialog-open body dialog[open] { visibility:visible; }
-html.nexus-dialog-open body dialog.nexus-dialog-covered { visibility:hidden !important; }
-html body dialog[open]:not(#nexusIntro) {
+/* Ordinary windows stay inside the module iframe. Only readers and the article
+   editor replace the module surface; the player keeps its own layout. */
+html body :where(dialog[open]) { box-sizing:border-box; max-height:calc(100dvh - 24px); overflow:auto; overscroll-behavior:contain; }
+html.nexus-surface-open body > :not(canvas):not(dialog) { visibility:hidden; }
+html.nexus-surface-open { scrollbar-gutter:auto; }
+html.nexus-surface-open body dialog[open] { visibility:visible; }
+html.nexus-surface-open body dialog.nexus-dialog-covered { visibility:hidden !important; }
+html body dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)[open] {
   box-sizing:border-box; position:fixed; inset:0; margin:0;
   width:100vw !important; min-width:0 !important; max-width:none !important;
   height:100dvh !important; max-height:none !important;
@@ -348,7 +349,7 @@ html body dialog[open]:not(#nexusIntro) {
   overflow:auto; overscroll-behavior:contain;
   box-shadow:none !important;
 }
-html body dialog[open]::backdrop { background:transparent !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+html body dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)[open]::backdrop { background:transparent !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
 html body dialog[open] :is(.dialog-close,[aria-label='Закрыть']) { min-width:44px; min-height:44px; flex-shrink:0; }
 html body dialog[open] .nexus-screen-close { position:sticky; top:0; float:right; z-index:5; margin:0 0 8px 12px; width:44px; height:44px; border:1px solid var(--line); border-radius:8px; background:var(--dialog-bg); color:var(--text); padding:0; font-size:25px; cursor:pointer; }
 html body #readerReading[open] { padding:0; overflow:hidden; }
@@ -368,7 +369,7 @@ html[data-perf-effect='blur'] body #readerReading[open],html[data-perf-effect='b
   html[data-carbon-glass] body #readerReading[open] { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
 }
 @media(max-width:650px) {
-  html body dialog[open]:not(#readerReading):not(#nexusIntro) { padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+  html body dialog:is(#articleWorkspace,#articleReadingWorkspace)[open] { padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
 }
 
 /* One close control across dialogs, readers and playback; keep each view's visibility rules. */

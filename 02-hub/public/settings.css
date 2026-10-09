@@ -48,8 +48,10 @@ body.settings-page .page>main{padding:0;border:0;background:none;box-shadow:none
 #settingsContent form{max-width:none}
 #settingsContent form>button[type=submit]{margin-top:8px}
 #settingsContent details{margin-top:16px;min-width:0}
-#settingsContent summary{font-size:.875rem;padding:12px 0;cursor:pointer;color:var(--text)}
-#settingsContent details[open]>summary{margin-bottom:10px}
+#settingsContent summary{display:block;list-style:none;font-size:.875rem;font-weight:600;padding:4px 0;cursor:default;color:var(--text)}
+#settingsContent summary::marker{content:''}
+#settingsContent summary::-webkit-details-marker{display:none}
+#settingsContent details[open]>summary{margin-bottom:8px}
 #settingsContent .maintenance-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 #settingsContent :is(#maintenanceSettings,#rhythmSettings,#readerSettings){max-width:none;margin:0}
 #settingsContent #maintenanceSettings>h2{display:none}

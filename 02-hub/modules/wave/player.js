@@ -1063,7 +1063,7 @@
   frame.addEventListener('load', () => {
     syncChatLayout();
     document.body.classList.remove('reader-focus');
-    document.body.classList.toggle('dialog-focus', !!frame.contentDocument?.querySelector('dialog[open]'));
+    document.body.classList.toggle('dialog-focus', !!frame.contentDocument?.querySelector('dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)[open]:modal'));
     requestAnimationFrame(() => requestAnimationFrame(revealPage));
     try {
       if (frame.contentWindow.location.pathname === '/login') {
