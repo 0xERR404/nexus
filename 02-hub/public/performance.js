@@ -117,7 +117,7 @@
   const mutations = new MutationObserver((records) => {
     sample.domMutations += records.length;
   });
-  mutations.observe(document.body, {
+  mutations.observe(document, {
     subtree: true,
     childList: true,
     characterData: true,

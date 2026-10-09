@@ -108,24 +108,30 @@
         const card = node('article', undefined, 'reader-book');
         const button = node('button', undefined, 'reader-book-open');
         button.type = 'button';
+        button.setAttribute('aria-label', 'Читать «' + b.title + '» · ' + (b.author || 'Автор не указан') + ' · ' + b.progress + '%');
+        button.title = b.title + (b.author ? ' — ' + b.author : '');
+        const fallback = node('div', b.title.slice(0, 1) || 'К', 'reader-cover');
+        fallback.setAttribute('aria-hidden', 'true');
+        button.append(fallback);
         if (b.cover) {
           const img = node('img');
           img.src = base + '/cover/' + b.id + '?v=' + encodeURIComponent(b.coverVersion||'original');
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
+          img.addEventListener('error', () => img.remove(), {once:true});
           button.append(img);
-        } else button.append(node('div', b.title.slice(0, 1) || 'К', 'reader-cover'));
-        button.append(
-          node('span', b.author || 'Автор не указан', 'reader-author'),
-          node('strong', b.title),
-          node('small', b.format.toUpperCase() + ' · ' + b.progress + '%')
-        );
+        }
+        const info = node('div', undefined, 'reader-card-info');
+        info.append(node('strong', b.title), node('span', b.author || 'Автор не указан', 'reader-author'));
+        const meta = node('div', undefined, 'reader-card-meta');
+        meta.append(node('small', b.format.toUpperCase()), node('small', b.progress + '%'));
         const progress = node('progress');
         progress.max = 100;
         progress.value = b.progress;
         progress.setAttribute('aria-label', 'Прочитано');
-        button.append(progress);
+        info.append(meta, progress);
+        button.append(info);
         button.onclick = () => void bookAction(() => openBook(b.id));
         const edit = node('button', '✎', 'reader-card-edit');
         edit.type = 'button';

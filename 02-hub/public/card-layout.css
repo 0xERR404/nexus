@@ -334,3 +334,40 @@ html body [data-card-link]{cursor:pointer}
 html body [data-card-link]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 html body [data-card-link]:hover{border-color:var(--line-strong)}
 html[data-carbon-glass=true] body :is(.settings-sidebar,.settings-card,.security-panel,.maintenance-grid>section,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.server-manager,.server-report,.server-registration,#readerSettings,.settings-group){background:var(--glass-light),var(--surface);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
+/* Separate full-screen surfaces. The shared background remains behind them,
+   while the module itself is hidden and its scroll position stays intact. */
+html.nexus-dialog-open body > :not(canvas):not(dialog) { visibility:hidden; }
+html.nexus-dialog-open { scrollbar-gutter:auto; }
+html.nexus-dialog-open body dialog[open] { visibility:visible; }
+html body dialog[open]:not(#nexusIntro) {
+  box-sizing:border-box; position:fixed; inset:0; margin:0;
+  width:100vw !important; min-width:0 !important; max-width:none !important;
+  height:100dvh !important; max-height:none !important;
+  border:0 !important; border-radius:0 !important;
+  padding:max(22px,env(safe-area-inset-top)) max(24px,calc((100vw - 960px)/2)) max(24px,env(safe-area-inset-bottom));
+  overflow:auto; overscroll-behavior:contain;
+  box-shadow:none !important;
+}
+html body dialog[open]::backdrop { background:transparent !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+html body dialog[open] :is(.dialog-close,[aria-label='Закрыть']) { min-width:44px; min-height:44px; flex-shrink:0; }
+html body dialog[open] > .nexus-screen-close { position:sticky; top:0; float:right; z-index:5; margin:0 0 8px 12px; width:44px; height:44px; border:1px solid var(--line); border-radius:8px; background:var(--dialog-bg); color:var(--text); padding:0; font-size:25px; cursor:pointer; }
+html body #readerReading[open] { padding:0; overflow:hidden; }
+html[data-carbon-glass='true'] body #readerReading[open] { background:var(--dialog-glass); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); }
+html body #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) { background:transparent; }
+body.wave-shell.reader-focus #carbonBackground { visibility:visible; }
+body.wave-shell.dialog-focus { padding:0 !important; }
+body.wave-shell.dialog-focus :is(.workspace-header,.workspace-mobile,#wavePlayer,#waveTransfer,#waveRestore) { visibility:hidden; pointer-events:none; }
+body.wave-shell.dialog-focus #hubFrame { position:fixed; inset:0; width:100vw; height:100dvh !important; max-height:none; z-index:40; }
+body.wave-shell.wave-focus :is(#hubFrame,.workspace-header,.workspace-mobile,#waveTransfer,#waveRestore) { visibility:hidden; pointer-events:none; }
+body.wave-shell.wave-focus #carbonBackground { visibility:visible; }
+/* Article reading and editing now leave a full-width catalogue behind them. */
+html body #articleLayout { display:block; }
+html body #articleLayout .article-list { max-height:none; grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)); }
+html body dialog.image-viewer[open],html body dialog.storage-preview[open] { padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)); }
+html[data-perf-effect='blur'] body #readerReading[open],html[data-perf-effect='blur'] body #wavePlayer.expanded { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+@media(prefers-reduced-transparency:reduce) {
+  html[data-carbon-glass] body #readerReading[open] { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+}
+@media(max-width:650px) {
+  html body dialog[open]:not(#readerReading):not(#nexusIntro) { padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+}

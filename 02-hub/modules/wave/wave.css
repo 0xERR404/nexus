@@ -787,190 +787,7 @@ body.wave-shell {
   #wavePrev {
     display: none !important;
   }
-  #wavePlayer.expanded {
-    position: fixed;
-    inset: var(--wave-viewport-top, 0px) 0 auto;
-    height: var(--wave-viewport-height, 100dvh);
-    max-height: var(--wave-viewport-height, 100dvh);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border: 0;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    align-content: start;
-    align-items: center;
-    gap: clamp(12px, 2.2dvh, 22px) 8px;
-    padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
-      max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
-    background: radial-gradient(ellipse at 50% 15%, var(--accent-soft), transparent 60%), var(--bg);
-  }
-  #wavePlayer.expanded .wave-player-heading {
-    display: flex;
-    grid-column: 1/-1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: 42px;
-    padding: 0 44px;
-    font: 11px var(--mono);
-    letter-spacing: 3px;
-  }
-  .wave-player-heading span:last-child {
-    font-size: 8px;
-    letter-spacing: 1px;
-    color: var(--muted);
-  }
-  #wavePlayer.expanded .wave-player-row,
-  #wavePlayer.expanded .wave-transport,
-  #wavePlayer.expanded .wave-player-extra {
-    display: contents;
-  }
-  #wavePlayer.expanded #waveExpand {
-    position: absolute;
-    right: max(18px, env(safe-area-inset-right));
-    top: max(18px, env(safe-area-inset-top));
-    width: 44px;
-    height: 44px;
-    background: transparent;
-    border: 0;
-  }
-  #wavePlayer.expanded .wave-player-art {
-    grid-column: 1/-1;
-    justify-self: center;
-    width: min(100%, 38dvh, 360px);
-    height: auto;
-    aspect-ratio: 1;
-    min-height: 0;
-    min-width: 0;
-    margin: 8px 0;
-    border: 1px solid var(--line-soft);
-    border-radius: 12px;
-    box-shadow: 0 20px 50px #0007;
-    cursor: default;
-  }
-  #wavePlayer.expanded .wave-player-info {
-    grid-column: 1/-1;
-    justify-self: stretch;
-    cursor: default;
-    min-height: 54px;
-  }
-  #wavePlayer.expanded .wave-player-info strong {
-    font-size: clamp(20px, 5.4vw, 27px);
-    font-weight: 600;
-    line-height: 1.2;
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-  #wavePlayer.expanded .wave-player-info span {
-    font-size: 14px;
-    margin-top: 7px;
-  }
-  #wavePlayer.expanded .wave-player-progress {
-    grid-column: 1/-1;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    margin: 0;
-  }
-  #wavePlayer.expanded #waveSeek {
-    flex: auto;
-    width: 100%;
-    height: 30px;
-  }
-  #wavePlayer.expanded #waveTime {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    font-size: var(--ui-meta-size);
-  }
-  #wavePlayer.expanded .wave-time-divider {
-    display: none;
-  }
-  #wavePlayer.expanded #waveShuffle {
-    grid-column: 1;
-    grid-row: 5;
-  }
-  #wavePlayer.expanded #wavePrev {
-    display: inline-flex !important;
-    grid-column: 2;
-    grid-row: 5;
-  }
-  #wavePlayer.expanded #waveToggle {
-    grid-column: 3;
-    grid-row: 5;
-    background: var(--button-bg);
-    color: var(--text);
-    border: 1px solid var(--accent);
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    box-shadow: 0 4px 22px var(--accent-glow);
-  }
-  #wavePlayer.expanded #waveNext {
-    grid-column: 4;
-    grid-row: 5;
-  }
-  #wavePlayer.expanded #waveRepeat {
-    grid-column: 5;
-    grid-row: 5;
-  }
-  #wavePlayer.expanded #waveShuffle,
-  #wavePlayer.expanded #wavePrev,
-  #wavePlayer.expanded #waveNext,
-  #wavePlayer.expanded #waveRepeat {
-    justify-self: center;
-    width: 44px;
-    height: 44px;
-    border: 0;
-    background: transparent;
-  }
-  #wavePlayer.expanded #waveToggle {
-    justify-self: center;
-  }
-  #wavePlayer.expanded #wavePrev .wave-control-icon,
-  #wavePlayer.expanded #waveNext .wave-control-icon {
-    width: 27px;
-    height: 27px;
-  }
-  #wavePlayer.expanded #waveToggle .wave-control-icon {
-    width: 28px;
-    height: 28px;
-  }
-  #wavePlayer.expanded .wave-volume-row {
-    grid-column: 1/-1;
-    grid-row: 6;
-    justify-self: center;
-    width: min(75%, 260px);
-    gap: 12px;
-  }
-  #wavePlayer.expanded #waveVolume {
-    width: 100%;
-    min-width: 0;
-  }
-  #wavePlayer.expanded #waveQueueToggle {
-    grid-column: 1/4;
-    grid-row: 7;
-    justify-self: start;
-    background: none;
-    border: 1px solid var(--line);
-    min-height: 38px;
-    padding: 8px 14px;
-  }
-  #wavePlayer.expanded #waveQueueCount {
-    grid-column: 4/6;
-    grid-row: 7;
-    text-align: right;
-    font-size: var(--ui-meta-size);
-  }
-  #wavePlayer.expanded #wavePlayerStatus {
-    grid-column: 1/-1;
-    grid-row: 8;
-    text-align: center;
-    margin: 0;
-  }
+
   #waveQueueDialog {
     margin: auto 0 0;
     max-width: none;
@@ -1279,4 +1096,326 @@ body.reader-focus #waveTransfer {
 #waveRestore:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 650px), (max-height: 500px) and (pointer: coarse) {
   body.chat-focus #waveRestore { display: none !important; }
+}
+
+/* Expanded playback is a separate screen on desktop and mobile. */
+  #wavePlayer.expanded {
+    position: fixed;
+    inset: var(--wave-viewport-top, 0px) 0 auto;
+    height: var(--wave-viewport-height, 100dvh);
+    max-height: var(--wave-viewport-height, 100dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-content: start;
+    align-items: center;
+    gap: clamp(12px, 2.2dvh, 22px) 8px;
+    padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: radial-gradient(ellipse at 50% 15%, var(--accent-soft), transparent 60%), var(--bg);
+  }
+  #wavePlayer.expanded .wave-player-heading {
+    display: flex;
+    grid-column: 1/-1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 42px;
+    padding: 0 44px;
+    font: 11px var(--mono);
+    letter-spacing: 3px;
+  }
+  .wave-player-heading span:last-child {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  #wavePlayer.expanded .wave-player-row,
+  #wavePlayer.expanded .wave-transport,
+  #wavePlayer.expanded .wave-player-extra {
+    display: contents;
+  }
+  #wavePlayer.expanded #waveExpand {
+    position: absolute;
+    right: max(18px, env(safe-area-inset-right));
+    top: max(18px, env(safe-area-inset-top));
+    width: 44px;
+    height: 44px;
+    background: transparent;
+    border: 0;
+  }
+  #wavePlayer.expanded .wave-player-art {
+    grid-column: 1/-1;
+    justify-self: center;
+    width: min(100%, 38dvh, 360px);
+    height: auto;
+    aspect-ratio: 1;
+    min-height: 0;
+    min-width: 0;
+    margin: 8px 0;
+    border: 1px solid var(--line-soft);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px #0007;
+    cursor: default;
+  }
+  #wavePlayer.expanded .wave-player-info {
+    grid-column: 1/-1;
+    justify-self: stretch;
+    cursor: default;
+    min-height: 54px;
+  }
+  #wavePlayer.expanded .wave-player-info strong {
+    font-size: clamp(20px, 5.4vw, 27px);
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  #wavePlayer.expanded .wave-player-info span {
+    font-size: 14px;
+    margin-top: 7px;
+  }
+  #wavePlayer.expanded .wave-player-progress {
+    grid-column: 1/-1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+  }
+  #wavePlayer.expanded #waveSeek {
+    flex: auto;
+    width: 100%;
+    height: 30px;
+  }
+  #wavePlayer.expanded #waveTime {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: var(--ui-meta-size);
+  }
+  #wavePlayer.expanded .wave-time-divider {
+    display: none;
+  }
+  #wavePlayer.expanded #waveShuffle {
+    grid-column: 1;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #wavePrev {
+    display: inline-flex !important;
+    grid-column: 2;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveToggle {
+    grid-column: 3;
+    grid-row: 5;
+    background: var(--button-bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    box-shadow: 0 4px 22px var(--accent-glow);
+  }
+  #wavePlayer.expanded #waveNext {
+    grid-column: 4;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveRepeat {
+    grid-column: 5;
+    grid-row: 5;
+  }
+  #wavePlayer.expanded #waveShuffle,
+  #wavePlayer.expanded #wavePrev,
+  #wavePlayer.expanded #waveNext,
+  #wavePlayer.expanded #waveRepeat {
+    justify-self: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+  }
+  #wavePlayer.expanded #waveToggle {
+    justify-self: center;
+  }
+  #wavePlayer.expanded #wavePrev .wave-control-icon,
+  #wavePlayer.expanded #waveNext .wave-control-icon {
+    width: 27px;
+    height: 27px;
+  }
+  #wavePlayer.expanded #waveToggle .wave-control-icon {
+    width: 28px;
+    height: 28px;
+  }
+  #wavePlayer.expanded .wave-volume-row {
+    grid-column: 1/-1;
+    grid-row: 6;
+    justify-self: center;
+    width: min(75%, 260px);
+    gap: 12px;
+  }
+  #wavePlayer.expanded #waveVolume {
+    width: 100%;
+    min-width: 0;
+  }
+  #wavePlayer.expanded #waveQueueToggle {
+    grid-column: 1/4;
+    grid-row: 7;
+    justify-self: start;
+    background: none;
+    border: 1px solid var(--line);
+    min-height: 38px;
+    padding: 8px 14px;
+  }
+  #wavePlayer.expanded #waveQueueCount {
+    grid-column: 4/6;
+    grid-row: 7;
+    text-align: right;
+    font-size: var(--ui-meta-size);
+  }
+  #wavePlayer.expanded #wavePlayerStatus {
+    grid-column: 1/-1;
+    grid-row: 8;
+    text-align: center;
+    margin: 0;
+  }
+/* Orpheus: artwork-led library and an independent now-playing screen. */
+#wavePage { --music-accent:#1ed760; --music-ink:#071b0e; background:color-mix(in srgb,var(--bg) 74%,transparent); border-radius:12px; padding:16px; }
+#wavePage .wave-layout { grid-template-columns:180px minmax(0,1fr); gap:24px; }
+#wavePage .wave-sidebar { border:0; padding:0; }
+html body #wavePage .wave-sidebar { border:0; padding:0; background:none; border-radius:0; }
+#wavePage .wave-sidebar nav { gap:5px; }
+#wavePage .wave-sidebar nav a { padding:12px 14px; font-size:14px; font-weight:600; border-radius:8px; }
+#wavePage .wave-sidebar nav a[aria-current] { background:var(--accent-soft); box-shadow:none; color:var(--text); }
+#wavePage .wave-main { padding:0 0 24px; }
+#wavePage .wave-main > .wave-toolbar:first-child { gap:10px; }
+#wavePage #waveSearch { height:44px; border-radius:24px; padding:10px 18px; font-size:14px; background:var(--control-bg); }
+#wavePage #waveUploadButton { border-radius:24px; min-height:44px; padding:8px 17px; font-weight:600; }
+#wavePage .wave-hero { margin:22px 0 16px; gap:22px; align-items:flex-end; }
+#wavePage .wave-hero h2 { font-size:clamp(28px,4vw,48px); letter-spacing:-1.5px; line-height:1.1; margin:6px 0 0; }
+#wavePage .wave-hero > .wave-art { width:180px; flex-basis:180px; box-shadow:0 12px 32px #0004; }
+#wavePage[data-view='home'] .wave-hero h2 { font-size:30px; letter-spacing:-.8px; }
+#wavePage .wave-section { margin:30px 0 0; }
+#wavePage .wave-section-head { margin-bottom:14px; }
+#wavePage .wave-section-head h3 { font-size:21px; letter-spacing:-.5px; }
+#wavePage .wave-section-head a { font-size:12px; font-weight:600; }
+#wavePage .wave-card-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:18px; }
+#wavePage .wave-card { padding:0; border:0; background:none; border-radius:8px; box-shadow:none; transition:transform .15s; }
+html body #wavePage .wave-card { display:block; min-height:0; height:auto; background:none; border:0; backdrop-filter:none; -webkit-backdrop-filter:none; }
+html body #wavePage #waveNav { border:0; background:none; box-shadow:none; border-radius:0; }
+#wavePage .wave-card:hover { transform:translateY(-3px); background:none; }
+#wavePage .wave-card strong { font-size:14px; margin-top:10px; }
+html body #wavePage .wave-card strong { min-height:0; margin:10px 0 0; font-weight:600; line-height:1.4; white-space:nowrap; display:block; }
+#wavePage .wave-card > span { font-size:12px; line-height:1.5; }
+#wavePage .wave-art { border-radius:8px; background:linear-gradient(140deg,var(--accent-soft),var(--surface-solid)); }
+#wavePage .wave-art.artist { border-radius:50%; }
+#wavePage .wave-quick { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:20px 0 24px; }
+#wavePage .wave-quick-item { display:flex; align-items:center; gap:10px; min-width:0; overflow:hidden; background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:5px; color:var(--text); text-decoration:none; }
+#wavePage .wave-quick-item:hover { background:var(--accent-soft); }
+#wavePage .wave-quick-item > :is(.wave-art,.wave-quick-art) { width:58px; height:58px; flex:0 0 58px; border-radius:0; display:grid; place-items:center; }
+#wavePage .wave-quick-item strong { font-size:12px; line-height:1.4; padding-right:8px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+#wavePage .wave-liked-art { background:linear-gradient(135deg,#633ee0,#a8d6c4); color:white; font-size:30px; }
+#wavePage .wave-secondary { gap:12px; margin:20px 0; }
+#wavePage #wavePlay { order:-2; width:56px; height:56px; min-width:56px; border-radius:50%; border:0; background:var(--music-accent); color:var(--music-ink); font-size:23px; padding:0 0 0 3px; box-shadow:0 5px 18px #0003; }
+#wavePage #waveMix { order:-1; border:0; background:none; font-size:25px; min-height:44px; }
+#wavePage #waveSort { border:0; background:var(--control-bg); border-radius:8px; min-height:36px; }
+#wavePage #waveSelect { border-color:transparent; background:none; }
+#wavePage .wave-track { gap:12px; padding:7px 2px; border:0; border-radius:5px; }
+#wavePage .wave-track-start { width:48px; height:48px; flex-basis:48px; border-radius:4px; }
+#wavePage .wave-track-title { font-size:15px; font-weight:500; line-height:22px; }
+/* The adjacent 48px artwork remains the primary touch target. */
+html body #wavePage .wave-track-title { min-height:24px !important; padding:0; }
+#wavePage .wave-track-meta { font-size:12px; margin-top:2px; }
+#wavePage .wave-track-menu,#wavePage .wave-favorite { min-width:44px; min-height:44px; }
+#wavePage .wave-track.is-current .wave-track-title,#wavePage .wave-favorite[aria-pressed='true'] { color:var(--music-accent); }
+#wavePage .wave-track.is-current { background:var(--accent-soft); }
+#wavePage #waveCount { font-size:12px; }
+#wavePage #wavePlaylists { margin:12px 0 0; padding:0; border:0; }
+#wavePage #wavePlaylists a { font-size:12px; padding:8px 14px; }
+@media(max-width:700px) {
+  #wavePage { padding:10px; border-radius:10px; }
+  #wavePage .wave-layout { display:flex; flex-direction:column; gap:14px; }
+  #wavePage .wave-sidebar { min-width:0; }
+  #wavePage .wave-sidebar #waveNav { display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; padding:2px 1px 4px; }
+  #wavePage #waveNav > * { flex:none; }
+  #wavePage .wave-sidebar #waveNav a { padding:9px 14px; border-radius:22px; background:var(--surface-raised); font-size:13px; line-height:20px; }
+  #wavePage .wave-sidebar #waveNav a[aria-current] { color:var(--music-ink); background:var(--music-accent); }
+  #wavePage #waveNav .wave-playlist-heading { gap:3px; }
+  #wavePage #waveCreate { width:38px; height:38px; border:0; border-radius:50%; }
+  #wavePage #wavePlaylists:not([hidden]) { display:flex !important; overflow-x:auto; margin:6px 0 0; }
+  #wavePage #wavePlaylists a { flex:none; }
+  #wavePage .wave-main > .wave-toolbar:first-child { flex-wrap:nowrap; }
+  #wavePage #waveSearch { min-width:0; width:100%; font-size:13px; padding:10px 14px; }
+  #wavePage #waveUploadButton { white-space:nowrap; padding:8px 13px; font-size:12px; }
+  #wavePage .wave-hero { margin:22px 0 16px; gap:18px; }
+  #wavePage .wave-hero h2 { font-size:28px; letter-spacing:-.8px; }
+  #wavePage[data-view='home'] .wave-hero h2 { font-size:27px; }
+  #wavePage .wave-hero:has(> .wave-art) { flex-direction:column; align-items:stretch; }
+  #wavePage .wave-hero > .wave-art { width:min(64vw,240px); flex-basis:auto; align-self:center; }
+  #wavePage .wave-hero-actions button,#wavePage .wave-hero-text > button { font-size:12px; min-height:36px; margin-top:8px; }
+  #wavePage .wave-quick { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:16px 0 24px; }
+  #wavePage .wave-quick-item { gap:8px; }
+  #wavePage .wave-quick-item > :is(.wave-art,.wave-quick-art) { width:52px; height:52px; flex-basis:52px; }
+  #wavePage .wave-quick-item strong { font-size:11px; }
+  #wavePage .wave-section { margin-top:28px; }
+  #wavePage .wave-section-head h3 { font-size:21px; }
+  #wavePage .wave-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px 14px; }
+  #wavePage[data-view='home'] .wave-card-grid { display:grid; grid-auto-flow:column; grid-auto-columns:43%; grid-template-columns:none; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; padding-bottom:6px; scroll-snap-type:x proximity; }
+  #wavePage[data-view='home'] .wave-card { scroll-snap-align:start; }
+  html body #wavePage .wave-secondary { display:grid; grid-template-columns:56px 44px minmax(0,1fr) auto; gap:8px; }
+  #wavePage #wavePlay { grid-column:1; grid-row:1; }
+  #wavePage #waveMix { grid-column:2; grid-row:1; }
+  #wavePage #waveCount { grid-column:3/-1; grid-row:1; min-width:0; margin:0; text-align:right; }
+  html body #wavePage #waveSort { grid-column:1/4; grid-row:2; max-width:100%; width:100%; font-size:12px; }
+  #wavePage #waveSelect { grid-column:4; grid-row:2; }
+  #wavePage #waveEditPlaylist { grid-column:3/-1; }
+  #wavePage .wave-duration { display:none; }
+  #wavePage .wave-track { gap:10px; }
+  #wavePage .wave-track-meta .wave-album-link,#wavePage .wave-track-meta > span { display:none; }
+  #wavePage .wave-favorite { min-width:32px; }
+}
+html body #wavePlayer.expanded {
+  z-index:60; box-sizing:border-box; width:100%;
+  padding-left:max(24px,calc((100vw - 440px)/2)); padding-right:max(24px,calc((100vw - 440px)/2));
+  padding-top:max(18px,env(safe-area-inset-top)); padding-bottom:max(24px,env(safe-area-inset-bottom));
+  gap:clamp(10px,1.8dvh,18px) 8px;
+  background:radial-gradient(ellipse at 50% 0%,var(--accent-soft),transparent 75%),var(--dialog-glass);
+  backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+}
+html body #wavePlayer.expanded .wave-player-art { width:min(100%,38dvh,360px); border-radius:8px; margin:8px 0; }
+html body #wavePlayer.expanded .wave-player-heading { letter-spacing:2px; font:600 11px var(--sans); min-height:44px; }
+html body #wavePlayer.expanded #waveToggle { background:#f7faf7; color:#102016; border:0; box-shadow:none; width:64px; height:64px; }
+html body #wavePlayer.expanded #waveExpand { right:auto; left:max(16px,calc((100vw - 520px)/2)); }
+html body #wavePlayer.expanded #waveClose { display:inline-flex; position:absolute; left:auto; right:max(16px,calc((100vw - 520px)/2)); top:max(18px,env(safe-area-inset-top)); width:44px; height:44px; border:0; background:none; font-size:25px; }
+html body #wavePlayer.expanded #waveQueueToggle { border:0; padding:8px 0; }
+html body #wavePlayer.expanded .wave-player-info { padding:0; text-align:left; }
+html body #wavePlayer.expanded .wave-player-info strong { font-weight:700; font-size:26px; letter-spacing:-.5px; }
+html body #wavePlayer.expanded :is(#waveShuffle,#waveRepeat)[aria-pressed='true'] { color:#1ed760; }
+html[data-carbon-glass='false'] body #wavePlayer.expanded { background:var(--bg); backdrop-filter:none; }
+@media(prefers-reduced-transparency:reduce) { html body #wavePlayer.expanded { background:var(--bg); backdrop-filter:none; } }
+@media(max-width:700px) {
+  html body #wavePlayer:not(.expanded) { width:calc(100% - 16px); margin:0 8px 6px; border:1px solid var(--line-soft); border-radius:9px; padding:5px 7px; box-shadow:0 4px 15px #0003; }
+  html body #wavePlayer:not(.expanded) .wave-player-art { width:42px; height:42px; flex-basis:42px; border-radius:5px; }
+  html body #wavePlayer:not(.expanded) :is(#waveMinimize,#waveExpand,#wavePrev) { display:none !important; }
+  html body #wavePlayer:not(.expanded) .wave-player-info { min-height:44px; }
+  html body #wavePlayer:not(.expanded) #waveToggle { width:42px; }
+  html body #wavePlayer.expanded { gap:clamp(10px,1.8dvh,18px) 8px; }
+}
+@media(max-height:540px) and (min-width:500px) {
+  html body #wavePlayer.expanded { padding:18px 5% 12px 40%; gap:6px 8px; }
+  html body #wavePlayer.expanded .wave-player-heading { display:none; }
+  html body #wavePlayer.expanded .wave-player-art { position:absolute; grid-column:auto; grid-row:auto; justify-self:start; left:4%; top:50%; transform:translateY(-50%); width:min(30vw,65dvh); margin:0; }
+  html body #wavePlayer.expanded .wave-player-info { grid-row:1; padding-right:26px; }
+  html body #wavePlayer.expanded .wave-player-info strong { font-size:23px; }
+  html body #wavePlayer.expanded .wave-player-progress { grid-row:2; }
+  html body #wavePlayer.expanded :is(#waveShuffle,#wavePrev,#waveToggle,#waveNext,#waveRepeat) { grid-row:3; }
+  html body #wavePlayer.expanded .wave-volume-row { grid-row:4; }
+  html body #wavePlayer.expanded :is(#waveQueueToggle,#waveQueueCount) { grid-row:5; }
+  html body #wavePlayer.expanded #wavePlayerStatus { grid-row:6; }
+  html body #wavePlayer.expanded #waveExpand { left:12px; top:6px; }
+  html body #wavePlayer.expanded #waveClose { right:10px; top:6px; }
 }

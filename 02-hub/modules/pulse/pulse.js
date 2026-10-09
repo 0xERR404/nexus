@@ -139,6 +139,8 @@
     if (error) Nexus.problem($('pulseStatus'), 'pulse');
     else text('pulseStatus', '');
     $('pulseStatus').dataset.state = error ? 'error' : 'live';
+    $('pulseStatus').title = message;
+    if(error)$('pulseStatus').removeAttribute('aria-label');else $('pulseStatus').setAttribute('aria-label',message);
     $('pulseData').classList.toggle('pulse-stale', error);
     $('pulseData').setAttribute('aria-busy', 'false');
   }
@@ -194,7 +196,7 @@
       }
     }
   }
-  document.addEventListener('nexus:server',()=>{generation++;history.length=0;last=null;render({server:{},disks:[],network:[],generated_at:Date.now(),stale:true});last=null;text('pulseStatus','Получаем показатели…');$('pulseData').setAttribute('aria-busy','true');update();});
+  document.addEventListener('nexus:server',()=>{generation++;history.length=0;last=null;render({server:{},disks:[],network:[],generated_at:Date.now(),stale:true});last=null;text('pulseStatus','Получаем показатели…');$('pulseStatus').dataset.state='loading';$('pulseStatus').removeAttribute('aria-label');$('pulseStatus').title='Получаем показатели…';$('pulseData').setAttribute('aria-busy','true');update();});
   $('pulseRefresh').addEventListener('click', update);
   document.addEventListener('visibilitychange', () => {
     clearTimeout(timer);

@@ -342,3 +342,11 @@
 .pulse-panel:last-child {
   margin-bottom: 0;
 }
+
+/* Status and refresh share the module title row, above the server tabs. */
+html body .section-line:has(>.pulse-toolbar){gap:10px}
+html body .section-line:has(>.pulse-toolbar)>h1{margin:0;flex-shrink:0}
+html body .section-line>.pulse-toolbar{flex:1;min-width:0;margin:0;gap:10px}
+html body .section-line>.pulse-toolbar p{flex:1;min-width:0;margin:0;overflow-wrap:anywhere}
+html body .section-line>.pulse-toolbar p[data-state=live]::before{margin:0}
+@media(max-width:800px){html body .section-line>.pulse-toolbar button{min-height:44px}}

@@ -43,7 +43,6 @@ html[data-carbon-glass='false'] :is(.module-card,.home-card,.workspace-header,.w
 .workspace-search button { border:1px solid var(--line-soft); background:#d9ddd908; min-height:24px; padding:2px 6px; border-radius:4px; font-size:10px; color:var(--muted); white-space:nowrap; }
 .workspace-header > a .ui-icon,.workspace-logout .ui-icon { width:21px; height:21px; }
 .workspace-user { display:flex; align-items:center; gap:9px; color:var(--text); font-size:11px; white-space:nowrap; }
-.workspace-avatar { display:grid; place-items:center; border:1px solid var(--line); border-radius:50%; width:30px; height:30px; background:#1a1d1b2e; }
 .workspace-header > a.workspace-search-mobile { display:none; }
 .workspace-body { flex:1; min-height:0; display:flex; }
 .workspace-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative; }

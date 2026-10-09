@@ -318,6 +318,16 @@
   const workspace = $('articleWorkspace'),
     editor = $('articleEditor'),
     editorHome = editor.parentNode;
+  const readingWorkspace = document.createElement('dialog');
+  readingWorkspace.id = 'articleReadingWorkspace';
+  readingWorkspace.className = 'content-dialog';
+  readingWorkspace.setAttribute('aria-label', 'Чтение статьи');
+  const readingClose = node('button', '×', 'dialog-close nexus-screen-close');
+  readingClose.type = 'button';
+  readingClose.setAttribute('aria-label', 'Закрыть');
+  readingClose.onclick = () => readingWorkspace.close();
+  readingWorkspace.append(readingClose, $('articleReading'));
+  document.body.append(readingWorkspace);
   workspace.dataset.uiPersistent = 'true';
   function expandEditor() {
     if (workspace.open) return;
@@ -328,6 +338,7 @@
   $('articleExpand').onclick = expandEditor;
   workspace.addEventListener('close', () => {
     editorHome.append(editor);
+    editor.hidden = true;
     $('articleExpand').hidden = false;
   });
 
@@ -406,9 +417,10 @@
     else showEditor();
   }
   function showEditor() {
+    if (readingWorkspace.open) readingWorkspace.close();
     $('articleReading').hidden = true;
     $('articleEditor').hidden = false;
-    if (matchMedia('(max-width:700px)').matches) expandEditor();
+    expandEditor();
   }
   async function showReading() {
     if (workspace.open) workspace.close();
@@ -416,6 +428,7 @@
     $('articleReading').hidden = false;
     $('articleReadTitle').textContent = article.title || 'Без названия';
     $('articleReadBody').textContent = 'Загрузка…';
+    if (!readingWorkspace.open) readingWorkspace.showModal();
     try {
       const result = await request('/preview', {body: article.body});
       $('articleReadBody').innerHTML = result.html;

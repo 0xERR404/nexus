@@ -786,7 +786,8 @@
     $('waveExpand').setAttribute('aria-expanded', String(value));
     $('waveExpand').setAttribute('aria-label', value ? 'Свернуть плеер' : 'Раскрыть плеер');
     $('waveArtworkToggle').disabled = $('waveOpenTrack').disabled = value;
-    const modal = value && mobile.matches;
+    const modal = value;
+    document.body.classList.toggle('wave-focus', modal);
     frame.inert = $('waveTransfer').inert = modal;
     document.querySelectorAll('.workspace-header,.workspace-mobile').forEach(el=>el.inert=modal);
     if (modal) {
@@ -796,13 +797,13 @@
       player.removeAttribute('role');
       player.removeAttribute('aria-modal');
     }
-    if (value && record && mobile.matches && !overlayHistory) {
+    if (value && record && !overlayHistory) {
       history.pushState({...history.state, nexusWavePlayer: true}, '');
       overlayHistory = true;
     }
     if (!value) $('waveQueueDialog').close();
     if (modal) $('waveExpand').focus();
-    else if (!value && !player.hidden) $('waveExpand').focus();
+    else if (!value && !player.hidden) $('waveArtworkToggle').focus({preventScroll:true});
   }
   $('waveExpand').onclick = () => expanded(!player.classList.contains('expanded'));
   $('waveArtworkToggle').onclick = $('waveOpenTrack').onclick = () => expanded(true);
@@ -976,7 +977,6 @@
     }
     showFrame();
   }
-  const lastRoutes = new Map();
   let checkingNavigation = false;
   async function navigate(href, push = true) {
     let u = safeURL(href);
@@ -991,12 +991,6 @@
       }
     } catch { return; }
     finally { checkingNavigation = false; }
-    if (previous) {
-      const resume = new URL(previous);
-      for (const name of ['new','book','file','image','anime','game','card','project','track']) resume.searchParams.delete(name);
-      lastRoutes.set(resume.pathname, resume.href);
-    }
-    if (push && !u.search && !u.hash && u.pathname !== previous?.pathname && /^\/modules\//.test(u.pathname) && lastRoutes.has(u.pathname)) u = safeURL(lastRoutes.get(u.pathname));
     const id = ++navigationId;
     clearTimeout(navigationTimer);
     clearTimeout(revealTimer);
@@ -1020,6 +1014,8 @@
   addEventListener('message', (event) => {
     if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
     const m = event.data;
+    if (m?.type === 'nexus:dialog-focus')
+      document.body.classList.toggle('dialog-focus', m.active === true);
     if (m?.type === 'nexus:reader-focus')
       document.body.classList.toggle('reader-focus', m.active === true);
     if (m?.type === 'nexus:navigate') navigate(m.url);
@@ -1067,6 +1063,7 @@
   frame.addEventListener('load', () => {
     syncChatLayout();
     document.body.classList.remove('reader-focus');
+    document.body.classList.toggle('dialog-focus', !!frame.contentDocument?.querySelector('dialog[open]'));
     requestAnimationFrame(() => requestAnimationFrame(revealPage));
     try {
       if (frame.contentWindow.location.pathname === '/login') {
@@ -1099,7 +1096,6 @@
     }
     if (
       e.key === 'Tab' &&
-      mobile.matches &&
       player.classList.contains('expanded') &&
       !$('waveQueueDialog').open
     ) {

@@ -353,6 +353,7 @@ if (typeof document !== 'undefined')
       }
     }
     const views = [
+      ['home', 'Для тебя'],
       ['artists', 'Артисты'],
       ['albums', 'Альбомы'],
       ['tracks', 'Треки'],
@@ -375,14 +376,14 @@ if (typeof document !== 'undefined')
       route.view === 'playlist' ? data.playlists.find((p) => p.id === route.id) : null;
     function readRoute() {
       const p = new URLSearchParams(location.search);
-      route = {view: p.get('view') || 'artists', id: p.get('id') || ''};
+      route = {view: p.get('view') || 'home', id: p.get('id') || ''};
       const focused=data.tracks.find(t=>t.id===p.get('track'));if(focused){route.view='tracks';$('waveSearch').value=focused.title;}
       if (![...views.map((v) => v[0]), 'artist', 'album', 'playlist'].includes(route.view))
-        route.view = 'artists';
+        route.view = 'home';
     }
     function url(view, id = '') {
       const u = new URL('/modules/wave/', location.origin);
-      if (view !== 'artists') u.searchParams.set('view', view);
+      if (view !== 'home') u.searchParams.set('view', view);
       if (id) u.searchParams.set('id', id);
       return u;
     }
@@ -396,6 +397,7 @@ if (typeof document !== 'undefined')
       $('waveSort').value = 'default';
       if (view === 'playlist') playlistsOpen = true;
       render();
+      scrollTo({top:0, left:0, behavior:'instant'});
     }
     function link(title, view, id = '', cls = '') {
       const a = make('a', title, cls);
@@ -460,6 +462,8 @@ if (typeof document !== 'undefined')
         artist = library.artists.find((a) => a.key === route.id),
         album = library.releases.find((a) => a.key === route.id);
       const q = $('waveSearch').value.trim().toLocaleLowerCase('ru');
+      $('wavePage').dataset.view = route.view;
+      $('wavePage').classList.toggle('wave-searching', !!q);
       const matches = (t) =>
         [t.title, t.artist, t.album].join(' ').toLocaleLowerCase('ru').includes(q);
       const groupMatches = (g) =>
@@ -535,6 +539,11 @@ if (typeof document !== 'undefined')
         tracks = tracks.filter((t) => t.favorite);
         subtitle = 'Твоя коллекция';
       }
+      if (route.view === 'home') {
+        title = q ? 'Результаты поиска' : 'Твоя музыка';
+        subtitle = q ? '' : 'Любимое всегда рядом';
+      }
+      if (route.view === 'favorite') art = make('div', '♥', 'wave-art wave-liked-art');
       const hero = make('div', undefined, 'wave-hero'),
         heading = make('div', undefined, 'wave-hero-text');
       if (art) hero.append(art);
@@ -568,7 +577,23 @@ if (typeof document !== 'undefined')
         );
       else if (sort === 'name' || !['album', 'playlist'].includes(route.view))
         shown.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
-      const browsing = ['artists', 'albums', 'playlists'].includes(route.view);
+      const home = route.view === 'home' && !q;
+      const browsing = home || ['artists', 'albums', 'playlists'].includes(route.view);
+      if (home && data.tracks.length) {
+        const quick = make('div', undefined, 'wave-quick');
+        const liked = link('', 'favorite', '', 'wave-quick-item');
+        liked.append(make('span', '♥', 'wave-quick-art wave-liked-art'), make('strong', 'Избранное'));
+        quick.append(liked);
+        for (const album of library.releases.slice(0, 5)) {
+          const item = link('', 'album', album.key, 'wave-quick-item');
+          item.append(artwork(album.tracks), make('strong', album.name));
+          quick.append(item);
+        }
+        $('waveBrowse').append(quick);
+        section('Твои альбомы', library.releases, 'album', 'albums', 12);
+        section('Твои артисты', library.artists, 'artist', 'artists', 12);
+        section('Твои плейлисты', data.playlists, 'playlist', 'playlists', 8);
+      }
       if (route.view === 'artists')
         section('Артисты', library.artists.filter(groupMatches), 'artist', null, limit);
       if (route.view === 'albums')
@@ -594,10 +619,11 @@ if (typeof document !== 'undefined')
       $('wavePlay').disabled = $('waveMix').disabled = !shown.length;
       $('wavePlay').hidden = $('waveMix').hidden = browsing;
       $('waveSort').hidden = browsing;
+      document.querySelector('.wave-secondary').hidden = home;
       const visible = browsing ? [] : shown.slice(0, limit);
       $('waveTracks').replaceChildren(...visible.map(trackRow));
       let count = shown.length;
-      if (browsing)
+      if (browsing && !home)
         count = (
           route.view === 'artists'
             ? library.artists
@@ -605,14 +631,14 @@ if (typeof document !== 'undefined')
               ? library.albums
               : data.playlists
         ).filter(groupMatches).length;
-      if (browsing)
+      if (browsing && !home)
         $('waveCount').textContent =
           {artists: 'Артистов', albums: 'Альбомов', singles: 'Синглов', playlists: 'Плейлистов'}[
             route.view
           ] +
           ': ' +
           count;
-      $('waveMore').hidden = count <= limit;
+      $('waveMore').hidden = home || count <= limit;
       if (!count)
         $('waveTracks').append(
           Nexus.empty(route.view === 'playlists' ? 'Пока нет плейлистов' : 'Здесь пока нет музыки', data.tracks.length ? 'Выбери другой раздел или добавь музыку.' : 'Загрузи аудиофайлы или сохрани трек из Сократа.', route.view === 'playlists' ? 'Создать плейлист' : 'Добавить музыку', () => route.view === 'playlists' ? createPlaylist() : $('waveUploadButton').click())

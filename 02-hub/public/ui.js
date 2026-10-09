@@ -44,6 +44,9 @@ const nexusNotices = (() => {
     enqueue(source,code,active);void flush();
   };
 })();
+// A new module always starts at its beginning; reading progress is owned by the reader.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+addEventListener('pageshow', () => { if (!location.hash) scrollTo(0, 0); });
 const nexusViews = new Map(), nexusLeaveGuards = new Set();
 let nexusQuestionOpen = false;
 window.Nexus = Object.freeze({
@@ -92,8 +95,7 @@ window.Nexus = Object.freeze({
         if (!saved) return false;
         applyFields();
         Promise.resolve(render?.(saved.extra)).then(() => requestAnimationFrame(() => requestAnimationFrame(() => {
-          for (const [id,x,y] of saved.scroll) document.getElementById(id)?.scrollTo(x,y);
-          window.scrollTo(saved.x,saved.y);
+          if (!location.hash) window.scrollTo(0, 0);
         }))).catch(() => nexusNotices('hub','request'));
         return true;
       }
@@ -352,6 +354,15 @@ window.Nexus = Object.freeze({
       }
     for (const d of dialogs)
       if (!watched.has(d)) {
+        if (d.querySelector('form') && !d.classList.contains('ui-discard') &&
+            !d.querySelector('.dialog-close,[data-close],[data-chat-close],[aria-label^="Закрыть"]')) {
+          const close = document.createElement('button');
+          close.type = 'button';
+          close.className = 'dialog-close nexus-screen-close';
+          close.setAttribute('aria-label', 'Закрыть окно');
+          close.textContent = '×';
+          d.prepend(close);
+        }
         watched.set(d, editable(d) ? fields(d) : null);
         owner.register(d, controller);
       }
@@ -492,7 +503,7 @@ window.Nexus = Object.freeze({
     },
     true
   );
-  let locked,
+  let locked, dialogFocusState,
     suspended = false;
   function unlockScroll() {
     if (!locked) return;
@@ -517,6 +528,10 @@ window.Nexus = Object.freeze({
       root.style.setProperty('--nexus-dialog-x', `-${locked.x}px`);
       root.style.setProperty('--nexus-dialog-y', `-${locked.y}px`);
       root.classList.add('nexus-dialog-open');
+    }
+    if (parent !== window && dialogFocusState !== open) {
+      dialogFocusState = open;
+      parent.postMessage({type:'nexus:dialog-focus', active:open}, location.origin);
     }
     watchDialogs();
   }
@@ -544,7 +559,8 @@ window.Nexus = Object.freeze({
     syncDialogs();
   });
 
-  new MutationObserver(syncDialogs).observe(document.body, {
+  // The document remains a valid observer target during rapid iframe replacements.
+  new MutationObserver(syncDialogs).observe(document, {
     subtree: true,
     childList: true,
     attributes: true,

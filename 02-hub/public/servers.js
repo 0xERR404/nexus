@@ -10,7 +10,6 @@
   const tabs=pulse?node('div'):null;
   if(tabs){tabs.className='server-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Серверы Атланта');tools.append(tabs);}
   tools.append(link);host.append(tools);
-  const administration=pulse&&!management?node('a','Управление серверами'):null;if(administration){administration.className='server-admin-link';tools.append(administration);}
   const api=async(route,data)=>{const r=await fetch('/api/servers'+route,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),cache:'no-store',signal:AbortSignal.timeout(12000)});if(r.status===401){location.replace('/login');throw Error('Требуется вход');}const v=await r.json();if(!r.ok)throw Error(v.error||'Запрос не выполнен');return v;};
   window.NexusServers={selected:()=>selected,metrics:()=>selected==='hub'?'/modules/pulse/api':'/api/servers/metrics?server='+encodeURIComponent(selected),history:hours=>selected==='hub'?'/modules/pulse/api/history?hours='+hours:'/api/servers/history?server='+encodeURIComponent(selected)+'&hours='+hours};
   if(pulse&&management){
@@ -90,7 +89,6 @@
     const old=selected;select.replaceChildren();if(!pulse)select.add(new Option('Все серверы','all'));select.add(new Option('Хаб','hub'));for(const s of servers)select.add(new Option(s.name+' · '+states[s.state],s.id));
     if(![...select.options].some(o=>o.value===old)){if(catalogLoaded||!params.has('server'))selected=pulse?'hub':'all';else select.add(new Option('Загрузка сервера…',old));}select.value=selected;
     if(tabs)renderTabs();
-    if(administration)administration.href='/settings/?module=pulse&server='+encodeURIComponent(selected);
     if(management){const back=document.querySelector('.settings-section-heading > a');if(back)back.href='/modules/pulse/?server='+encodeURIComponent(selected);}
     const s=servers.find(s=>s.id===selected);link.dataset.state=s?.state||'online';
     link.textContent=s&&(!pulse||s.state!=='online')?({online:'На связи',offline:'Нет связи · показаны последние данные',waiting:'Ожидаем первый замер',revoked:'Доступ отозван'}[s.state])+(s.seen?' · '+new Date(s.seen).toLocaleString('ru-RU'):''):'';
