@@ -79,11 +79,12 @@ export class VPNNode {
       if(this.get('running')&&!this.core.alive()){this.set('complete',false);this.set('running',false);this.configHash='';this.last={};}
       try{this.phase='stats';await this.collect();}catch{await this.core.stop();this.configHash='';this.last={};this.set('complete',false);this.set('running',false);throw Error('Учёт недоступен');}
       this.set('rollback',false);
-      if(input){
+      if(input&&hash(input)!==this.get('acceptedInputHash')){
         this.phase='request';
         const b=envelope(input,this.node,this.now()),old=this.bundle;
         check(!old||b.revision>=old.revision&&b.created>=old.created,'Устаревшая версия VPN');
         if(!old||b.created>old.created){this.bundle=b;this.set('bundle',b);}
+        this.set('acceptedInputHash',hash(input));
       }
       if(!this.bundle||this.bundle.expires<=this.now()){
         await this.stop();this.reportState=this.bundle?'expired':'stopped';this.error='';
@@ -91,7 +92,7 @@ export class VPNNode {
         await this.apply(this.bundle);this.reportState='applied';this.error='';this.set('applied',this.bundle.revision);
       }
     }catch(error){
-      this.reportState='rejected';this.error=error.vpnTLS?error.message:{validate:'Проверка конфигурации, версии ядра или TLS не пройдена.',start:'Ядро не запустилось или его локальный API недоступен.',stats:'Учёт трафика недоступен. Передача остановлена.'}[this.phase]??'Неверное или просроченное задание VPN.';
+      this.reportState='rejected';this.error=error.vpnTLS?error.message:this.phase==='request'?'Задание VPN: '+String(error.message).slice(0,160):{validate:'Проверка конфигурации, версии ядра или TLS не пройдена.',start:'Ядро не запустилось или его локальный API недоступен.',stats:'Учёт трафика недоступен. Передача остановлена.'}[this.phase]??'Неверное или просроченное задание VPN.';
       // A malformed new request must not keep previously granted credentials alive.
       if(!this.bundle||this.bundle.expires<=this.now()||this.bundle.revision!==this.get('applied')&&!this.get('rollback'))await this.stop();
     }

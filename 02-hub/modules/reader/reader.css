@@ -493,3 +493,9 @@ html.reader-focused {
     height: 120px;
   }
 }
+
+html body #readerBooks .reader-author{display:block;width:100%;text-align:center;align-self:center;margin:0;font-size:12px}
+.reader-cover-editor{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;margin-block:10px}
+.reader-cover-editor img{width:74px;height:105px;object-fit:contain;border-radius:6px}
+.reader-cover-editor label{min-width:0;margin:0!important}
+.reader-cover-editor small{color:var(--muted)}

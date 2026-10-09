@@ -13,7 +13,7 @@ const card = (name, id, note) =>
 const chart = (title, id, color) =>
   `<section class="pulse-panel"><div class="pulse-panel-title"><h2>${title}</h2><span>0–100 %</span></div><svg class="pulse-chart ${color}" viewBox="0 0 600 110" preserveAspectRatio="none" role="img" aria-label="${title}: история последних пяти минут"><path class="pulse-grid" d="M0 1H600 M0 55H600 M0 109H600"/><path id="${id}" class="pulse-curve" d=""/></svg><div class="pulse-axis"><span>5 мин назад</span><span>сейчас</span></div></section>`;
 const content = `<link rel="stylesheet" href="/servers.css"><script src="/servers.js" defer></script><div data-servers="pulse"></div><link rel="stylesheet" href="/modules/pulse/pulse.css"><script src="/modules/pulse/pulse.js" defer></script>
-<section id="pulseServerPanel" role="tabpanel" aria-labelledby="serverTab-hub" tabindex="0"><div data-server-settings></div><div class="pulse-toolbar"><p id="pulseStatus" role="status" aria-live="polite">Подключение к сборщику…</p><button type="button" id="pulseRefresh">Обновить</button></div>
+<section id="pulseServerPanel" role="tabpanel" aria-labelledby="serverTab-hub" tabindex="0"><div class="pulse-toolbar"><p id="pulseStatus" role="status" aria-live="polite">Подключение к сборщику…</p><button type="button" id="pulseRefresh">Обновить</button></div>
 <div id="pulseData" aria-busy="true"><div class="pulse-stats">${card('CPU', 'pulseCpu', 'первый замер…')}${card('ПАМЯТЬ', 'pulseMemory', 'занято / всего')}${card('SWAP', 'pulseSwap', 'занято / всего')}${card('UPTIME', 'pulseUptime', 'с последней загрузки')}</div>
 <div class="pulse-panel" data-pulse-history></div><script src="/pulse-history.js" defer></script><div class="pulse-charts">${chart('Загрузка CPU', 'pulseCpuChart', '')}${chart('Использование RAM', 'pulseMemoryChart', 'pulse-chart-memory')}</div>
 
@@ -21,6 +21,8 @@ const content = `<link rel="stylesheet" href="/servers.css"><script src="/server
 <section class="pulse-panel"><div class="pulse-panel-title"><h2>Сеть</h2><span>скорость / с</span></div><div id="pulseNetwork"><p class="pulse-placeholder">Ожидаем показатели…</p></div><p class="pulse-small">↓ приём · ↑ отправка. Счётчики — с запуска интерфейса.</p></section>
 </div><section class="pulse-panel"><div class="pulse-panel-title"><h2>О сервере</h2><span id="pulseHost">—</span></div><dl class="pulse-details"><div><dt>Система</dt><dd id="pulseOs">—</dd></div><div><dt>Ядро</dt><dd id="pulseKernel">—</dd></div><div><dt>Процессор</dt><dd id="pulseModel">—</dd></div><div><dt>Load · 1 / 5 / 15 мин</dt><dd id="pulseLoad">—</dd></div><div><dt>Ожидание I/O / steal</dt><dd id="pulseWait">—</dd></div></dl></section></div>
 </section><noscript><p>Для обновления показателей включи JavaScript.</p></noscript>`;
+
+export const settings={title:'Атлант',content:`<link rel="stylesheet" href="/servers.css"><script src="/servers.js" defer></script><div data-servers="pulse" data-management="true"></div><section id="pulseServerPanel" role="tabpanel" aria-labelledby="serverTab-hub" tabindex="0"><div data-server-settings></div></section>`};
 
 export function createHandler(
   file = process.env.PULSE_FILE ?? '/app/metrics/pulse.json',

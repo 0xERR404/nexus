@@ -98,7 +98,7 @@ body.settings-page .page>main{padding:0;border:0;background:none;box-shadow:none
  #settingsContent :is(.security-row){flex-wrap:wrap}
 }
 
-html[data-carbon-glass="true"] body.settings-page{--surface:var(--theme-settings-surface,#141814c5)}
+
 #settingsContent summary::before{display:none}
 #settingsContent .settings-section-heading>.install-btn{font-size:.8125rem;padding:8px 12px;min-height:36px}
 #settingsContent form>button{justify-self:start}
@@ -112,7 +112,7 @@ html[data-carbon-color] .background-ribbons{background-image:repeating-linear-gr
 #settingsContent[data-settings-section=appearance] h2{margin:0 0 10px}
 #settingsContent[data-settings-section=appearance] p{font-size:.8125rem;line-height:1.5;margin:6px 0 10px}
 #settingsContent[data-settings-section=appearance] label{margin:0;gap:4px;font-size:.875rem}
-#settingsContent[data-settings-section=appearance] :is(input:not([type=radio]):not([type=checkbox]):not([type=range]),select,button){min-height:34px;padding:6px 9px;font-size:.875rem;border-radius:6px}
+#settingsContent[data-settings-section=appearance] :is(input:not([type=radio]):not([type=checkbox]):not([type=range]),select,button){padding:6px 9px;font-size:.875rem;border-radius:6px}
 #settingsContent[data-settings-section=appearance] .background-options{gap:8px;margin-top:8px}
 #settingsContent[data-settings-section=appearance] .background-thumb{aspect-ratio:2.6}
 #settingsContent[data-settings-section=appearance] .background-choice>span:last-child{min-height:0;padding:7px 8px;font-size:.8125rem;line-height:1.35}
@@ -135,7 +135,7 @@ html[data-carbon-color] .background-ribbons{background-image:repeating-linear-gr
 @media(max-width:760px){
  #settingsContent[data-settings-section=appearance] .settings-appearance{grid-template-columns:minmax(0,1fr);gap:10px}
  #settingsContent :is(#appearanceBackground,#appearanceDisplay,#appearanceIntro){padding:12px}
- #settingsContent[data-settings-section=appearance] :is(input:not([type=radio]):not([type=checkbox]):not([type=range]),select,button){min-height:38px}
+
  #settingsContent[data-settings-section=appearance] .background-thumb{aspect-ratio:2.7}
 }
 @media(max-width:360px){
@@ -175,3 +175,24 @@ html body #settingsContent :is(.settings-card,.security-panel,.maintenance-panel
   html body #settingsContent[data-settings-section] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size:16px; }
 }
 @media(max-width:760px) { html body .settings-layout { grid-template-columns:minmax(0,1fr); gap:10px; } }
+
+/* Compact rows share control heights; informational help is disclosed separately. */
+html body #settingsContent :is(.security-grid,.trophy-grid,.signal-settings-grid,.settings-rhythm-grid,.settings-appearance,.maintenance-grid,#chatSettings,#balanceSettings){gap:10px;align-items:stretch}
+html body #settingsContent :is(.settings-card,.security-panel,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.maintenance-grid>section,#readerSettings,.settings-group){padding:10px;min-height:0}
+html body #settingsContent :is(.chat-actions,.balance-actions,.signal-actions,.security-actions,.appearance-actions,.server-actions){display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+html body #settingsContent[data-settings-section] :is(button,.install-btn){min-height:36px;padding:6px 10px;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;line-height:1.4;margin-block:0}
+html body #settingsContent :is(.chat-title,.balance-title,.signal-title,.security-heading,.anime-meta){margin-bottom:8px;gap:8px}
+html body #settingsContent label:not(:has([type=checkbox],[type=radio])){margin-bottom:8px;gap:4px}
+html body #settingsContent .settings-help{margin-top:8px;font-size:12px;grid-column:1/-1}
+html body #settingsContent .settings-help summary{min-height:28px;padding:4px 0;color:var(--muted)}
+html body #settingsContent .settings-help p{margin:4px 0}
+html body #settingsContent .appearance-color{align-items:end}
+html body #settingsContent .appearance-color label{margin-bottom:0}
+
+@media(max-width:800px){html body #settingsContent[data-settings-section] :is(button,.install-btn){min-height:44px}html body #settingsContent .settings-help summary{min-height:44px}}
+
+html body #settingsContent[data-settings-section=appearance] .settings-appearance{grid-template-columns:repeat(2,minmax(0,1fr))}
+html body #settingsContent[data-settings-section] :is(input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=color]):not([type=file]),select){min-height:36px}
+html body #settingsContent[data-settings-section=appearance] #appearanceMotion .appearance-motion{margin:4px 0 8px}
+@media(max-width:800px){html body #settingsContent[data-settings-section] :is(input:not([type=radio]):not([type=checkbox]):not([type=range]):not([type=color]):not([type=file]),select){min-height:44px}}
+@media(max-width:760px){html body #settingsContent[data-settings-section=appearance] .settings-appearance{grid-template-columns:minmax(0,1fr)}}

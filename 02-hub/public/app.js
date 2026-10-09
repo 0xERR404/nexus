@@ -292,3 +292,10 @@ if (parent === window && !document.getElementById('hubFrame')) {
   const section=document.getElementById('workspaceSection'), selected=links.find(a=>a.dataset.workspaceGroup===group);
   if(section && selected){section.replaceChildren(...[...selected.childNodes].map(n=>n.cloneNode(true)));section.href=selected.href;}
 }
+
+// Follow the title link so embedded navigation and unsaved-change guards still apply.
+document.querySelectorAll('[data-card-link]').forEach(card=>{
+ const open=()=>card.querySelector('a[href="'+card.dataset.cardLink+'"]')?.click();
+ card.addEventListener('click',event=>{if(event.defaultPrevented||event.button||event.target.closest('a,button,input,select,textarea,label,summary,[role=button]')||String(getSelection()).length)return;open();});
+ card.addEventListener('keydown',event=>{if(event.target===card&&(event.key==='Enter'||event.key===' ')){event.preventDefault();open();}});
+});

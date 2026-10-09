@@ -329,3 +329,8 @@ html body #homeDashboard[data-group=overview] .home-balance .module-stat { gap:3
   html body #vpnDialog label { margin-block:6px; }
   html body :is(dialog,#vpnDialog,#readerEditDialog) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) { font-size:16px; }
 }
+
+html body [data-card-link]{cursor:pointer}
+html body [data-card-link]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+html body [data-card-link]:hover{border-color:var(--line-strong)}
+html[data-carbon-glass=true] body :is(.settings-sidebar,.settings-card,.security-panel,.maintenance-grid>section,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.server-manager,.server-report,.server-registration,#readerSettings,.settings-group){background:var(--glass-light),var(--surface);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}

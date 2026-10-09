@@ -110,7 +110,7 @@
         button.type = 'button';
         if (b.cover) {
           const img = node('img');
-          img.src = base + '/cover/' + b.id;
+          img.src = base + '/cover/' + b.id + '?v=' + encodeURIComponent(b.coverVersion||'original');
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
@@ -566,11 +566,21 @@
       renderMarks();
       $('readerMarksDialog').showModal();
     });
+  let coverPreviewURL='';
+  function clearCoverPreview(){if(coverPreviewURL)URL.revokeObjectURL(coverPreviewURL);coverPreviewURL='';}
+  $('readerCoverInput').onchange=()=>{clearCoverPreview();const file=$('readerCoverInput').files[0],preview=$('readerCoverPreview');
+    if(file&&file.size>8*1024*1024){$('readerCoverInput').value='';status('Обложка — до 8 МБ.');preview.hidden=true;return;}
+    preview.hidden=!file&&!editingBook?.cover;
+    if(file){coverPreviewURL=URL.createObjectURL(file);preview.src=coverPreviewURL;}
+    else if(editingBook?.cover)preview.src=base+'/cover/'+editingBook.id+'?v='+encodeURIComponent(editingBook.coverVersion||'original');
+  };
+  $('readerEditDialog').addEventListener('close',clearCoverPreview);
   function editMetadata(target) {
     editingBook = target;
     document.querySelectorAll('.reader-error').forEach((n) => n.remove());
     $('readerTitleInput').value = target.title;
     $('readerAuthorInput').value = target.author;
+    clearCoverPreview();$('readerCoverInput').value='';$('readerCoverPreview').hidden=!target.cover;if(target.cover)$('readerCoverPreview').src=base+'/cover/'+target.id+'?v='+encodeURIComponent(target.coverVersion||'original');
     $('readerEditDialog').showModal();
   }
   $('readerEdit').onclick = () => {
@@ -581,18 +591,20 @@
     const target = editingBook;
     if (!target) return;
     void bookAction(async () => {
-      const value = await api('/metadata', {
+      let value = await api('/metadata', {
         id: target.id,
         title: $('readerTitleInput').value,
         author: $('readerAuthorInput').value
       });
+      const coverFile=$('readerCoverInput').files[0];if(coverFile)value=await api('/cover',undefined,{method:'POST',body:coverFile,headers:{'Content-Type':coverFile.type,'X-Book-Id':target.id}});
       if (book?.id === target.id) {
+        book.cover=value.cover;book.coverVersion=value.coverVersion;
         book.title = value.title;
         book.author = value.author;
         $('readerBookTitle').textContent = value.title;
       }
       books = books.map((b) =>
-        b.id === target.id ? {...b, title: value.title, author: value.author} : b
+        b.id === target.id ? {...b, title: value.title, author: value.author,cover:value.cover,coverVersion:value.coverVersion} : b
       );
       render(false);
       $('readerEditDialog').close();

@@ -1,6 +1,6 @@
 (() => {
   const host=document.querySelector('[data-servers]');if(!host)return;
-  const pulse=host.dataset.servers==='pulse',params=new URLSearchParams(location.search);
+  const pulse=host.dataset.servers==='pulse',management=host.dataset.management==='true',params=new URLSearchParams(location.search);
   const node=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
   let selected=params.get('server')||(pulse?'hub':'all'),servers=[],dirty=false,acting=false,timer,loaded='',formRevision=0,catalogLoaded=false,switching=false;
   const states={online:'На связи',offline:'Нет связи',waiting:'Ожидаем агент',revoked:'Доступ отозван'};
@@ -10,9 +10,10 @@
   const tabs=pulse?node('div'):null;
   if(tabs){tabs.className='server-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Серверы Атланта');tools.append(tabs);}
   tools.append(link);host.append(tools);
+  const administration=pulse&&!management?node('a','Управление серверами'):null;if(administration){administration.className='server-admin-link';tools.append(administration);}
   const api=async(route,data)=>{const r=await fetch('/api/servers'+route,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),cache:'no-store',signal:AbortSignal.timeout(12000)});if(r.status===401){location.replace('/login');throw Error('Требуется вход');}const v=await r.json();if(!r.ok)throw Error(v.error||'Запрос не выполнен');return v;};
   window.NexusServers={selected:()=>selected,metrics:()=>selected==='hub'?'/modules/pulse/api':'/api/servers/metrics?server='+encodeURIComponent(selected),history:hours=>selected==='hub'?'/modules/pulse/api/history?hours='+hours:'/api/servers/history?server='+encodeURIComponent(selected)+'&hours='+hours};
-  if(pulse){
+  if(pulse&&management){
     const report=node('details');report.className='server-report';report.append(node('summary','Журнал и отчёт для ИИ'));
     const help=node('p','Автосбор раз в минуту. Хранение — до 30 дней. В одном TXT-файле: история состояний и их длительность, нагрузка, события и оповещения. Скачай файл и приложи его к сообщению ИИ.');help.className='server-report-help';report.append(help);
     const controls=node('div');controls.className='server-report-controls';
@@ -49,7 +50,7 @@
   }
   let manager,form,feedback,ack,codeBox;
   const defaults={timezone:'UTC',services:['ssh.service','fail2ban.service','nexus404-agent.service'],maintenance:{reboot:{enabled:false,day:0,time:'06:00'},cleanup:{enabled:false,time:'06:30',afterReboot:true},health:{enabled:true,time:'05:30'},securityReboot:{enabled:false,time:'02:00'}}};
-  if(pulse){
+  if(pulse&&management){
     manager=node('details');manager.className='server-manager';manager.append(node('summary','Настройки сервера'));
     const registrationPanel=node('details');registrationPanel.className='server-registration';registrationPanel.append(node('summary','Добавить сервер'));host.append(registrationPanel);
     const registration=node('form');registration.className='server-form';registration.innerHTML='<label>Имя нового сервера<input name="name" required maxlength="60" autocomplete="off" placeholder="VPS · Москва"></label><div class="server-actions"><button type="submit">Создать код подключения</button></div>';
@@ -89,6 +90,8 @@
     const old=selected;select.replaceChildren();if(!pulse)select.add(new Option('Все серверы','all'));select.add(new Option('Хаб','hub'));for(const s of servers)select.add(new Option(s.name+' · '+states[s.state],s.id));
     if(![...select.options].some(o=>o.value===old)){if(catalogLoaded||!params.has('server'))selected=pulse?'hub':'all';else select.add(new Option('Загрузка сервера…',old));}select.value=selected;
     if(tabs)renderTabs();
+    if(administration)administration.href='/settings/?module=pulse&server='+encodeURIComponent(selected);
+    if(management){const back=document.querySelector('.settings-section-heading > a');if(back)back.href='/modules/pulse/?server='+encodeURIComponent(selected);}
     const s=servers.find(s=>s.id===selected);link.dataset.state=s?.state||'online';
     link.textContent=s&&(!pulse||s.state!=='online')?({online:'На связи',offline:'Нет связи · показаны последние данные',waiting:'Ожидаем первый замер',revoked:'Доступ отозван'}[s.state])+(s.seen?' · '+new Date(s.seen).toLocaleString('ru-RU'):''):'';
     if(manager)manager.hidden=!s;

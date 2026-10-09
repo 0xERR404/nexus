@@ -1,3 +1,4 @@
+import {imageType} from '../../src/content-store.mjs';
 import {ID, fail} from '../../src/input.mjs';
 export {fail} from '../../src/input.mjs';
 import fs from 'node:fs';
@@ -37,7 +38,11 @@ export function parseAsync(bytes, name) {
   });
 }
 export class ReaderStore {
-  constructor(directory) {
+  constructor(directory, {convertCover} = {}) {
+    this.convertCover=convertCover??(async(input,output)=>{
+      const info=JSON.parse((await exec('ffprobe',['-v','error','-protocol_whitelist','file,pipe','-select_streams','v:0','-show_entries','stream=width,height','-of','json',input],{timeout:10000,maxBuffer:65536,windowsHide:true})).stdout).streams?.[0];
+      if(!info?.width||!info.height||info.width*info.height>40000000||Math.max(info.width,info.height)>16000)throw fail('Изображение слишком большое.');
+      await exec('ffmpeg',['-v','error','-nostdin','-threads','1','-protocol_whitelist','file,pipe','-i',input,'-frames:v','1','-vf','scale=600:900:force_original_aspect_ratio=decrease','-threads','1','-c:v','libwebp',output],{timeout:15000,maxBuffer:65536,windowsHide:true});});
     this.directory = directory;
     this.busy = false;
   }
@@ -187,6 +192,26 @@ export class ReaderStore {
         await fsp.rm(target, {recursive: true, force: true});
       }
     }
+  }
+  async setCover(id,bytes,allowed=()=>true){
+    this.book(id);
+    if(!allowed())throw fail('Сессия завершена или загрузка отменена.',401);
+    if(this.busy)throw fail('Дождись завершения загрузки.',429);
+    if(!bytes.length||bytes.length>8*1024*1024)throw fail('Обложка — до 8 МБ.',413);
+    imageType(bytes);
+    const token=randomUUID(),directory=path.join(this.directory,id),input=path.join(directory,'.cover-'+token),name='cover-'+token+'.webp',output=path.join(directory,name);
+    this.busy=true;let committed=false;
+    try{
+      await fsp.writeFile(input,bytes,{flag:'wx',mode:0o600});
+      try{await this.convertCover(input,output);}catch{throw fail('Не удалось обработать обложку. Выбери корректное изображение JPEG, PNG, WebP или GIF.',422);}
+      if(!allowed())throw fail('Сессия завершена или загрузка отменена.',401);
+      const current=this.book(id),previous=current.coverFile||'cover.webp';
+      await fsp.chmod(output,0o600);
+      const next={...current,cover:true,coverFile:name,coverVersion:token};
+      this.commit({...this.data,books:this.data.books.map(b=>b.id===id?next:b)});committed=true;
+      if(/^cover(?:-[a-f0-9-]{36})?\.webp$/.test(previous))await fsp.rm(path.join(directory,previous),{force:true}).catch(()=>{});
+      return next;
+    }finally{this.busy=false;await fsp.rm(input,{force:true}).catch(()=>{});if(!committed)await fsp.rm(output,{force:true}).catch(()=>{});}
   }
   chapter(id, index) {
     const b = this.book(id);

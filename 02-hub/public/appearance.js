@@ -34,10 +34,9 @@
   function surfaces(value){
     const amount=transparency(value),alpha=amount===67?84/255:1-amount/100;
     root.dataset.carbonGlass=String(amount>0);
-    // Settings retain denser glass to keep form labels readable.
-    const settingsAlpha=1-(1-alpha)*58/171;
+    // A single transparency preference applies to every surface.
     root.style.setProperty('--theme-surface',css(palette.custom?mix([22,22,22],palette.raw,.035):[25,27,25],alpha));
-    root.style.setProperty('--theme-settings-surface',css(palette.custom?mix([17,17,17],palette.raw,.035):[20,24,20],settingsAlpha));
+    root.style.setProperty('--dialog-glass',css(palette.custom?mix([22,22,22],palette.raw,.035):[25,27,25],alpha));
     root.dataset.carbonTransparency=String(amount);
   }
   function previewTree(method,value,scope=window){
@@ -68,7 +67,7 @@
     const input=form.elements.transparency;
     input.setAttribute('aria-valuetext',input.value+'%');
     document.getElementById('appearanceTransparencyValue').value=input.value+'%';
-    document.getElementById('appearanceTransparencyNote').textContent='В настройках панели плотнее.';
+    document.getElementById('appearanceTransparencyNote').textContent='';
   }
   function attributes(){theme();root.dataset.carbonBackground=prefs.background;root.dataset.carbonMotion=prefs.motion;}
   attributes();

@@ -115,7 +115,8 @@ export class VPN {
     }
     this.db.prepare('INSERT OR REPLACE INTO deployments VALUES(?,?,?)').run(node,n.revision,JSON.stringify(connections));
     this.db.prepare('DELETE FROM deployments WHERE node=? AND revision<?').run(node,n.revision-32);
-    return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created:this.now(),expires:this.now()+LEASE_MS,connections,users,settings:JSON.parse(n.settings)};
+    const created=this.now();
+    return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created,expires:created+LEASE_MS,connections,users,settings:JSON.parse(n.settings)};
   });}
   snapshot(agents=[]){
     const locations=new Map(this.all('location').map(x=>[x.id,x.country]));
