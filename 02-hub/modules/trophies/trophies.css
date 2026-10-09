@@ -678,3 +678,10 @@
 #trophiesPage .trophy-card[data-provider='ra'] .trophy-art {
   aspect-ratio: 2/1;
 }
+
+/* Small desktop cards use the same concise facts as the mobile library. */
+#trophiesPage .trophy-card { container-type:inline-size; container-name:game-card; }
+@container game-card (max-width:240px) {
+  .trophy-review-extra { display:none; }
+  .trophy-card-facts .trophy-review { white-space:nowrap; }
+}

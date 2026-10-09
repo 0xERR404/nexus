@@ -192,7 +192,8 @@
                 'trophy-review-extra'
               )
             );
-            review.setAttribute('aria-label', g.reviewPercent + '% положительных отзывов');
+            review.title = g.reviewPercent + '% положительных · ' + g.reviewCount.toLocaleString('ru-RU') + ' отзывов';
+            review.setAttribute('aria-label', review.title);
           } else review.textContent = g.reviewCount === 0 ? 'Нет отзывов' : 'Отзывы —';
           const facts = el('div', undefined, 'trophy-card-facts');
           facts.append(review);

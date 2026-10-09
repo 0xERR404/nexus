@@ -405,3 +405,24 @@ html body button:is(.dialog-close,[aria-label^="Закрыть"],[title^="Зак
 /* Generated close controls must not narrow the first field in a prompt. */
 html body dialog.nexus-question[open] > h2 { min-height:44px; display:flex; align-items:center; margin:0 0 12px; }
 html body dialog.nexus-question[open] > form { clear:both; min-width:0; }
+
+/* Every dashboard card uses the same heading component, including module summaries. */
+html body #homeDashboard[data-group] .home-grid > .home-card > .home-card-title {
+  box-sizing:border-box; display:flex; align-items:center; flex-wrap:nowrap;
+  height:32px; min-height:32px; flex:0 0 32px;
+  margin:0 0 8px; padding:0 0 6px; gap:8px;
+  border-bottom:1px solid var(--line-soft); background:none;
+}
+html body #homeDashboard[data-group] .home-card-title > a:first-child {
+  display:flex; align-items:center; min-width:0; gap:8px; margin:0; padding:0;
+}
+html body #homeDashboard[data-group] .home-card-title h2 {
+  margin:0; padding:0; min-width:0; font:500 15px/22px var(--sans);
+  letter-spacing:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+html body #homeDashboard[data-group] .home-card-title .ui-icon {
+  width:20px; height:20px; flex:0 0 20px;
+}
+@media(max-width:800px) {
+  html body #homeDashboard[data-group] .home-card-title h2 { font-size:14px; }
+}
