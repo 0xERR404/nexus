@@ -1,2 +1,54 @@
 .server-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.server-tools label{display:flex;align-items:center;gap:8px}.server-tools select{max-width:min(70vw,380px)}.server-tools p{margin:0;color:var(--muted)}.server-manager{margin-bottom:16px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.server-manager summary{cursor:pointer;font-weight:600}.server-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.server-form label{display:flex;flex-direction:column;gap:6px;min-width:0}.server-form input,.server-form select,.server-form textarea{width:100%;min-width:0}.server-form .server-job{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:8px}.server-job label{flex-direction:row;align-items:center}.server-job input[type=checkbox]{width:auto}.server-job input[type=time]{width:110px}.server-job select{width:120px}.server-wide{grid-column:1/-1}.server-actions{display:flex;gap:8px;flex-wrap:wrap}.server-code{overflow-wrap:anywhere;user-select:all}.server-link[data-state=offline],.server-link[data-state=revoked]{color:var(--muted)}@media(max-width:560px){.server-form{grid-template-columns:1fr}.server-tools{align-items:flex-start}.server-tools label{width:100%}.server-tools select{flex:1}}
+
+/* Atlant: server tabs share one metrics/settings panel. */
+.server-report{margin-bottom:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.server-report[open]{background:var(--surface-solid,#191b1a);background:color-mix(in srgb,var(--surface-solid,#191b1a) 94%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.server-report summary{cursor:pointer;font-weight:600;font-size:13px}
+.server-report-help,.server-report-status{font-size:13px;line-height:1.5;margin:8px 0;overflow-wrap:anywhere}
+.server-report-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:8px}
+.server-report-controls label{display:grid;gap:5px;font-size:13px;min-width:0}
+.server-report-controls select{width:100%;min-width:0}
+.server-report-download{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:6px 10px;border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-size:13px;text-decoration:none;box-sizing:border-box}
+.server-report-events{list-style:none;padding:0;margin:8px 0 0;max-height:300px;overflow:auto}
+.server-report-events li{padding:8px 0;border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+.server-report-events small{display:block;color:var(--muted);margin-top:3px}
+.server-report-events p{margin:4px 0;font-size:13px}
+.server-report-events [data-level=critical] strong{color:var(--danger,#de8880)}
+.server-report-events [data-level=warning] strong{color:var(--amber,#dab66f)}
+@media(max-width:800px){html body .server-report summary{min-height:44px;align-content:center}.server-report-controls select{font-size:16px;min-height:44px}.server-report-download{min-height:44px}}
+@media(max-width:600px){.server-report-controls{grid-template-columns:minmax(0,1fr)}.server-report-download{width:100%}}
+html body [data-servers=pulse] { min-width:0; margin-bottom:8px; }
+html body [data-servers=pulse] .server-tabs-tools { display:block; margin-bottom:4px; }
+html body [data-servers=pulse] .server-tabs { display:flex; flex-wrap:nowrap; gap:4px; max-width:100%; padding:5px; overflow-x:auto; overscroll-behavior-x:contain; border:1px solid var(--line); border-radius:10px; background:var(--surface); scrollbar-width:thin; }
+html body [data-servers=pulse] .server-tabs button { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; min-width:76px; max-width:260px; min-height:38px; padding:6px 12px; border-radius:7px; font-size:13px; }
+html body [data-servers=pulse] .server-tabs button[aria-selected=true] { color:var(--accent); border-color:var(--accent); background:var(--button-bg); }
+html body [data-servers=pulse] .server-tab-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+html body [data-servers=pulse] .server-tab-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+html body [data-servers=pulse] [data-state=online] .server-tab-dot { background:var(--green,#8cba81); }
+html body [data-servers=pulse] [data-state=waiting] .server-tab-dot { background:var(--amber,#dab66f); }
+html body [data-servers=pulse] [data-state=revoked] .server-tab-dot { background:var(--danger,#d87b79); }
+html body [data-servers=pulse] [data-state=hub] .server-tab-dot { display:none; }
+html body [data-servers=pulse] .server-link:empty { display:none; }
+html body [data-servers=pulse] .server-link:not(:empty) { padding:6px 4px 0; font-size:13px; overflow-wrap:anywhere; }
+html body [data-servers=pulse] .server-registration { padding:0; }
+html body [data-servers=pulse] .server-registration summary { cursor:pointer; width:fit-content; padding:6px; font-size:13px; color:var(--muted); }
+html body [data-servers=pulse] .server-registration .server-form { margin:4px 0 10px; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+html body #pulseServerPanel { min-width:0; }
+html body #pulseServerPanel .server-manager { margin-bottom:8px; padding:10px; }
+html body #pulseServerPanel .server-manager[hidden] { display:none; }
+html body #pulseServerPanel .server-manager summary { font-size:13px; }
+html body #pulseServerPanel .server-form { gap:8px; margin-top:10px; }
+html body #pulseServerPanel .server-form label { font-size:13px; }
+html body #pulseServerPanel .server-form p:empty { display:none; }
+@media(max-width:800px) {
+ html body [data-servers=pulse] .server-tabs button { min-height:44px; max-width:230px; }
+ html body [data-servers=pulse] .server-registration summary,html body #pulseServerPanel .server-manager summary { min-height:44px; align-content:center; padding-block:0; }
+ html body #pulseServerPanel .server-form :is(input:not([type=checkbox]),select,textarea),html body [data-servers=pulse] .server-form input { font-size:16px; min-height:44px; }
+ html body #pulseServerPanel .server-form button { min-height:44px; }
+}
 .server-form input[type=checkbox]{width:16px;height:16px;flex:0 0 auto}.server-wide>span{display:flex;align-items:center;gap:8px}
+
+.server-report-history{display:grid;gap:8px;max-height:360px;overflow:auto;overflow-wrap:anywhere;font-size:12px}
+.server-report-history section{padding:8px;border:1px solid var(--line,rgba(255,255,255,.14));border-radius:10px}
+.server-report-history ol{margin:6px 0;padding-left:20px;display:grid;gap:4px}
+.server-report-history p{margin:5px 0}

@@ -1,3 +1,4 @@
+import {Diagnostics} from './diagnostics.mjs';
 import {Agents} from './agents.mjs';
 import {Notices, noticeCodes} from './notices.mjs';
 import {Maintenance} from './maintenance.mjs';
@@ -148,6 +149,9 @@ export function createApp({
     modules
   );
   const hubVersion = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+  const diagnostics=new Diagnostics(noticeDirectory);
+  const collectDiagnostics=()=>{try{diagnostics.collect(agents,notices.events);}catch{console.error('Cannot collect server diagnostics');}};
+  collectDiagnostics();const diagnosticsTimer=setInterval(collectDiagnostics,60000);diagnosticsTimer.unref();
   const sessions = new Sessions(sessionsFile, authIdentity(config));
   const secure = new URL(config.origin).protocol === 'https:';
   const cookieName = secure ? '__Host-nexus_session' : 'nexus_dev_session';
@@ -618,6 +622,12 @@ export function createApp({
         const action=url.pathname.slice('/api/servers'.length),id=url.searchParams.get('server');
         if(request.method==='GET'){
           if(!action)return json({servers:agents.list()});
+          if(action==='/diagnostics')return json(diagnostics.status(id||'all',url.searchParams.get('hours')||24));
+          if(action==='/report'){
+            const report=diagnostics.report(id||'all',url.searchParams.get('hours')||24);
+            response.setHeader('Content-Disposition','attachment; filename="nexus404-server-report-'+new Date().toISOString().slice(0,10)+'.txt"');
+            return send(200,report,'text/plain');
+          }
           if(action==='/events')return json({events:agents.events(id)});
           if(action==='/metrics')return json(agents.metrics(id));
           if(action==='/history')return json(agents.history(id,url.searchParams.get('hours')));
@@ -846,6 +856,7 @@ export function createApp({
     void dashboardCache.start();
   });
   server.once('close', () => {
+    clearInterval(diagnosticsTimer);diagnostics.close();
     clearInterval(agentSweep);agents.close();
     dashboardCache.close();
     overview.close();

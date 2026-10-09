@@ -4,3 +4,74 @@
 
 #vpnDialog [data-country-picker] select{min-height:190px}#vpnDialog [data-country-picker] option{padding:7px 8px}#vpn .vpn-accounting-note{padding:4px 0 10px;color:var(--muted);font-size:.8rem}#vpn .vpn-accounting-note summary{line-height:1.45}
 .vpn-flag{display:inline-block!important;width:22px!important;height:16.5px!important;max-width:none!important;object-fit:contain;vertical-align:-2px;margin-right:7px;border-radius:2px;flex:none}.vpn-country-preview{display:flex;align-items:center;min-height:24px;font-size:.85rem}
+
+/* Argo owns its density: shared card styles must not separate related fields. */
+html body #vpn { max-width:1120px; }
+html body #vpn .vpn-tabs { gap:4px; padding:5px; margin-bottom:8px; }
+html body #vpn .vpn-toolbar { margin-bottom:8px; gap:6px; }
+html body #vpn #vpnStatus:empty, html body #vpn #vpnFormError:empty { display:none; }
+html body #vpn .vpn-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:8px; align-items:start; }
+html body #vpn .vpn-card { padding:10px; }
+html body #vpn .vpn-card-head { gap:6px; margin-bottom:6px; }
+html body #vpn .vpn-node-info { margin:0; font-size:.8rem; line-height:1.45; }
+html body #vpn .vpn-node-info > div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:8px; padding-block:3px; }
+html body #vpn .vpn-node-info dt { color:var(--muted); }
+html body #vpn .vpn-node-info dd { margin:0; overflow-wrap:anywhere; }
+html body #vpn .vpn-connection { padding-block:8px; gap:8px; }
+html body #vpn .vpn-connection > div { min-width:0; }
+html body #vpn .vpn-connection strong { overflow-wrap:anywhere; }
+html body #vpn .vpn-connection small { margin-top:2px; }
+html body #vpn .vpn-connection button { flex-shrink:0; }
+html body #vpn .vpn-actions { gap:6px; }
+html body #vpn :is(.vpn-help,.vpn-accounting-note) { padding:6px 0; margin:0; }
+html body #vpn .vpn-help summary { font-size:.82rem; line-height:1.45; color:var(--muted); }
+html body #vpn .vpn-guide { max-width:760px; }
+html body #vpn .vpn-guide .vpn-help { border-top:1px solid var(--line); }
+html body #vpnDialog { width:min(660px,calc(100vw - 24px)); padding:12px; max-height:calc(100dvh - 24px); overflow:hidden; }
+html body #vpnDialog[data-editor=routing] { width:min(800px,calc(100vw - 24px)); }
+html body #vpnDialog #vpnForm { display:flex; flex-direction:column; max-height:calc(100dvh - 50px); min-height:0; margin:0; }
+html body #vpnDialog #vpnFields { min-height:0; overflow:auto; padding:0 3px 2px; scrollbar-gutter:stable; }
+html body #vpnDialog h2 { margin:0 0 8px; font-size:1rem; }
+html body #vpnDialog h3 { font-size:.9rem; }
+html body #vpn :is(.vpn-section,.vpn-rule-block) { min-width:0; margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:9px; }
+html body #vpn :is(.vpn-section,.vpn-rule-block) legend { padding:0 5px; font-size:.78rem; color:var(--muted); }
+html body #vpnDialog .vpn-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 10px; }
+html body #vpnDialog .vpn-profile-fields { grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1.4fr); }
+html body #vpnDialog .vpn-fields.vpn-endpoint { grid-template-columns:minmax(0,1fr) 100px; }
+html body #vpnDialog label { margin:0; gap:4px; font-size:13px; }
+html body #vpnDialog label[hidden] { display:none; }
+html body #vpnDialog .vpn-check { align-self:end; min-height:34px; }
+html body #vpnDialog :is(input,select,textarea) { margin:0; padding:6px 8px; }
+html body #vpnDialog :is(input:not([type=checkbox]),select) { min-height:34px; }
+html body #vpnDialog textarea { font-size:13px; line-height:1.45; }
+html body #vpnDialog p { margin:6px 0; font-size:13px; line-height:1.4; }
+html body #vpnDialog :is(.vpn-section,.vpn-rule-block) legend,html body #vpnDialog .vpn-help summary { font-size:12px; }
+html body #vpnDialog .vpn-hint { color:var(--muted); }
+html body #vpnDialog .vpn-checks { gap:4px 10px; }
+html body #vpnDialog .vpn-checks label { padding:4px 0; }
+html body #vpnDialog .vpn-rule-block > .vpn-fields + .vpn-fields { margin-top:8px; }
+html body #vpnDialog .vpn-rule-block .vpn-actions { margin-top:6px; }
+html body #vpnDialog #vpnForm > .vpn-actions { position:static; flex-shrink:0; margin:8px 0 0; padding:8px 0 0; border-top:1px solid var(--line); background:none; }
+html body #vpnDialog #vpnForm > .vpn-actions button { min-width:100px; }
+html body #vpnDialog [data-country-picker] { display:grid; gap:8px; margin:8px 0; }
+html body #vpnDialog [data-country-picker] select { min-height:140px; }
+html body #vpnDialog [data-country-picker] option { padding:4px 8px; }
+html body #vpnDialog [data-country-results]:empty { display:none; }
+html body #vpnDialog .vpn-subscription { display:grid; grid-template-columns:minmax(0,1fr) 160px; gap:12px; align-items:center; }
+html body #vpnDialog .vpn-qr { width:160px; margin:0 auto; }
+@media(max-width:800px) {
+ html body #vpn .vpn-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body #vpn .vpn-tabs button { margin:0; min-height:44px; padding:5px 6px; }
+ html body #vpnDialog :is(button,input:not([type=checkbox]),select), html body #vpnDialog .vpn-check, html body #vpnDialog .vpn-checks label { min-height:44px; }
+ html body #vpnDialog :is(input:not([type=checkbox]),select,textarea) { font-size:16px; }
+ html body #vpn .vpn-help summary,html body #vpn .vpn-accounting-note summary { min-height:44px; align-content:center; }
+}
+@media(max-width:600px) {
+ html body #vpnDialog .vpn-fields, html body #vpnDialog .vpn-checks { grid-template-columns:minmax(0,1fr); }
+ html body #vpnDialog .vpn-fields.vpn-endpoint { grid-template-columns:minmax(0,1fr) 88px; }
+ html body #vpnDialog { padding:10px; }
+ html body #vpnDialog #vpnForm { max-height:calc(100dvh - 46px); }
+ html body #vpnDialog :is(.vpn-section,.vpn-rule-block) { padding:8px; }
+ html body #vpnDialog .vpn-subscription { grid-template-columns:minmax(0,1fr); gap:8px; }
+ html body #vpnDialog #vpnForm > .vpn-actions button { flex:1; }
+}

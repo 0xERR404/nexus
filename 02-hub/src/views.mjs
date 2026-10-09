@@ -70,7 +70,8 @@ const workspaceNav = `<nav class="workspace-mobile" aria-label="Разделы �
 const footer = `<footer class="page-foot"><span>NEXUS404 · v${escape(version)}</span></footer>`;
 export function dashboard(username, modules, groupId = 'overview', embedded = false) {
   const group=selectedGroup(groupId);
-  const selected=group.id==='overview'?modules:modules.filter(m=>groupFor(m.id)===group.id);
+  const overviewIds=new Set(['pulse','kanban','chat','statistics','balance','reader','storage']);
+  const selected=modules.filter(m=>group.id==='overview'?overviewIds.has(m.id):groupFor(m.id)===group.id);
   const included=new Set();
   const widget=(id,content,wide='')=>{
     const module=selected.find(m=>m.id===id);if(!module)return '';included.add(id);const title=escape(module.title);
@@ -86,7 +87,7 @@ export function dashboard(username, modules, groupId = 'overview', embedded = fa
     widget('storage','<div id="homeFiles"></div>','home-full')
   ].join('');
   const moduleCard=m=>`<section class="home-card module-card" data-module="${m.id}"><a class="module-heading" href="/modules/${m.id}/">${icon(m.id)}<h2>${escape(m.title)}</h2><span class="card-chevron">›</span></a>${m.summary?`<div class="module-summary" data-summary="${m.id}" data-state="loading"></div>`:''}<a class="home-action" href="/modules/${m.id}/">Открыть модуль →</a></section>`;
-  return `${head('NEXUS404 — '+group.title, embedded)}<body class="dashboard-page${embedded ? '' : ' standalone-page'}">${embedded ? '' : workspaceHeader(username)}<div class="page"><main id="homeDashboard" data-group="${group.id}"><template id="homeIcons">${['cpu','memory','disk','uptime','file','signal','services','pulse','settings','terminal','shield'].map(icon).join('')}</template><script src="/home.js" defer></script><script src="/pulse-history.js" defer></script><div class="home-heading"><div><h1>${group.title}</h1></div></div><div class="home-grid">${contents}${selected.filter(m=>!included.has(m.id)).map(moduleCard).join('')}</div>${!selected.length?'<p class="settings-empty">Пока нет модулей в этом разделе.</p>':''}</main>${footer}</div>${embedded ? '' : workspaceNav}${dialog}</body></html>`;
+  return `${head('NEXUS404 — '+group.title, embedded)}<body class="dashboard-page${embedded ? '' : ' standalone-page'}">${embedded ? '' : workspaceHeader(username)}<div class="page"><main id="homeDashboard" data-group="${group.id}"><template id="homeIcons">${['cpu','memory','disk','uptime','file','signal','services','pulse','settings','terminal','shield'].map(icon).join('')}</template><script src="/home.js" defer></script><script src="/pulse-history.js" defer></script><div class="home-heading"><div><h1>${group.title}</h1></div></div><div class="home-grid">${contents}${group.id==='overview'?'':selected.filter(m=>!included.has(m.id)).map(moduleCard).join('')}</div>${!selected.length?'<p class="settings-empty">Пока нет модулей в этом разделе.</p>':''}</main>${footer}</div>${embedded ? '' : workspaceNav}${dialog}</body></html>`;
 }
 export function modulePage({username, title, content, embedded = false, widget = false}) {
   return `${head(escape(title) + ' — NEXUS404', embedded, widget)}<body${embedded ? '' : ' class="standalone-page"'}>${embedded ? '' : workspaceHeader(username)}<div class="page"><main><div class="section-line"><h1>${escape(title)}</h1></div>${content}</main>${footer}</div>${embedded ? '' : workspaceNav}${dialog}</body></html>`;

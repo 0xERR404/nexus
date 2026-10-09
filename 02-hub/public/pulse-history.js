@@ -29,7 +29,7 @@
     status.textContent=!data.available?'История ещё не поступила. Она начнёт накапливаться после обновления сборщика Атланта.':!data.samples?'В выбранном периоде нет измерений.':`${data.samples} замеров · с ${new Date(data.first).toLocaleString('ru-RU')} · ${data.interval>60000?'усреднение по интервалам':'замер раз в минуту'}${data.stale?' · последние данные устарели':''}. Пропуски не заполняются.`;
    }catch(e){if(n===generation&&e.name!=='AbortError'){window.Nexus?.notice?.('pulse','history');status.textContent='';}}finally{if(n===generation&&!document.hidden&&!stopped)timer=setTimeout(update,60000);}
   }
-  document.addEventListener('nexus:server',()=>{lastData=null;for(const p of paths)p.setAttribute('d','');update();});
+  document.addEventListener('nexus:server',()=>{lastData=null;for(const p of paths)p.setAttribute('d','');for(const tick of ticks)tick.textContent='';caption.textContent='Получаем историю…';status.textContent='';update();});
   select.onchange=()=>{for(const b of periods.children)b.setAttribute('aria-pressed',String(b.dataset.hours===select.value));update();};document.addEventListener('visibilitychange',()=>{if(document.hidden){generation++;controller?.abort();clearTimeout(timer);}else update();});addEventListener('pagehide',()=>{stopped=true;generation++;controller?.abort();clearTimeout(timer);});addEventListener('pageshow',()=>{stopped=false;update();});update();
  }
 })();

@@ -27,7 +27,7 @@
   const history = [];
   let last = null,
     timer,
-    busy = false, generation=0;
+    controller, generation=0;
   function graph(id, key, now) {
     let d = '',
       previous = null;
@@ -144,15 +144,16 @@
   }
   async function update() {
     clearTimeout(timer);
-    if (document.hidden || busy) return;
-    const startedGeneration=generation;
-    busy = true;
+    controller?.abort();
+    if (document.hidden) return;
+    const startedGeneration=++generation;
+    controller=new AbortController();
     $('pulseRefresh').disabled = true;
     try {
       const n=generation;
       const response = await fetch(window.NexusServers?.metrics()||'/modules/pulse/api', {
         cache: 'no-store',
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.any([controller.signal,AbortSignal.timeout(8000)])
       });
       if (response.status === 401 || response.redirected) {
         location.replace('/login');
@@ -172,6 +173,7 @@
         data.stale || data.warnings?.length > 0
       );
     } catch (error) {
+      if(startedGeneration!==generation||error.name==='AbortError')return;
       state(
         (navigator.onLine
           ? error instanceof TypeError || error.name === 'TimeoutError'
@@ -186,16 +188,17 @@
         text('pulseNetwork', 'Показатели пока недоступны.');
       }
     } finally {
-      busy = false, generation=0;
-      $('pulseRefresh').disabled = false;
-      if (!document.hidden) timer = setTimeout(update, startedGeneration!==generation?0:5000);
+      if(startedGeneration===generation){
+        $('pulseRefresh').disabled = false;
+        if (!document.hidden) timer = setTimeout(update,5000);
+      }
     }
   }
-  document.addEventListener('nexus:server',()=>{generation++;history.length=0;last=null;render({server:{},disks:[],network:[],generated_at:Date.now(),stale:true});last=null;update();});
+  document.addEventListener('nexus:server',()=>{generation++;history.length=0;last=null;render({server:{},disks:[],network:[],generated_at:Date.now(),stale:true});last=null;text('pulseStatus','Получаем показатели…');$('pulseData').setAttribute('aria-busy','true');update();});
   $('pulseRefresh').addEventListener('click', update);
   document.addEventListener('visibilitychange', () => {
     clearTimeout(timer);
-    if (!document.hidden) update();
+    if (!document.hidden) update();else{generation++;controller?.abort();}
   });
   window.addEventListener('online', update);
   window.addEventListener('offline', () => state('Нет соединения. Показан последний замер.', true));

@@ -156,3 +156,25 @@ html[data-carbon-color] .background-ribbons{background-image:repeating-linear-gr
  .appearance-color{grid-template-columns:minmax(0,1fr) auto}
  .appearance-hue{grid-column:1/-1}
 }
+
+/* Compact settings: retain touch targets and input font sizes. */
+html body.settings-page .page { padding:12px; }
+html body .settings-heading { padding-bottom:12px; margin-bottom:12px; }
+html body .settings-layout { gap:18px; grid-template-columns:190px minmax(0,1fr); }
+html body .settings-sidebar { padding:10px 6px; }
+html body .settings-nav { gap:10px; }
+html body .settings-nav a { min-height:36px; padding:6px 9px; margin:0; gap:8px; }
+html body #settingsContent .settings-section-heading { min-height:36px; margin-bottom:10px; gap:8px; }
+html body #settingsContent p { margin:6px 0 10px; }
+html body #settingsContent label:not(:has([type=checkbox],[type=radio])) { gap:5px; margin-bottom:10px; }
+html body #settingsContent :is(.settings-card,.security-panel,.maintenance-panel,.chat-panel,.signal-panel) { padding:12px; }
+@media(min-width:801px) {
+  html body #settingsContent :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height:36px; padding:7px 9px; }
+}
+@media(max-width:800px) {
+  html body.settings-page .page { padding:8px; }
+  html body #settingsContent :is(.settings-card,.security-panel,.maintenance-panel,.chat-panel,.signal-panel) { padding:10px; }
+  html body #settingsContent[data-settings-section] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,button) { min-height:44px; }
+  html body #settingsContent[data-settings-section] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size:16px; }
+}
+@media(max-width:760px) { html body .settings-layout { grid-template-columns:minmax(0,1fr); gap:10px; } }

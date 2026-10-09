@@ -320,6 +320,7 @@ export const projectFiles = [
   "02-hub/modules/vpn/xray-client.mjs",
   '02-hub/src/agent-protocol.mjs',
   '02-hub/src/agents.mjs',
+  '02-hub/src/diagnostics.mjs',
   '02-hub/public/servers.css',
   '02-hub/public/servers.js',
   'host/agent.mjs',
