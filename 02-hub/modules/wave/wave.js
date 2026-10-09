@@ -556,8 +556,13 @@ if (typeof document !== 'undefined')
         actions.append(button('Редактировать профиль', () => editArtist(artist)));
         heading.append(actions);
       }
-      if (route.view === 'album' && album)
-        heading.append(button('Изменить релиз', () => editRelease(album)));
+      $('waveEditRelease')?.remove();
+      if (route.view === 'album' && album) {
+        const edit = button('Изменить релиз', () => editRelease(album), '');
+        edit.id = 'waveEditRelease';
+        edit.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 3 5 5-12 12-6 1 1-6Z M13 6l5 5"/></svg>';
+        $('waveUploadButton').after(edit);
+      }
       hero.append(heading);
       $('waveHero').append(hero);
       shown = tracks.filter(matches);

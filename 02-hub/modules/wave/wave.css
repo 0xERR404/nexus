@@ -1440,3 +1440,12 @@ html body #wavePage .wave-sidebar nav a[aria-current] { color:var(--accent); bac
 html body #wavePage :is(.wave-hero h2,.wave-section-head h3) { font-weight:600; letter-spacing:0; }
 html body #wavePage #waveSort { border:1px solid var(--line); border-radius:var(--button-radius); background:var(--button-bg); }
 html body #wavePage #waveCreate { border:1px solid var(--line); border-radius:var(--button-radius); background:var(--button-bg); }
+
+/* Compact music actions share one row and retain accessible labels. */
+html body #wavePage .wave-toolbar :is(#waveUploadButton,#waveEditRelease) {
+  display:inline-flex; align-items:center; justify-content:center;
+  flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0;
+  border-radius:var(--button-radius); line-height:1;
+}
+html body #wavePage .wave-toolbar #waveUploadButton { font-size:25px; font-weight:400; }
+#wavePage #waveEditRelease svg { width:20px; height:20px; pointer-events:none; }
