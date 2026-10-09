@@ -50,10 +50,6 @@
     }
 
     const overview = !selected();
-    for (const node of page.querySelectorAll(
-      '.trophy-search-row, #trophyCount, #trophyGames, #trophyAccounts, #trophyStatus, .trophy-sync-actions, #trophiesPage > details'
-    ))
-      node.hidden = overview;
     $('trophyAwardsSection').hidden = selected() !== 'ra';
     $('trophyYear').hidden = !overview;
   }
@@ -116,11 +112,10 @@
     const search = $('trophySearch').value.toLocaleLowerCase(),
       sort = $('trophySort').value,
       completion = $('trophyCompletion').value;
-    const games = selected()
-      ? snapshot.games
+    const games = snapshot.games
           .filter(
             (g) =>
-              g.provider === selected() &&
+              (!selected() || g.provider === selected()) &&
               g.title.toLocaleLowerCase().includes(search) &&
               (completion === 'all' || (completion === 'beaten' ? !!g.beaten : !g.beaten))
           )
@@ -134,8 +129,7 @@
             return (
               (sort === 'name' ? 0 : value(b) - value(a)) || a.title.localeCompare(b.title, 'ru')
             );
-          })
-      : [];
+          });
     const signature = JSON.stringify([games, search, completion, selected()]);
     if (signature !== renderedList) {
       renderedList = signature;
@@ -207,12 +201,11 @@
               ['HC', g.hard]
             ]
           : [['', g.soft]]) {
-          if (!(g.error && n === null))
-            stats.append(
+          stats.append(
               el(
                 'small',
                 n === null
-                  ? 'Прогресс недоступен'
+                  ? g.error ? 'Достижения недоступны' : 'Ожидает обновления'
                   : g.total === 0
                     ? 'Без достижений'
                     : `${label} ${n}/${g.total} · ${g.total ? Math.round((n / g.total) * 100) : 0}%`
@@ -231,21 +224,7 @@
         gameNodes.set(key, {signature, node: b});
         return b;
       });
-      const fragment = document.createDocumentFragment();
-      for (const [title, match] of [
-        ['С достижениями', (g) => g.total > 0],
-        ['Без достижений', (g) => g.available && g.total === 0],
-        [
-          'Без данных о достижениях',
-          (g) => Boolean(g.error) && !(g.total > 0) && !(g.available && g.total === 0)
-        ],
-        ['Ожидают обновления', (g) => !g.error && !(g.total > 0) && !(g.available && g.total === 0)]
-      ]) {
-        const rows = games.map((g, i) => (match(g) ? cards[i] : null)).filter(Boolean);
-        if (!rows.length) continue;
-        fragment.append(el('h2', title + ' · ' + rows.length, 'trophy-group-title'), ...rows);
-      }
-      $('trophyGames').replaceChildren(fragment);
+      $('trophyGames').replaceChildren(...cards);
       const ids = new Set(snapshot.games.map((g) => g.provider + ':' + g.id));
       for (const key of gameNodes.keys()) if (!ids.has(key)) gameNodes.delete(key);
 
@@ -395,8 +374,8 @@
         el(
           'p',
           current.available
-            ? 'Достижений по этому фильтру нет.'
-            : 'Дождись успешной загрузки игры.',
+            ? current.total === 0 ? 'У этой игры нет достижений.' : 'Достижений по этому фильтру нет.'
+            : current.error ? 'Данные достижений не загрузились. Повтори обновление библиотеки.' : 'Данные достижений ещё не загружены.',
           'trophy-muted'
         )
       );

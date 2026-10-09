@@ -58,7 +58,9 @@ export function envelope(v,node,now=Date.now()){
   const connections=v.connections.map(connection);check(connections.every(c=>c.node===node));
   const ports=connections.map(c=>(c.profile==='hysteria2'?'udp':'tcp')+c.port);check(new Set(ports).size===ports.length,'Порты подключений пересекаются');
   const users=v.users.map(u=>{check(id(u.id)&&id(u.uuid)&&/^[A-Za-z0-9_-]{32,64}$/.test(u.password)&&integer(u.expires)&&integer(u.ceiling)&&Array.isArray(u.connections)&&u.connections.every(x=>connections.some(c=>c.id===x)));return {...u};});
-  return {...v,connections,users,settings:serverSettings(v.settings)};
+  const retiredUsers=v.retiredUsers??[];
+  check(Array.isArray(retiredUsers)&&retiredUsers.length<=100&&retiredUsers.every(id)&&new Set(retiredUsers).size===retiredUsers.length&&!retiredUsers.some(key=>users.some(u=>u.id===key)),'Неверный список удалённых пользователей');
+  return {...v,connections,users,retiredUsers,settings:serverSettings(v.settings)};
 }
 export function serverConfig(bundle,active=bundle.users,certDirectory='/var/lib/nexus404-vpn/certs'){
   const inbounds=bundle.connections.filter(c=>c.enabled&&active.some(u=>u.connections.includes(c.id))).map(c=>{

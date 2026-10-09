@@ -322,6 +322,9 @@
   readingWorkspace.id = 'articleReadingWorkspace';
   readingWorkspace.className = 'content-dialog';
   readingWorkspace.setAttribute('aria-label', 'Чтение статьи');
+  $('articleReadBody').tabIndex = 0;
+  $('articleReadBody').setAttribute('role', 'region');
+  $('articleReadBody').setAttribute('aria-labelledby', 'articleReadTitle');
   const readingClose = node('button', '×', 'dialog-close');
   readingClose.type = 'button';
   readingClose.setAttribute('aria-label', 'Закрыть');
@@ -428,11 +431,15 @@
     $('articleEditor').hidden = true;
     $('articleReading').hidden = false;
     $('articleReadTitle').textContent = article.title || 'Без названия';
+    $('articleReadTitle').title = article.title || 'Без названия';
     $('articleReadBody').textContent = 'Загрузка…';
+    $('articleReadBody').scrollTop = 0;
     if (!readingWorkspace.open) readingWorkspace.showModal();
+    readingWorkspace.scrollTop = 0;
     try {
       const result = await request('/preview', {body: article.body});
       $('articleReadBody').innerHTML = result.html;
+      $('articleReadBody').scrollTop = 0;
     } catch (e) {
       $('articleReadBody').textContent =
         'Не удалось открыть текст. Можно перейти к редактированию.';

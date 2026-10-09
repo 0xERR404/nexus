@@ -44,31 +44,27 @@
     });
     draw('homeContinue',data.reader,(box,value)=>{
       const books=Array.isArray(value)?value:value?.items;
-      box.replaceChildren();if(!books?.length){box.append(link('Выбрать книгу','/modules/reader/'));return;}
+      box.replaceChildren();if(!books?.length){box.append(node('p','Нет начатых книг','home-empty'));return;}
       for(const book of books.slice(0,1)){const a=link('',`/modules/reader/?book=${encodeURIComponent(book.id)}`);a.className='home-recent';
         if(book.cover){const img=node('img');img.src='/modules/reader/cover/'+encodeURIComponent(book.id);img.alt='';img.loading='lazy';a.append(img);}
         const text=node('div'),progress=node('progress');progress.max=100;progress.value=book.progress;progress.setAttribute('aria-label','Прочитано');
         text.append(node('strong',book.title),node('small',[book.author,book.progress<1?'<1%':`${Math.round(book.progress)}%`].filter(Boolean).join(' · ')),progress);a.append(text);box.append(a);}
     });
     draw('homeChat',data.chat,(box,c)=>{
-      box.replaceChildren();if(!c){box.append(node('p','Начни новый разговор','home-empty'));$('homeChatLink').href='/modules/chat/';return;}
+      const card=box.closest('[data-card-link]'),href=c?`/modules/chat/?provider=${encodeURIComponent(c.provider)}&topic=${encodeURIComponent(c.id)}`:'/modules/chat/';
+      card.dataset.cardLink=href;card.querySelector('.home-card-title a').href=href;
+      box.replaceChildren();if(!c){box.append(node('p','Начни новый разговор','home-empty'));return;}
       const message=node('div','','home-chat-message'),avatar=node('img');avatar.src='/mark.svg';avatar.alt='';avatar.className='home-chat-avatar';message.append(avatar,node('p',c.text||'Открой сохранённый разговор.','home-chat-preview'));box.append(node('strong',c.title),message);
-      $('homeChatLink').href=`/modules/chat/?provider=${encodeURIComponent(c.provider)}&topic=${encodeURIComponent(c.id)}`;
     });
     draw('homeFiles',data.storage,(box,value)=>{
       const files=Array.isArray(value)?value:value?.items;
       if($('homeFilesCount'))$('homeFilesCount').textContent=value?.items?`${Math.min(files.length,3)} из ${value.total}`:'';
-      box.replaceChildren();if(!files?.length){box.append(link('Добавить файлы','/modules/storage/'));return;}
+      box.replaceChildren();if(!files?.length){box.append(node('p','Пока нет файлов','home-empty'));return;}
       for(const file of files.slice(0,3)){const a=link('',`/modules/storage/?file=${encodeURIComponent(file.id)}`);a.className='home-file';
         const text=node('div');text.append(node('strong',file.name),node('small',`${Math.max(1,Math.round(file.size/1024))} КБ`));a.append(symbol('file'),text,node('span','›'));box.append(a);}
     });
 
   }
-  $('homeChatStart')?.addEventListener('click',()=>{
-    const box=$('homeChatWidget');if(!box.firstChild){const f=node('iframe');f.className='home-chat-widget';f.title='Сократ';f.src='/modules/chat/?_view=1&widget=1';f.allow='clipboard-write';box.append(f);}
-    box.hidden=!box.hidden;$('homeChat').hidden=!box.hidden;$('homeChatStart').textContent=box.hidden?'Открыть чат здесь':'Свернуть чат';
-  });
-  addEventListener('message',e=>{if(e.origin!==location.origin||e.source!==$('homeChatWidget')?.querySelector('iframe')?.contentWindow)return;if(e.data?.type==='nexus:navigate'){if(parent!==window)parent.postMessage(e.data,location.origin);else location.href=e.data.url;}});
   let timer,controller,busy=false,stopped=false;
   async function refresh(){
     clearTimeout(timer);if(busy||stopped||document.hidden||navigator.onLine===false)return;
@@ -79,6 +75,5 @@
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(timer);controller?.abort();}else void refresh();});
   addEventListener('online',refresh);addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);controller?.abort();});addEventListener('pageshow',()=>{stopped=false;void refresh();});
-  Nexus.beforeLeave?.(() => $('homeChatWidget')?.querySelector('iframe')?.contentWindow.Nexus?.prepareLeave?.());
   void refresh();
 })();

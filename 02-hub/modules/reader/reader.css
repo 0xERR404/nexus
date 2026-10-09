@@ -229,6 +229,12 @@
   overflow-anchor: none;
   scroll-behavior: auto;
   scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+#readerReading #readerViewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 #readerReading .reader-text {
   box-sizing: border-box;
@@ -519,7 +525,7 @@ html body #readerBooks :is(.reader-book-open, .reader-card-edit):focus-visible {
     inset:16px auto 16px 50%; transform:translateX(-50%);
     width:min(800px, calc(100% - 64px)); height:calc(100% - 32px);
     box-sizing:border-box; border:1px solid var(--line-strong); border-radius:14px;
-    box-shadow:var(--glass-edge); scrollbar-gutter:stable;
+    box-shadow:var(--glass-edge); scrollbar-gutter:auto;
   }
   html body #readerReading #readerViewport[data-width='wide'] { width:min(1080px, calc(100% - 64px)); }
   html body #readerReading #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) {

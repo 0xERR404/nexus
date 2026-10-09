@@ -19,8 +19,8 @@
 @media(max-width:600px){.server-report-controls{grid-template-columns:minmax(0,1fr)}.server-report-download{width:100%}}
 html body [data-servers=pulse] { min-width:0; margin-bottom:8px; }
 html body [data-servers=pulse] .server-tabs-tools { display:block; margin-bottom:4px; }
-html body [data-servers=pulse] .server-tabs { display:flex; flex-wrap:nowrap; gap:4px; max-width:100%; padding:5px; overflow-x:auto; overscroll-behavior-x:contain; border:1px solid var(--line); border-radius:10px; background:var(--surface); scrollbar-width:thin; }
-html body [data-servers=pulse] .server-tabs button { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; min-width:76px; max-width:260px; min-height:38px; padding:6px 12px; border-radius:7px; font-size:13px; }
+html body [data-servers=pulse] .server-tabs { display:flex; flex-wrap:nowrap; gap:8px; max-width:100%; padding:3px; margin:-3px; overflow-x:auto; overscroll-behavior-x:contain; border:0; border-radius:0; background:transparent; scrollbar-width:thin; }
+html body [data-servers=pulse] .server-tabs button { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; min-width:76px; max-width:260px; min-height:38px; padding:6px 12px; border:1px solid var(--line); border-radius:var(--button-radius,8px); background:var(--button-bg); font-size:13px; }
 html body [data-servers=pulse] .server-tabs button[aria-selected=true] { color:var(--accent); border-color:var(--accent); background:var(--button-bg); }
 html body [data-servers=pulse] .server-tab-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 html body [data-servers=pulse] .server-tab-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); flex-shrink:0; }

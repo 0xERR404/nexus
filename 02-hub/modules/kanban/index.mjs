@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {modulePage} from '../../src/views.mjs';
 import {Kanban, fail} from './store.mjs';
+import {startSundayArchive} from './archive.mjs';
 export const store = new Kanban(path.join(process.env.DATA_DIR ?? '/app/data', 'kanban'));
+let stopArchive;
+export function start() { stopArchive ??= startSundayArchive(store); }
+export function close() { stopArchive?.(); stopArchive = undefined; if (store.db) {store.db.close(); store.db = undefined; store.attached.clear();} }
 const assets =
   '<link rel="stylesheet" href="/modules/kanban/kanban.css"><script src="/modules/kanban/kanban.js" defer></script>';
 const page = `${assets}<section id="kanban"><div class="kb-tools"><select id="kbBoard" aria-label="Доска"></select><button id="kbNewBoard">＋ Доска</button><button id="kbNewColumn">＋ Колонка</button><button id="kbRefresh">Обновить</button></div><div class="kb-tools"><input id="kbSearch" type="search" placeholder="Поиск"><input id="kbTag" placeholder="Метка"><select id="kbPriority"><option value="">Любой приоритет</option><option value="0">Обычный</option><option value="1">Низкий</option><option value="2">Высокий</option><option value="3">Срочный</option></select><label><input id="kbArchive" type="checkbox"> Архив</label></div><p id="kbStatus" role="status"></p><div id="kbColumns"></div></section>

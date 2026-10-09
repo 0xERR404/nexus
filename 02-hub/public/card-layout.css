@@ -159,7 +159,7 @@ html body #homeDashboard .home-open,html body #homeDashboard .home-add { width:4
  html body #homeDashboard .module-stat { flex-direction:row; justify-content:space-between; align-items:center; }
 }
 /* Navigation and filters are visible work surfaces, not loose controls on the scene. */
-html body :is(.vpn-tabs,.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); gap:10px; }
+html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); gap:10px; }
 html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) { flex-wrap:wrap; min-width:0; }
 html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) > :is(input,select,label) { min-width:0; max-width:100%; }
 html body :is(.activity-tabs,.trophy-tabs) { display:flex; flex-wrap:wrap; gap:8px; }
@@ -269,7 +269,7 @@ html.embedded-page:not(.chat-widget) body { padding:10px max(var(--page-gutter),
 html body .page > .page-foot { margin-top:12px; padding-top:8px; }
 html body :is(.section-line,.content-heading) { margin-bottom:10px; padding-bottom:8px; }
 html body :is(.module-heading,.home-card-title) { min-height:32px; margin-bottom:8px; padding-bottom:6px; gap:8px; }
-html body :is(.vpn-tabs,.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:8px; gap:6px; margin-bottom:10px; }
+html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:8px; gap:6px; margin-bottom:10px; }
 html body :is(.vpn-grid,.vpn-fields,.vpn-checks,.vpn-toolbar,.vpn-actions,.server-tools,.project-toolbar,.cinema-toolbar,.balance-toolbar,.wave-toolbar) { gap:8px; }
 html body :is(.vpn-card,.server-manager,.article-card,.project-card,.activity-card,.storage-row,.storage-folder-card) { padding:12px; }
 html body .vpn-card p { margin-block:6px; }
@@ -425,4 +425,65 @@ html body #homeDashboard[data-group] .home-card-title .ui-icon {
 }
 @media(max-width:800px) {
   html body #homeDashboard[data-group] .home-card-title h2 { font-size:14px; }
+}
+
+/* Select pickers share the same glass and palette as the rest of the hub. */
+html body select { accent-color:var(--accent); }
+html body select :is(option,optgroup) { color:var(--text); background:transparent; }
+html body select option:checked { background:var(--button-active); color:var(--accent); }
+@supports (appearance:base-select) {
+  html body select:not([multiple]):not([size]),
+  html body select:not([multiple])[size='1'],
+  html body select::picker(select) { appearance:base-select; }
+  html body select::picker(select) {
+    border:1px solid var(--line-strong); border-radius:10px; padding:4px;
+    background:var(--glass-light,linear-gradient(transparent,transparent)),var(--dialog-glass);
+    color:var(--text); box-shadow:0 8px 28px #0005,var(--glass-edge,0 0 transparent);
+    backdrop-filter:blur(var(--glass-blur,16px)); -webkit-backdrop-filter:blur(var(--glass-blur,16px));
+    max-height:min(360px,65dvh); max-width:calc(100vw - 16px);
+    overflow:auto; overscroll-behavior:contain;
+    scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
+  }
+  html body select option {
+    min-height:32px; padding:6px 10px; border-radius:6px; gap:8px;
+    font:inherit; white-space:normal; overflow-wrap:anywhere;
+  }
+  html body select option:not(:disabled):hover { background:var(--button-hover); }
+  html body select option:checked { background:var(--button-active); color:var(--accent); }
+  html body select option:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
+  html body select option:disabled { opacity:.45; }
+  html body select option::checkmark { color:var(--accent); }
+  html body select::picker-icon { color:var(--accent); }
+  @media(max-width:800px) { html body select option { min-height:44px; padding:10px; } }
+  @media(prefers-reduced-transparency:reduce) {
+    html body select::picker(select) { background:var(--dialog-bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+  }
+}
+html body .nexus-select-menu {
+  position:fixed; inset:auto; margin:0; z-index:2147483647;
+  padding:4px; border:1px solid var(--line-strong); border-radius:10px;
+  max-height:min(360px,65dvh); max-width:calc(100vw - 16px); overflow:auto;
+  background:var(--glass-light,linear-gradient(transparent,transparent)),var(--dialog-glass);
+  color:var(--text); box-shadow:0 8px 28px #0005,var(--glass-edge,0 0 transparent);
+  backdrop-filter:blur(var(--glass-blur,16px)); -webkit-backdrop-filter:blur(var(--glass-blur,16px));
+  font:14px/1.4 var(--sans); text-align:left; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
+}
+html body .nexus-select-menu:focus { outline:none; }
+html body .nexus-select-option {
+  display:flex; gap:8px; align-items:center; min-height:32px; padding:6px 10px;
+  border-radius:6px; cursor:pointer; overflow-wrap:anywhere;
+}
+html body .nexus-select-option::before { content:''; width:1em; flex:none; }
+html body .nexus-select-option[aria-selected=true] { background:var(--button-active); color:var(--accent); }
+html body .nexus-select-option[aria-selected=true]::before { content:'✓'; }
+html body .nexus-select-option[data-active] { outline:1px solid var(--accent); outline-offset:-1px; }
+html body .nexus-select-option[aria-disabled=true] { opacity:.45; cursor:default; }
+html body .nexus-select-group { padding:8px 10px 4px; font-size:12px; color:var(--muted); }
+@media(max-width:800px) {
+  html body .nexus-select-menu { font-size:16px; }
+  html body .nexus-select-option { min-height:44px; padding:10px; }
+}
+@media(prefers-reduced-transparency:reduce) {
+  html body .nexus-select-menu { background:var(--dialog-bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
 }

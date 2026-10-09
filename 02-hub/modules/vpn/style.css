@@ -7,7 +7,7 @@
 
 /* Argo owns its density: shared card styles must not separate related fields. */
 /* The module fills the shared page; compact spacing is applied inside it. */
-html body #vpn .vpn-tabs { gap:4px; padding:5px; margin-bottom:8px; }
+html body #vpn .vpn-tabs { gap:8px; padding:0; margin-bottom:8px; }
 html body #vpn .vpn-toolbar { margin-bottom:8px; gap:6px; }
 html body #vpn #vpnStatus:empty, html body #vpn #vpnFormError:empty { display:none; }
 html body #vpn .vpn-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:8px; align-items:start; }
@@ -80,9 +80,9 @@ html body #vpnDialog .vpn-qr { width:160px; margin:0 auto; }
 html body .section-line:has(>.vpn-header-controls) { flex-wrap:wrap; gap:10px 16px; }
 html body .section-line:has(>.vpn-header-controls)>h1 { margin:0; flex:none; }
 html body .vpn-header-controls { display:flex; flex:1; min-width:0; align-items:center; gap:10px; flex-wrap:wrap; }
-html body .vpn-header-controls .vpn-tabs { display:flex; flex-wrap:nowrap; gap:3px; padding:3px; margin:0; min-width:0; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+html body .vpn-header-controls .vpn-tabs { display:flex; flex-wrap:nowrap; gap:8px; padding:0; margin:0; min-width:0; background:transparent; border:0; border-radius:0; }
 html body .vpn-header-controls button { min-height:36px; margin:0; padding:6px 10px; font-size:13px; line-height:1.3; white-space:nowrap; }
-html body .vpn-header-controls .vpn-tabs button { flex:0 1 auto; border-color:transparent; background:transparent; }
+html body .vpn-header-controls .vpn-tabs button { flex:0 1 auto; border:1px solid var(--line); border-radius:var(--button-radius,8px); background:var(--button-bg); }
 html body .vpn-header-controls .vpn-tabs button[aria-pressed=true] { color:var(--accent); border-color:var(--accent); background:var(--button-bg); }
 html body #vpnHeaderActions { margin:0 0 0 auto; display:flex; align-items:stretch; gap:6px; }
 html body #vpnHeaderActions button { min-height:36px; }
@@ -99,4 +99,20 @@ html body .vpn-header-controls .vpn-tabs button:focus-visible { outline-offset:1
 @media(max-width:540px) {
  html body #vpnHeaderActions:has(button+button) { grid-column:1/-1; grid-row:3; width:100%; margin:0; }
  html body #vpnHeaderActions:has(button+button) button { flex:1; min-width:0; }
+}
+
+/* Icon actions apply only to VPN user cards. */
+html body #vpn .vpn-user-actions { flex-wrap:wrap; gap:6px; }
+html body #vpn .vpn-user-actions .vpn-icon-button {
+  display:inline-flex; align-items:center; justify-content:center;
+  flex:0 0 36px; width:36px; min-width:36px; height:36px; min-height:36px;
+  padding:0; margin:0;
+}
+html body #vpn .vpn-icon-button svg {
+  display:block; width:18px; height:18px; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; pointer-events:none;
+}
+@media(max-width:800px) {
+  html body #vpn .vpn-user-actions .vpn-icon-button { flex-basis:44px; width:44px; min-width:44px; height:44px; min-height:44px; }
+  html body #vpn .vpn-icon-button svg { width:20px; height:20px; }
 }

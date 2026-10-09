@@ -15,8 +15,14 @@ export function initialSettings({readFile=read}={}) {
   if(s){const [m,h]=s.trim().split(/\s+/);if(/^\d+$/.test(m)&&+m<60&&/^\d+$/.test(h)&&+h<24)c.securityReboot={enabled:true,time:h.padStart(2,'0')+':'+m.padStart(2,'0')};}
   return maintenanceConfig(c);
 }
-export function publish(state,{control=CONTROL,base=BASE,now=Date.now}={}) {
-  atomic(control+'/status/status.json',JSON.stringify({...state,heartbeat:now(),installed:fs.existsSync(base+'/installed.flag'),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}),0o644);
+export function hostBoot({readFile=read}={}) {
+  const id=readFile('/proc/sys/kernel/random/boot_id').trim();
+  const seconds=Number(/^btime (\d+)$/m.exec(readFile('/proc/stat'))?.[1]);
+  return /^[a-f0-9-]{36}$/.test(id)&&Number.isSafeInteger(seconds)&&seconds>0
+    ? {id,startedAt:seconds*1000} : null;
+}
+export function publish(state,{control=CONTROL,base=BASE,now=Date.now,boot=hostBoot}={}) {
+  atomic(control+'/status/status.json',JSON.stringify({...state,heartbeat:now(),installed:fs.existsSync(base+'/installed.flag'),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,boot:boot()}),0o644);
 }
 export function initializeControl({base=BASE,control=CONTROL,initial=initialSettings(),write=atomic,remove=fs.rmSync,ownership=true}={}) {
   for(const [dir,mode] of [[control,0o755],[control+'/requests',0o700],[control+'/status',0o755]]){

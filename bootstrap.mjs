@@ -374,6 +374,7 @@ export const projectFiles = [
   '02-hub/modules/gallery/index.mjs',
   '02-hub/modules/gallery/manifest.json',
   '02-hub/modules/kanban/index.mjs',
+  '02-hub/modules/kanban/archive.mjs',
   '02-hub/modules/kanban/kanban.css',
   '02-hub/modules/kanban/kanban.js',
   '02-hub/modules/kanban/manifest.json',

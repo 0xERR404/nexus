@@ -35,6 +35,7 @@ export async function handle({request,path:route,user,searchParams,authorized=()
       if(route==='/api/config'){const a=agents.get(v.id);check(!a.revoked,'Доступ агента отозван');return Response.json(store().saveConfig(v.id,v.config,v.version));}
       if(route==='/api/connection'){const a=agents.get(v.value?.node);check(!a.revoked,'Доступ агента отозван');return Response.json(store().saveConnection(v.value,v.version));}
       if(route==='/api/user')return Response.json(store().saveUser(v.value,v.version));
+      if(route==='/api/user/delete')return Response.json(store().deleteUser(v.id,v.version));
       if(route==='/api/rotate')return Response.json(store().rotate(v.id,v.version,{credentials:v.credentials===true}));
       if(route==='/api/routing')return Response.json(store().saveRouting(v.value,v.version));
       if(route==='/api/refresh'){await refreshSources(store());if(!authorized())return Response.json({error:'Нужен вход'},{status:401});return Response.json({ok:true});}

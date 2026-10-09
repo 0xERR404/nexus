@@ -23,6 +23,7 @@ export class Kanban {
     this.db = new DatabaseSync(file);
     this.db
       .exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;
+      CREATE TABLE IF NOT EXISTS automation(id TEXT PRIMARY KEY,state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS boards(id TEXT PRIMARY KEY,name TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1);
       CREATE TABLE IF NOT EXISTS columns(id TEXT PRIMARY KEY,board TEXT NOT NULL REFERENCES boards(id),name TEXT NOT NULL,position INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS cards(id TEXT PRIMARY KEY,board TEXT NOT NULL REFERENCES boards(id),column_id TEXT NOT NULL REFERENCES columns(id),title TEXT NOT NULL,description TEXT NOT NULL,checklist TEXT NOT NULL,tags TEXT NOT NULL,priority INTEGER NOT NULL,due INTEGER,remind INTEGER,project TEXT,attachments TEXT NOT NULL,done INTEGER NOT NULL DEFAULT 0,archived INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1,updated INTEGER NOT NULL);`);
@@ -37,6 +38,46 @@ export class Kanban {
       this.db.exec('ROLLBACK');
       throw e;
     }
+  }
+  enableSundayArchive(now = Date.now()) {
+    this.load();
+    this.db.prepare('INSERT OR IGNORE INTO automation(id,state) VALUES(?,?)')
+      .run('sunday-archive', JSON.stringify({enabledAt:now}));
+  }
+  archiveAfterBoot(status, now = Date.now()) {
+    const boot = status?.boot;
+    // Only the host's fresh, read-only maintenance status can trigger this job.
+    if (!boot || !ID.test(boot.id) || !Number.isSafeInteger(boot.startedAt) || boot.startedAt <= 0 ||
+        boot.startedAt > now || !Number.isSafeInteger(status.heartbeat) ||
+        status.heartbeat < boot.startedAt || now - status.heartbeat > 180000 ||
+        status.heartbeat > now + 5000 || typeof status.timezone !== 'string') return 0;
+    let sunday;
+    try {
+      sunday = new Intl.DateTimeFormat('en-US', {timeZone:status.timezone,weekday:'short'})
+        .format(boot.startedAt) === 'Sun';
+    } catch { return 0; }
+    this.load();
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT state FROM automation WHERE id=?').get('sunday-archive');
+      if (!row) return 0;
+      const state = JSON.parse(row.state);
+      if (state.bootId === boot.id || boot.startedAt <= (state.bootStartedAt ?? 0)) return 0;
+      let count = 0;
+      if (sunday && boot.startedAt > state.enabledAt) {
+        const ready = this.db.prepare(`SELECT c.id,c.done,col.name FROM cards c
+          JOIN columns col ON col.id=c.column_id AND col.board=c.board
+          WHERE c.archived=0 AND c.updated<?`).all(boot.startedAt)
+          .filter(c => c.done === 1 || c.name.normalize('NFKC').trim().toLocaleLowerCase('ru-RU') === 'готово');
+        const update = this.db.prepare('UPDATE cards SET archived=1,done=1,version=version+1,updated=? WHERE id=?');
+        for (const card of ready) count += update.run(now,card.id).changes;
+        state.lastArchive = {time:now,count,bootId:boot.id,startedAt:boot.startedAt,timezone:status.timezone};
+      }
+      // Commit the checkpoint with the cards, so a crash cannot partially replay the job.
+      state.bootId = boot.id;
+      state.bootStartedAt = boot.startedAt;
+      this.db.prepare('UPDATE automation SET state=? WHERE id=?').run(JSON.stringify(state),'sunday-archive');
+      return count;
+    });
   }
   attach(kind) {
     this.load();

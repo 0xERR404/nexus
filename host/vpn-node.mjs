@@ -90,6 +90,8 @@ export class VPNNode {
         await this.stop();this.reportState=this.bundle?'expired':'stopped';this.error='';
       }else{
         await this.apply(this.bundle);this.reportState='applied';this.error='';this.set('applied',this.bundle.revision);
+        // Purge counters only after credentials have been removed from the running core.
+        for(const user of this.bundle.retiredUsers??[]){this.db.prepare('DELETE FROM usage WHERE user=?').run(user);delete this.last[user];}
       }
     }catch(error){
       this.reportState='rejected';this.error=error.vpnTLS?error.message:this.phase==='request'?'Задание VPN: '+String(error.message).slice(0,160):{validate:'Проверка конфигурации, версии ядра или TLS не пройдена.',start:'Ядро не запустилось или его локальный API недоступен.',stats:'Учёт трафика недоступен. Передача остановлена.'}[this.phase]??'Неверное или просроченное задание VPN.';

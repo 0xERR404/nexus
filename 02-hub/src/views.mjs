@@ -80,8 +80,8 @@ export function dashboard(username, modules, groupId = 'overview', embedded = fa
   };
   const contents=[
     widget('pulse','<div class="home-atlas-layout"><div class="home-server-data"><div id="homeServer" class="home-metrics"></div><div data-pulse-history></div></div></div>','home-full'),
-    widget('kanban','<div id="homeTasks"></div><p id="homeTasksCount" class="home-meta"></p><a class="home-action home-all-tasks" href="/modules/kanban/">Все задачи →</a>'),
-    widget('chat','<div id="homeChat"></div><div class="home-chat-actions"><button id="homeChatStart" type="button">Написать сообщение <span aria-hidden="true">↗</span></button><a class="home-action" id="homeChatLink" href="/modules/chat/">На весь экран →</a></div><div id="homeChatWidget" hidden></div>'),
+    widget('kanban','<div id="homeTasks"></div><p id="homeTasksCount" class="home-meta"></p>'),
+    widget('chat','<div id="homeChat"></div>'),
     widget('statistics','<div id="homeTime"></div>'),
     widget('balance','<p class="home-subtitle">Баланс счетов</p><div class="module-summary home-balance" data-summary="balance" data-state="loading"></div>'),
     widget('reader','<div id="homeContinue"></div>'),

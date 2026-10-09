@@ -26,6 +26,7 @@ export function steamId(input) {
   return value;
 }
 export function steamImage(value, id) {
+  if (!/^[1-9]\d*$/.test(String(id)) || !Number.isSafeInteger(Number(id))) return '';
   try {
     const u = new URL(value);
     const hosts = [
@@ -313,7 +314,10 @@ export class Provider {
           if (!entry || typeof entry.success !== 'boolean')
             throw fail('Данные магазина Steam временно недоступны');
           const d = entry.success && entry.data;
-          if (!d || String(d.steam_appid) !== String(id)) return {};
+          if (!d || !integer(d.steam_appid) || d.steam_appid === 0) return {};
+          // Steam may share a store page between separate library applications.
+          // Keep the requested ID for ownership and achievements.
+          const storeAppId = String(d.steam_appid);
           const categories =
             Array.isArray(d.categories) &&
             d.categories.length &&
@@ -325,7 +329,7 @@ export class Provider {
               : categories
                 ? false
                 : null;
-          return {data: d, storeCover: steamImage(d.header_image, id), hasAchievements};
+          return {data: d, storeAppId, storeCover: steamImage(d.header_image, storeAppId), hasAchievements};
         })
         .catch((e) => {
           if (this.storeJobs.get(id)?.task === task) this.storeJobs.delete(id);
@@ -348,7 +352,7 @@ export class Provider {
             ? price.initial / 100
             : null,
       priceAt: this.now(),
-      ...(info.storeCover ? {storeCover: info.storeCover} : {})
+      ...(info.storeCover ? {storeCover: info.storeCover, storeAppId: info.storeAppId} : {})
     };
   }
   async game(game, cached = {}, {achievementsOnly = false} = {}) {

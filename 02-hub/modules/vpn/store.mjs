@@ -25,6 +25,7 @@ export class VPN {
     CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,revision INTEGER DEFAULT 1,settings TEXT DEFAULT '{}',status TEXT,ledger TEXT,seq INTEGER DEFAULT 0,seen INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS usage(node TEXT,user TEXT,up INTEGER DEFAULT 0,down INTEGER DEFAULT 0,ceiling INTEGER DEFAULT 0,PRIMARY KEY(node,user));
     CREATE TABLE IF NOT EXISTS history(node TEXT,user TEXT,hour INTEGER,up INTEGER,down INTEGER,PRIMARY KEY(node,user,hour));
+    CREATE TABLE IF NOT EXISTS retired_users(node TEXT,user TEXT,PRIMARY KEY(node,user));
     CREATE TABLE IF NOT EXISTS deployments(node TEXT,revision INTEGER,value TEXT,PRIMARY KEY(node,revision));
     CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY,value TEXT);
     CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value INTEGER);
@@ -73,17 +74,27 @@ export class VPN {
     }
     return this.put('user',u);
   });}
+  deleteUser(key,version){return this.change(version,()=>{
+    check(id(key));this.get('user',key);
+    // Keep only node/user IDs to recognize delayed reports, never credentials or personal data.
+    this.db.prepare('INSERT OR IGNORE INTO retired_users SELECT node,user FROM usage WHERE user=?').run(key);
+    this.db.prepare('DELETE FROM history WHERE user=?').run(key);
+    this.db.prepare('DELETE FROM usage WHERE user=?').run(key);
+    this.db.prepare("DELETE FROM objects WHERE kind='user' AND id=?").run(key);
+    return {ok:true};
+  });}
   rotate(key,version,{credentials=false}={}){return this.change(version,()=>{const u=this.get('user',key);u.token=secret();if(credentials){u.uuid=randomUUID();u.password=secret();}this.put('user',u);return {ok:true};});}
   saveRouting(value,version){return this.change(version,()=>{const r=routing({...value,id:value.id||randomUUID()});r.sources=r.sources.map(s=>({...s,id:s.id??randomUUID()}));for(const g of r.groups)for(const c of g.connections)this.get('connection',c);for(const rule of r.rules)if(id(rule.target)&&!r.groups.some(g=>g.id===rule.target))this.get('connection',rule.target);return this.put('routing',r);});}
   total(user){const r=this.db.prepare('SELECT COALESCE(sum(up),0) up,COALESCE(sum(down),0) down FROM usage WHERE user=?').get(user);return {...r,total:r.up+r.down};}
   active(u){return u.enabled&&(!u.expires||u.expires>this.now())&&(!u.limit||this.total(u.id).total<u.limit);}
   report(node,v){
-    check(v&&v.core===CORE_VERSION&&id(v.ledger)&&integer(v.seq)&&integer(v.time)&&v.time<=this.now()+30000&&Array.isArray(v.usage)&&v.usage.length<=100,'Неверный отчёт ноды');
+    const retired=new Set(this.db.prepare('SELECT user FROM retired_users WHERE node=?').all(node).map(r=>r.user));
+    check(v&&v.core===CORE_VERSION&&id(v.ledger)&&integer(v.seq)&&integer(v.time)&&v.time<=this.now()+30000&&Array.isArray(v.usage)&&v.usage.length<=100+retired.size,'Неверный отчёт ноды');
     const n=this.db.prepare('SELECT * FROM nodes WHERE id=?').get(node);if(!n)return;
     check(!n.ledger||n.ledger===v.ledger,'Локальный журнал ноды заменён: требуется восстановление базы');
     if(v.seq<=n.seq&&n.ledger)return;
-    const rows=v.usage.map(r=>{check(id(r.user)&&integer(r.up)&&integer(r.down)&&integer(r.up+r.down));this.get('user',r.user);const known=this.db.prepare('SELECT * FROM usage WHERE node=? AND user=?').get(node,r.user);check(known,'Статистика чужого пользователя');check(r.up>=known.up&&r.down>=known.down,'Счётчик ноды уменьшился');return {r,known};});
-    check(new Set(rows.map(x=>x.r.user)).size===rows.length);
+    check(new Set(v.usage.map(r=>r?.user)).size===v.usage.length);
+    const rows=v.usage.flatMap(r=>{check(r&&id(r.user)&&integer(r.up)&&integer(r.down)&&integer(r.up+r.down));if(retired.has(r.user))return [];this.get('user',r.user);const known=this.db.prepare('SELECT * FROM usage WHERE node=? AND user=?').get(node,r.user);check(known,'Статистика чужого пользователя');check(r.up>=known.up&&r.down>=known.down,'Счётчик ноды уменьшился');return [{r,known}];});
     for(const {r,known} of rows){const up=r.up-known.up,down=r.down-known.down;this.db.prepare('UPDATE usage SET up=?,down=? WHERE node=? AND user=?').run(r.up,r.down,node,r.user);if(up||down)this.db.prepare('INSERT INTO history VALUES(?,?,?,?,?) ON CONFLICT(node,user,hour) DO UPDATE SET up=up+excluded.up,down=down+excluded.down').run(node,r.user,Math.floor(v.time/3600000),up,down);}
     const status={core:v.core,time:v.time,complete:v.complete===true,revision:integer(v.revision)?v.revision:0,state:['applied','rejected','expired','stopped'].includes(v.state)?v.state:'stopped',error:typeof v.error==='string'?v.error.slice(0,200):'',running:v.running===true};
     if(v.tls&&Array.isArray(v.tls.names))status.tls={ready:v.tls.ready===true,names:v.tls.names.filter(x=>typeof x==='string'&&x.length<=253&&/^[a-z0-9.:-]+$/i.test(x)).slice(0,32),expires:integer(v.tls.expires)?v.tls.expires:0};
@@ -116,7 +127,9 @@ export class VPN {
     this.db.prepare('INSERT OR REPLACE INTO deployments VALUES(?,?,?)').run(node,n.revision,JSON.stringify(connections));
     this.db.prepare('DELETE FROM deployments WHERE node=? AND revision<?').run(node,n.revision-32);
     const created=this.now();
-    return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created,expires:created+LEASE_MS,connections,users,settings:JSON.parse(n.settings)};
+    const reported=report?new Set(report.usage.map(r=>r.user)):null;
+    const retiredUsers=this.db.prepare('SELECT user FROM retired_users WHERE node=?').all(node).map(r=>r.user).filter(key=>!reported||reported.has(key)).slice(0,100);
+    return {node,id:randomUUID(),revision:n.revision,core:CORE_VERSION,created,expires:created+LEASE_MS,connections,users,retiredUsers,settings:JSON.parse(n.settings)};
   });}
   snapshot(agents=[]){
     const locations=new Map(this.all('location').map(x=>[x.id,x.country]));

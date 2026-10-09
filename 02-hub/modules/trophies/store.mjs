@@ -27,7 +27,7 @@ export function atomicJSON(file, data) {
   }
 }
 const clean = (g) => {
-  const {schema, schemaAt, rarity, rarityAt, achievements, storeCover, ...rest} = g;
+  const {schema, schemaAt, rarity, rarityAt, achievements, storeCover, storeAppId, ...rest} = g;
   return {
     ...rest,
     soft: achievements?.filter((a) => a.soft).length ?? null,
@@ -673,7 +673,7 @@ export class TrophiesStore {
       return null;
     this.images ??= new Map();
     this.imageJobs ??= new Map();
-    const storeCover = kind === 'steam' ? steamImage(g.storeCover, id) : '';
+    const storeCover = kind === 'steam' ? steamImage(g.storeCover, g.storeAppId ?? id) : '';
     const key = 'v2:' + kind + ':' + a.id + ':' + id + ':' + url.href + ':' + storeCover,
       cached = this.images.get(key);
     const disk = this.coverCache.get(key);
@@ -692,7 +692,7 @@ export class TrophiesStore {
             : [
                 ...new Set(
                   [
-                    steamImage(g.storeCover, id),
+                    storeCover,
                     url.href,
                     `https://cdn.akamai.steamstatic.com/steam/apps/${id}/header.jpg`
                   ].filter(Boolean)
@@ -742,9 +742,9 @@ export class TrophiesStore {
           if (image && !this.closed && this.account(kind)?.id === a.id)
             this.db
               .prepare(
-                "UPDATE games SET data=json_set(data,'$.storeCover',?) WHERE provider=? AND account=? AND id=?"
+                "UPDATE games SET data=json_set(data,'$.storeCover',?,'$.storeAppId',?) WHERE provider=? AND account=? AND id=?"
               )
-              .run(info.storeCover, kind, a.id, id);
+              .run(info.storeCover, info.storeAppId, kind, a.id, id);
         }
       }
       if (!image) return null;

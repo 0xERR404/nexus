@@ -1,3 +1,134 @@
+// Keep real select elements for form values, validation, labels and module listeners.
+// Browsers with customizable selects use the CSS picker; others share this fallback.
+(() => {
+  if (CSS.supports('appearance', 'base-select')) return;
+  let current, sequence = 0;
+  const eligible = node => node instanceof HTMLSelectElement && !node.multiple && node.size <= 1 && !node.matches(':disabled');
+  function close(restore = false) {
+    if (!current) return;
+    const {select, menu, observer, expanded, controls} = current;
+    current = null;
+    observer.disconnect(); menu.remove();
+    for (const [name, value] of [['aria-expanded', expanded], ['aria-controls', controls]])
+      value === null ? select.removeAttribute(name) : select.setAttribute(name, value);
+    if (restore && select.isConnected) select.focus({preventScroll:true});
+  }
+  function open(select) {
+    if (current?.select === select) { close(true); return; }
+    close();
+    const menu = document.createElement('div');
+    menu.className = 'nexus-select-menu'; menu.id = 'nexus-select-' + ++sequence;
+    menu.setAttribute('role','listbox'); menu.tabIndex = -1;
+    const labelled = select.getAttribute('aria-labelledby');
+    if (labelled) menu.setAttribute('aria-labelledby',labelled);
+    else {
+      const label = select.labels?.[0]?.cloneNode(true);
+      label?.querySelectorAll('select,input,button').forEach(node=>node.remove());
+      menu.setAttribute('aria-label',select.getAttribute('aria-label') || label?.textContent.trim() || select.title || 'Выбери вариант');
+    }
+    let rows = [], active = -1, buffer = '', typedAt = 0;
+    const enabled = () => rows.map((row,i)=>row.option.disabled || row.option.parentElement?.disabled ? -1 : i).filter(i=>i>=0);
+    function activate(index, scroll = true) {
+      active = index;
+      rows.forEach((row,i)=>row.node.toggleAttribute('data-active',i===active));
+      if (rows[active]) {
+        menu.setAttribute('aria-activedescendant',rows[active].node.id);
+        if (scroll) rows[active].node.scrollIntoView({block:'nearest'});
+      } else menu.removeAttribute('aria-activedescendant');
+    }
+    function choose(index) {
+      const option = rows[index]?.option;
+      if (!option || !eligible(select) || !select.isConnected || !select.getClientRects().length || !enabled().includes(index)) return;
+      const actual = [...select.options].indexOf(option);
+      if (actual < 0) return;
+      const changed = select.selectedIndex !== actual;
+      select.selectedIndex = actual;
+      close(true);
+      if (changed) {
+        select.dispatchEvent(new Event('input',{bubbles:true}));
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    }
+    function place() {
+      const rect = select.getBoundingClientRect(), width = document.documentElement.clientWidth, height = window.innerHeight;
+      menu.style.width = Math.min(Math.max(rect.width,180),width-16)+'px';
+      menu.style.left = Math.max(8,Math.min(rect.left,width-menu.offsetWidth-8))+'px';
+      const below = height-rect.bottom-8, above = rect.top-8;
+      const down = below >= Math.min(menu.scrollHeight,240) || below >= above;
+      menu.style.maxHeight = Math.max(44,Math.min(360,height*.65,down?below:above))+'px';
+      menu.style.top = Math.max(8,down?rect.bottom+4:rect.top-menu.offsetHeight-4)+'px';
+    }
+    function render() {
+      if (!eligible(select) || !select.isConnected) { close(); return; }
+      const previous = rows[active]?.option;
+      rows = []; menu.replaceChildren();
+      for (const child of select.children) {
+        if (child.hidden) continue;
+        if (child.tagName === 'OPTGROUP') {
+          const heading = document.createElement('div'); heading.className='nexus-select-group'; heading.textContent=child.label; menu.append(heading);
+        }
+        for (const option of child.tagName === 'OPTGROUP' ? child.children : [child]) {
+          if (option.tagName !== 'OPTION' || option.hidden) continue;
+          const node=document.createElement('div'), index=rows.length;
+          node.className='nexus-select-option'; node.id=menu.id+'-'+index;
+          node.setAttribute('role','option'); node.setAttribute('aria-selected',String(option.selected));
+          node.setAttribute('aria-disabled',String(option.disabled || !!option.parentElement?.disabled));
+          node.textContent=option.label;
+          node.addEventListener('pointermove',()=>{if(enabled().includes(index))activate(index,false);});
+          node.addEventListener('click',()=>choose(index));
+          rows.push({node,option}); menu.append(node);
+        }
+      }
+      place();
+      let index=rows.findIndex(row=>row.option===previous);
+      if(index<0) index=rows.findIndex(row=>row.option.selected);
+      activate(enabled().includes(index)?index:(enabled()[0]??-1));
+    }
+    const observer=new MutationObserver(render);
+    current={select,menu,observer,render,expanded:select.getAttribute('aria-expanded'),controls:select.getAttribute('aria-controls')};
+    select.setAttribute('aria-expanded','true'); select.setAttribute('aria-controls',menu.id);
+    (select.closest('dialog[open]') || document.body).append(menu);
+    if (typeof menu.showPopover === 'function') { menu.setAttribute('popover','manual'); menu.showPopover(); }
+    render(); menu.focus({preventScroll:true});
+    observer.observe(select,{childList:true,subtree:true,attributes:true,characterData:true,attributeFilter:['disabled','hidden','selected','label','value','multiple','size']});
+    menu.addEventListener('keydown',event=>{
+      const keys=enabled(), index=keys.indexOf(active);
+      if (event.key==='Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key==='Tab') { close(true); return; }
+      if (event.key==='Enter' || event.key===' ') { event.preventDefault(); choose(active); return; }
+      let next;
+      if(event.key==='ArrowDown')next=keys[Math.min(keys.length-1,index+1)];
+      if(event.key==='ArrowUp')next=keys[Math.max(0,index-1)];
+      if(event.key==='Home')next=keys[0];
+      if(event.key==='End')next=keys.at(-1);
+      if(event.key==='PageDown')next=keys[Math.min(keys.length-1,index+8)];
+      if(event.key==='PageUp')next=keys[Math.max(0,index-8)];
+      if(next!==undefined) {event.preventDefault();activate(next);return;}
+      if(event.key.length===1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();const now=Date.now();buffer=now-typedAt<700?buffer+event.key:event.key;typedAt=now;
+        const query=[...buffer].every(c=>c===buffer[0])?buffer[0]:buffer;
+        const ordered=[...keys.slice(index+1),...keys.slice(0,index+1)];
+        const match=ordered.find(i=>rows[i].option.label.toLocaleLowerCase().startsWith(query.toLocaleLowerCase()));
+        if(match!==undefined)activate(match);
+      }
+    });
+  }
+  document.addEventListener('pointerdown',event=>{
+    if(current && !current.menu.contains(event.target) && event.target!==current.select)close();
+    if(eligible(event.target) && event.button===0)event.preventDefault();
+  },true);
+  document.addEventListener('mousedown',event=>{if(eligible(event.target) && event.button===0)event.preventDefault();},true);
+  document.addEventListener('click',event=>{if(eligible(event.target)){event.preventDefault();open(event.target);}},true);
+  document.addEventListener('keydown',event=>{
+    if(eligible(event.target) && ['ArrowDown','ArrowUp',' ','Enter'].includes(event.key)) {event.preventDefault();open(event.target);}
+  });
+  document.addEventListener('focusin',event=>{if(current && event.target!==current.select && !current.menu.contains(event.target))close();});
+  document.addEventListener('change',event=>{if(current?.select===event.target)current.render();});
+  document.addEventListener('reset',()=>queueMicrotask(()=>current?.render()));
+  document.addEventListener('scroll',event=>{if(current && !current.menu.contains(event.target))close();},true);
+  addEventListener('resize',()=>close()); addEventListener('pagehide',()=>close());
+})();
+
 const nexusNotices = (() => {
   const legacy = 'nexus-pending-notices-v1', prefix = 'nexus-notice-v2:';
   let memory = new Map(), busy = false, timer, failures = 0;
