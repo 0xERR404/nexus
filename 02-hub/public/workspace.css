@@ -284,7 +284,7 @@ html[data-carbon-glass='false'] #carbonBackdrop { opacity:.35; }
  body.wave-shell #wavePlayer:not(.expanded) #waveExpand { grid-column:5; grid-row:1; }
  body.wave-shell #wavePlayer:not(.expanded) #waveMinimize { grid-column:6; grid-row:1; }
  body.wave-shell #wavePlayer:not(.expanded) #wavePlayerStatus { grid-column:1/-1; }
- body.wave-shell #wavePlayer:not(.expanded) #waveToggle { border:1px solid #d2e0d6aa; border-radius:50%; width:34px; min-width:34px; height:34px; }
+ body.wave-shell #wavePlayer:not(.expanded) #waveToggle { border:1px solid var(--line-strong); border-radius:50%; width:34px; min-width:34px; height:34px; }
 }
 
 /* Module surfaces share the same material without changing their layout. */
@@ -344,13 +344,13 @@ body.standalone-page { display:block; padding:0 0 72px; }
 .ui-empty p { margin:5px 0 10px; color:var(--muted); font-size:13px; line-height:1.5; }
 .ui-empty :is(button,a) { display:inline-flex; align-items:center; min-height:36px; max-width:100%; font-size:13px; border:1px solid var(--line); border-radius:var(--button-radius); padding:6px 10px; background:var(--button-bg); color:var(--text); text-decoration:none; cursor:pointer; }
 :is(.anime-card,.reader-book,.trophy-card,.project-card,.gallery-card,.article-card,.cinema-card,.wave-card) { min-width:0; overflow-wrap:anywhere; }
-/* Limit blur on card grids only; floating windows have their own material. */
+/* Shared blur budget for cards and separate windows on mobile devices. */
 @media (max-width:800px) and (pointer:coarse) {
   html[data-carbon-glass] { --glass-blur:0px; --glass-edge:inset 0 1px 0 #eef2ea12; }
 }
 
-/* Floating surfaces must remain legible independently of card transparency.
-   Start solid; use dense glass only when the browser supports the blur. */
+/* Floating surfaces share the expanded player material and appearance settings.
+   Keep the solid fallback when glass is unavailable or explicitly disabled. */
 html[data-carbon-glass] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
   background:var(--dialog-bg);
   border-color:var(--line-strong);
@@ -364,9 +364,9 @@ html body :is(dialog,#vpnDialog,#readerReading)::backdrop {
 }
 @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
   html[data-carbon-glass='true'] body :is(dialog,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) {
-    background:linear-gradient(125deg,#eef2ea0b,transparent 45%),var(--dialog-glass);
-    -webkit-backdrop-filter:blur(16px) saturate(.95);
-    backdrop-filter:blur(16px) saturate(.95);
+    background:var(--glass-light),var(--dialog-glass);
+    -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(.95);
+    backdrop-filter:blur(var(--glass-blur)) saturate(.95);
   }
   html[data-carbon-glass='true'] body :is(dialog,#vpnDialog,#readerReading)::backdrop {
     -webkit-backdrop-filter:blur(8px);
@@ -390,21 +390,4 @@ html[data-perf-effect='blur'] body :is(dialog,.storage-menu[open],#wavePlayer,#w
     backdrop-filter:none;
   }
 }
-/* Full-screen reading and expanded playback are opaque workspaces. */
-html[data-carbon-glass] body #readerReading {
-  background:var(--bg);
-  -webkit-backdrop-filter:none;
-  backdrop-filter:none;
-  box-shadow:none;
-}
-html[data-carbon-glass] body #readerReading::backdrop {
-  background:var(--bg);
-  -webkit-backdrop-filter:none;
-  backdrop-filter:none;
-}
-html body #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) { background:var(--bg); }
-html[data-carbon-glass] body #wavePlayer.expanded {
-  background:radial-gradient(ellipse at 50% 15%,var(--accent-soft),transparent 60%),var(--surface-solid);
-  -webkit-backdrop-filter:none;
-  backdrop-filter:none;
-}
+/* Full-screen reading and playback use the same shared glass material. */

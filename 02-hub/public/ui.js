@@ -349,6 +349,7 @@ window.Nexus = Object.freeze({
     );
     for (const d of watched.keys())
       if (!dialogs.includes(d)) {
+        d.classList.remove('nexus-dialog-covered');
         watched.delete(d);
         owner.unregister(d);
       }
@@ -366,6 +367,9 @@ window.Nexus = Object.freeze({
         watched.set(d, editable(d) ? fields(d) : null);
         owner.register(d, controller);
       }
+    // Only the top window reveals the shared background; lower windows keep their fields.
+    const top = [...watched.keys()].at(-1);
+    for (const d of watched.keys()) d.classList.toggle('nexus-dialog-covered', d !== top);
   }
   if (own) {
     window.NexusUI = {

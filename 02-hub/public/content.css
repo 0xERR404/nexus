@@ -153,7 +153,7 @@
   justify-content: center;
   align-items: center;
   touch-action: none;
-  background: var(--bg);
+  background: transparent;
 }
 #imageFull {
   max-width: 100%;

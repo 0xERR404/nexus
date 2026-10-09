@@ -339,6 +339,7 @@ html[data-carbon-glass=true] body :is(.settings-sidebar,.settings-card,.security
 html.nexus-dialog-open body > :not(canvas):not(dialog) { visibility:hidden; }
 html.nexus-dialog-open { scrollbar-gutter:auto; }
 html.nexus-dialog-open body dialog[open] { visibility:visible; }
+html.nexus-dialog-open body dialog.nexus-dialog-covered { visibility:hidden !important; }
 html body dialog[open]:not(#nexusIntro) {
   box-sizing:border-box; position:fixed; inset:0; margin:0;
   width:100vw !important; min-width:0 !important; max-width:none !important;
@@ -352,7 +353,6 @@ html body dialog[open]::backdrop { background:transparent !important; backdrop-f
 html body dialog[open] :is(.dialog-close,[aria-label='Закрыть']) { min-width:44px; min-height:44px; flex-shrink:0; }
 html body dialog[open] > .nexus-screen-close { position:sticky; top:0; float:right; z-index:5; margin:0 0 8px 12px; width:44px; height:44px; border:1px solid var(--line); border-radius:8px; background:var(--dialog-bg); color:var(--text); padding:0; font-size:25px; cursor:pointer; }
 html body #readerReading[open] { padding:0; overflow:hidden; }
-html[data-carbon-glass='true'] body #readerReading[open] { background:var(--dialog-glass); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); }
 html body #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) { background:transparent; }
 body.wave-shell.reader-focus #carbonBackground { visibility:visible; }
 body.wave-shell.dialog-focus { padding:0 !important; }
