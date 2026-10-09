@@ -53,3 +53,14 @@ html body #pulseServerPanel .server-form p:empty { display:none; }
 .server-report-history ol{margin:6px 0;padding-left:20px;display:grid;gap:4px}
 .server-report-history p{margin:5px 0}
 
+
+/* Download is a link styled as an action; align it with the report selects. */
+html body .server-report-controls > label,
+html body #settingsContent[data-settings-section] .server-report .server-report-controls > label { margin:0; }
+html body .server-report-controls .server-report-download {
+  align-self:end; min-height:32px; margin:0; padding:4px 8px;
+  font-size:12px; line-height:22px; border-radius:6px;
+}
+@media(max-width:800px) {
+  html body .server-report-controls .server-report-download { min-height:44px; }
+}

@@ -33,8 +33,8 @@ const settingsContent = `${assetsHTML}${statusHTML}<div class="signal-settings-g
   )
   .join(
     ''
-  )}</div><div class="signal-time"><label for="dailyTime">Сводка · время сервера</label><input type="time" id="dailyTime" value="09:00" required></div><label class="signal-detail"><input type="checkbox" id="pushDetails"><span>Показывать подробности на экране блокировки</span></label><button type="submit">Сохранить</button></form></section>
-<section class="signal-panel signal-devices-panel"><div class="signal-title"><h2>Устройства</h2><span id="deviceCount">0</span></div><div id="signalDevices"><p class="signal-help">Устройства ещё не подключены.</p></div></section></div>
+  )}</div><label class="signal-detail"><input type="checkbox" id="pushDetails"><span>Показывать подробности на экране блокировки</span></label><div class="signal-settings-footer"><div class="signal-time"><label for="dailyTime">Сводка · время сервера</label><input type="time" id="dailyTime" value="09:00" required></div><button type="submit">Сохранить</button></div></form></section>
+<section id="signalDevicesPanel" class="signal-panel signal-devices-panel"><div class="signal-title"><h2>Устройства</h2><span id="deviceCount">0</span></div><div id="signalDevices"><p class="signal-help">Устройства ещё не подключены.</p></div></section></div>
 `;
 const phoneSettings = `<script src="/legacy-clients.js" defer></script><details data-legacy-clients="/modules/signal/phone" hidden><summary>Ранее выданные ключи APK</summary><p>Эта функция удалена из Талоса. Старые ключи можно отозвать; данные хаба сохранятся.</p><p role="status"></p><div data-clients-list></div></details>`;
 export const settings = {title: 'Гермес', content: settingsContent + phoneSettings};

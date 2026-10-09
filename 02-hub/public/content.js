@@ -322,11 +322,12 @@
   readingWorkspace.id = 'articleReadingWorkspace';
   readingWorkspace.className = 'content-dialog';
   readingWorkspace.setAttribute('aria-label', 'Чтение статьи');
-  const readingClose = node('button', '×', 'dialog-close nexus-screen-close');
+  const readingClose = node('button', '×', 'dialog-close');
   readingClose.type = 'button';
   readingClose.setAttribute('aria-label', 'Закрыть');
   readingClose.onclick = () => readingWorkspace.close();
-  readingWorkspace.append(readingClose, $('articleReading'));
+  $('articleReading').querySelector('.content-heading').append(readingClose);
+  readingWorkspace.append($('articleReading'));
   document.body.append(readingWorkspace);
   workspace.dataset.uiPersistent = 'true';
   function expandEditor() {
@@ -376,8 +377,7 @@
         b.classList.toggle('selected', a.id === article?.id);
         b.append(
           node('strong', a.title || 'Без названия'),
-          node('small', a.status === 'draft' ? 'Черновик' : 'Готова'),
-          node('span', a.excerpt)
+          node('small', a.status === 'draft' ? 'Черновик' : 'Готова')
         );
         b.onclick = () =>
           void editorAction(async () => {
@@ -408,6 +408,7 @@
     $('articleEditor').hidden = false;
     $('articleTitle').value = value.title;
     $('articleBody').value = value.body;
+    syncStyle();
 
     $('articleTags').value = value.tags.join(', ');
     $('articleState').value = value.status;
@@ -554,11 +555,50 @@
     input.dispatchEvent(new Event('input'));
     input.focus();
   }
-  $('formatHeading').onclick = () => insert('\n## ');
-  $('formatBold').onclick = () => insert('**', true);
-  $('formatList').onclick = () => insert('\n- ');
-  $('formatTask').onclick = () => insert('\n- [ ] ');
-  $('formatCode').onclick = () => insert('\n```\n', true);
+  function format(command) {
+    if (editingAction || $('articleBody').disabled) return;
+    const input = $('articleBody');
+    const edit = NexusMarkdownEdit(input.value, input.selectionStart, input.selectionEnd, command);
+    if (input.value.length - (edit.to - edit.from) + edit.value.length > input.maxLength) {
+      $('articleSaveState').textContent = 'Достигнут предел длины статьи.';
+      return;
+    }
+    input.setRangeText(edit.value, edit.from, edit.to, 'preserve');
+    input.focus({preventScroll:true});
+    input.setSelectionRange(edit.start, edit.end);
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+  document.querySelectorAll('[data-md]').forEach(button => {
+    button.onmousedown = event => event.preventDefault();
+    button.onclick = () => format(button.dataset.md);
+  });
+  $('formatStyle').onchange = event => format(event.target.value);
+  $('formatBlock').onchange = event => {const command = event.target.value; event.target.value = ''; if(command) format(command);};
+  $('formatInsert').onchange = event => {
+    const command = event.target.value; event.target.value = '';
+    if (command === 'image') $('insertImage').click();
+    else if (command === 'file') $('insertFile').click();
+    else if (command) format(command);
+  };
+  $('articleMore').onchange = event => {
+    const command = event.target.value; event.target.value = '';
+    if (command === 'export') $('articleExport').click();
+    if (command === 'history') $('articleHistory').click();
+    if (command === 'help') $('markdownHelp').showModal();
+  };
+  const syncStyle = () => {
+    const input = $('articleBody');
+    const start = input.selectionStart === 0 ? 0 : input.value.lastIndexOf('\n', input.selectionStart - 1) + 1;
+    const line = input.value.slice(start).split('\n')[0];
+    const heading = /^(#{1,6})\s/.exec(line);
+    $('formatStyle').value = heading ? 'h' + heading[1].length : 'paragraph';
+  };
+  for (const event of ['click','keyup','select','input']) $('articleBody').addEventListener(event, syncStyle);
+  $('articleBody').addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && ['b','i'].includes(event.key.toLowerCase())) {
+      event.preventDefault(); format(event.key.toLowerCase() === 'b' ? 'bold' : 'italic');
+    }
+  });
   async function preview(body, title, target = 'articleRendered') {
     const result = await request('/preview', {body});
     $(target).innerHTML = result.html;

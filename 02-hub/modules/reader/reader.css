@@ -442,7 +442,7 @@ html body #readerBooks .reader-card-info strong {
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: normal;
-  min-height: 0;
+  min-height: 2.6em;
   margin: 0;
   font: 600 14px/1.3 var(--sans);
   color: #fff;
@@ -459,16 +459,13 @@ html body #readerBooks .reader-author {
   color: #d8dcd9;
   font: 12px/1.4 var(--sans);
 }
-html body #readerBooks .reader-card-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: 4px;
+html body #readerBooks .reader-card-progress {
+  display:grid; grid-template-columns:minmax(0,1fr) auto;
+  align-items:center; gap:8px; margin:0 0 5px; width:100%;
 }
-html body #readerBooks .reader-card-meta small {
-  color: #c1c9c3;
-  font: 11px/1.4 var(--sans);
-  margin: 0;
+html body #readerBooks .reader-card-progress small {
+  color:#d8dcd9; font:12px/1.4 var(--sans); font-variant-numeric:tabular-nums;
+  white-space:nowrap; margin:0;
 }
 html body #readerBooks progress {
   display: block;
@@ -514,4 +511,55 @@ html body #readerBooks :is(.reader-book-open, .reader-card-edit):focus-visible {
 }
 @media (max-width: 650px) {
   html body #readerBooks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Desktop book surface; pagination continues to measure the actual viewport. */
+@media (min-width: 801px) {
+  html body #readerReading #readerViewport {
+    inset:16px auto 16px 50%; transform:translateX(-50%);
+    width:min(800px, calc(100% - 64px)); height:calc(100% - 32px);
+    box-sizing:border-box; border:1px solid var(--line-strong); border-radius:14px;
+    box-shadow:var(--glass-edge); scrollbar-gutter:stable;
+  }
+  html body #readerReading #readerViewport[data-width='wide'] { width:min(1080px, calc(100% - 64px)); }
+  html body #readerReading #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) {
+    background:var(--glass-light),var(--dialog-glass);
+    -webkit-backdrop-filter:blur(var(--glass-blur)); backdrop-filter:blur(var(--glass-blur));
+  }
+  html body #readerReading #readerViewport .reader-text { max-width:none; padding:32px 40px; }
+}
+@media (min-width:801px) and (prefers-reduced-transparency:reduce) {
+  html body #readerReading #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) {
+    background:var(--dialog-bg); -webkit-backdrop-filter:none; backdrop-filter:none;
+  }
+}
+
+/* Keep desktop controls aligned with the book rather than the whole screen. */
+@media (min-width:801px) {
+  html body #readerReading { --reader-panel-width:800px; }
+  html body #readerReading:has(#readerViewport[data-width='wide']) { --reader-panel-width:1080px; }
+  html body #readerReading :is(#readerControls,#readerHUD) {
+    box-sizing:border-box; left:50%; right:auto; transform:translateX(-50%);
+    width:min(var(--reader-panel-width),calc(100% - 64px));
+    border:1px solid var(--line-strong); border-radius:14px;
+    background:var(--glass-light),color-mix(in srgb,var(--bg) 92%,transparent); box-shadow:var(--glass-edge);
+    -webkit-backdrop-filter:blur(var(--glass-blur)); backdrop-filter:blur(var(--glass-blur));
+  }
+  html body #readerReading #readerControls { top:16px; padding:12px; }
+  html body #readerReading #readerHUD { bottom:16px; padding:10px 14px; }
+  html body #readerControls .reader-toolbar {
+    padding:0; margin:0; border:0; border-radius:0; background:none; box-shadow:none;
+    gap:8px; align-items:center;
+  }
+  html body #readerControls .reader-toolbar + .reader-toolbar {
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+  }
+  html body #readerControls .reader-toolbar :is(button,select) { min-height:36px; }
+  html body #readerControls #readerBookTitle { font-size:16px; line-height:1.4; }
+  html body #readerControls #readerChapter { flex:1 1 120px; }
+}
+@media (min-width:801px) and (prefers-reduced-transparency:reduce) {
+  html body #readerReading :is(#readerControls,#readerHUD) {
+    background:var(--dialog-bg); -webkit-backdrop-filter:none; backdrop-filter:none;
+  }
 }

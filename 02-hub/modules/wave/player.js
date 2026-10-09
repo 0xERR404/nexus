@@ -202,7 +202,7 @@
   }
   const audioCache = new Map(),
     cacheFailures = new Set();
-  const cacheLimit = 8 * 1024 * 1024;
+  const cacheLimit = 20 * 1024 * 1024;
   let cacheJob = null,
     cycleKey = '',
     cycle = [];

@@ -35,15 +35,10 @@ html[data-carbon-glass='false'] :is(.module-card,.home-card,.workspace-header,.w
 .workspace-header .brand { flex:none; gap:10px; }
 .workspace-header > a:not(.brand),.workspace-logout { display:grid; place-items:center; flex:none; width:34px; height:34px; color:var(--text); }
 .workspace-header .workspace-logout { background:none; border:0; padding:0; }
-.workspace-header a.workspace-section { display:flex; width:auto; padding-left:20px; border-left:1px solid var(--line); font-size:14px; text-decoration:none; }
+.workspace-header a.workspace-section { display:flex; width:auto; margin-right:auto; padding-left:20px; border-left:1px solid var(--line); font-size:14px; text-decoration:none; }
 .workspace-section .ui-icon { width:21px; height:21px; color:var(--accent); margin-right:11px; }
-.workspace-search { display:flex; align-items:center; gap:10px; flex:1; max-width:360px; margin-left:auto; height:36px; border:1px solid var(--line); border-radius:7px; padding:0 10px; background:#1113121f; }
-.workspace-search .ui-icon { width:17px; height:17px; color:var(--muted); }
-.workspace-search input { width:100%; min-width:0; border:0; background:none; padding:0; font-size:12px; }
-.workspace-search button { border:1px solid var(--line-soft); background:#d9ddd908; min-height:24px; padding:2px 6px; border-radius:4px; font-size:10px; color:var(--muted); white-space:nowrap; }
 .workspace-header > a .ui-icon,.workspace-logout .ui-icon { width:21px; height:21px; }
 .workspace-user { display:flex; align-items:center; gap:9px; color:var(--text); font-size:11px; white-space:nowrap; }
-.workspace-header > a.workspace-search-mobile { display:none; }
 .workspace-body { flex:1; min-height:0; display:flex; }
 .workspace-content { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative; }
 .workspace-mobile { display:flex; flex:none; justify-content:center; gap:clamp(0px,4vw,60px); border:0; border-top:1px solid var(--line); border-radius:0; padding:3px 12px max(3px,env(safe-area-inset-bottom)); }
@@ -61,9 +56,8 @@ body.wave-shell.reader-focus .workspace-header,body.wave-shell.reader-focus .wor
 .home-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 10px; }
 .home-heading h1 { font-size:19px; margin:0; }
 .home-heading p { color:var(--muted); font-size:11px; }
-.embedded-page .home-heading { height:20px; margin-bottom:8px; }
-.embedded-page .home-heading h1 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
-#homeDashboard[data-group=overview] .home-heading { display:none; }
+/* Section names remain accessible without reserving an empty heading row. */
+#homeDashboard .home-heading { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .home-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-items:stretch; }
 .home-card { min-width:0; padding:0 14px 10px; overflow:hidden; }
 .home-card.home-full { grid-column:1/-1; }
@@ -196,15 +190,13 @@ html.chat-widget .chat-actions .chat-hint { display:none; }
  .workspace-header .brand { flex:1; gap:8px; }
  .workspace-header .brand-mark { width:24px; height:24px; }
  .workspace-header .brand-name { font-size:14px; letter-spacing:1px; }
- .workspace-search,.workspace-header a.workspace-section { display:none; }
- .workspace-header > a.workspace-search-mobile { display:grid; }
+ .workspace-header a.workspace-section { display:none; }
  .workspace-header > a:not(.brand),.workspace-logout { width:28px; height:30px; }
  .workspace-mobile { gap:0; padding-left:6px; padding-right:6px; }
  .workspace-mobile > a { flex:1; flex-direction:column; gap:3px; padding:3px; min-height:45px; }
  .workspace-mobile span { font-size:9px; }
  .workspace-mobile .ui-icon { width:19px; height:19px; }
  .embedded-page body { padding:9px; }
- .embedded-page .home-heading { margin-bottom:6px; height:16px; }
  .home-heading p { font-size:9px; }
  .home-metrics { grid-template-columns:repeat(6,minmax(0,1fr)); row-gap:9px; }
  .home-metric { grid-column:span 2; padding:0 8px; }

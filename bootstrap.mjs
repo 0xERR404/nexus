@@ -443,6 +443,7 @@ export const projectFiles = [
   '02-hub/public/apple-touch-icon.png',
   '02-hub/public/content.css',
   '02-hub/public/content.js',
+  '02-hub/public/markdown-edit.js',
   '02-hub/public/fonts/JetBrainsMono-LICENSE.txt',
   '02-hub/public/fonts/SpaceGrotesk-LICENSE.txt',
   '02-hub/public/fonts/jetbrains-mono.woff2',

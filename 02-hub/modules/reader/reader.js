@@ -123,14 +123,13 @@
           button.append(img);
         }
         const info = node('div', undefined, 'reader-card-info');
-        info.append(node('strong', b.title), node('span', b.author || 'Автор не указан', 'reader-author'));
-        const meta = node('div', undefined, 'reader-card-meta');
-        meta.append(node('small', b.format.toUpperCase()), node('small', b.progress + '%'));
+        const progressRow = node('div', undefined, 'reader-card-progress');
         const progress = node('progress');
         progress.max = 100;
         progress.value = b.progress;
         progress.setAttribute('aria-label', 'Прочитано');
-        info.append(meta, progress);
+        progressRow.append(progress, node('small', b.progress + '%'));
+        info.append(progressRow, node('strong', b.title), node('span', b.author || 'Автор не указан', 'reader-author'));
         button.append(info);
         button.onclick = () => void bookAction(() => openBook(b.id));
         const edit = node('button', '✎', 'reader-card-edit');

@@ -1449,3 +1449,27 @@ html body #wavePage .wave-toolbar :is(#waveUploadButton,#waveEditRelease) {
 }
 html body #wavePage .wave-toolbar #waveUploadButton { font-size:25px; font-weight:400; }
 #wavePage #waveEditRelease svg { width:20px; height:20px; pointer-events:none; }
+
+/* Desktop now-playing is a compact window; phones retain the full-screen layout. */
+@media (min-width:801px) {
+  html body #wavePlayer.expanded {
+    inset:50% auto auto 50%; transform:translate(-50%,-50%); margin:0;
+    width:min(480px,calc(100vw - 48px)); height:auto; max-height:calc(100dvh - 48px);
+    padding:18px 28px 20px; gap:10px 8px; overflow-y:auto;
+    border:1px solid var(--line-strong); border-radius:16px; box-shadow:var(--glass-edge);
+  }
+  html body #wavePlayer.expanded .wave-player-heading { display:flex; grid-row:1; padding:0 36px; }
+  html body #wavePlayer.expanded .wave-player-art {
+    position:static; transform:none; grid-column:1/-1; grid-row:2; justify-self:center;
+    width:min(28dvh,220px); margin:2px 0;
+  }
+  html body #wavePlayer.expanded .wave-player-info { grid-row:3; padding:0; min-height:48px; }
+  html body #wavePlayer.expanded .wave-player-info strong { font-size:22px; }
+  html body #wavePlayer.expanded .wave-player-progress { grid-row:4; }
+  html body #wavePlayer.expanded :is(#waveShuffle,#wavePrev,#waveToggle,#waveNext,#waveRepeat) { grid-row:5; }
+  html body #wavePlayer.expanded .wave-volume-row { grid-row:6; }
+  html body #wavePlayer.expanded :is(#waveQueueToggle,#waveQueueCount) { grid-row:7; }
+  html body #wavePlayer.expanded #wavePlayerStatus { grid-row:8; }
+  html body #wavePlayer.expanded #waveExpand { left:14px; right:auto; top:16px; }
+  html body #wavePlayer.expanded #waveClose { right:14px; left:auto; top:16px; }
+}

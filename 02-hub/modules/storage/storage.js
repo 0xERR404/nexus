@@ -162,7 +162,9 @@
   function preview(item) {
     const dialog = node('dialog', undefined, 'storage-preview');
     const heading = node('h2', item.name);
-    dialog.append(button('Закрыть', () => dialog.close()), heading);
+    const close = button('×', () => dialog.close(), 'dialog-close nexus-screen-close');
+    close.setAttribute('aria-label', 'Закрыть');
+    dialog.append(close, heading);
     dialog.setAttribute('aria-label', item.name);
     if (/^(image\/|application\/pdf$|text\/plain$)/.test(item.type)) {
       const frame = node('iframe'); frame.title = item.name;

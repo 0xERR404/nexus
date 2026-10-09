@@ -60,6 +60,7 @@ const assets = [
   'security.js',
   'security.css',
   'content.js',
+  'markdown-edit.js',
   'content.css',
   'intro.js',
   'intro.css',
