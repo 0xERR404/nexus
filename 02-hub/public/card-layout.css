@@ -1,0 +1,490 @@
+/* Shared card layouts. Media grids and text panels have separate minimum widths. */
+:root { --card-gap:10px; --card-padding:12px; --ui-font-size:14px; --ui-small-size:12px; --ui-title-size:16px; --ui-meta-size:12px; }
+html body .page { width:100%; max-width:var(--page-max-width); margin-inline:auto; min-width:0; }
+html body .page > main { min-width:0; }
+html body :is(.home-grid,.settings-grid,.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid,.storage-folder-grid,#storageFiles,#storageTrash,#projectList,.activity-grid,.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid) { gap:var(--card-gap); min-width:0; align-items:stretch; grid-auto-rows:auto; }
+html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),1fr)); }
+html body :is(.storage-folder-grid,#storageFiles,#storageTrash,#projectList) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); }
+html body :is(.home-grid,.settings-grid) { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+html body :is(.module-card,.home-card,.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.article-card,.project-card,.activity-card,.storage-row) { box-sizing:border-box; min-width:0; max-width:100%; height:auto; min-height:0; padding:var(--card-padding); gap:10px; overflow-wrap:anywhere; }
+html body .page > main :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card,.project-card) { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; }
+html body :is(.module-heading,.home-card-title) { min-height:40px; gap:10px; margin:0 0 12px; padding:0 0 10px; }
+html body .page > main :is(.module-heading h2,.home-card-title h2) { margin:0; font-size:16px; line-height:1.4; }
+html body :is(.module-heading,.home-card-title) .ui-icon { width:22px; height:22px; flex:none; }
+html body .module-heading h2 { flex:1; min-width:0; }
+html body .module-summary { gap:10px; }
+html body .home-card.home-full { grid-column:1/-1; }
+html body .home-chat-widget { height:280px; max-height:50dvh; }
+html body #homeTasks { max-height:280px; overflow:auto; }
+html body .home-all-tasks { float:none; margin-top:10px; display:block; }
+html body :is(.home-task,.home-file) { min-height:44px; }
+html body .home-task a { min-width:0; overflow-wrap:anywhere; }
+html body .home-task input { flex:none; }
+html body .home-card[data-home-card=pulse] .home-metrics { margin-block:0 16px; }
+html body :is(.home-metric-label,.home-metric small,.pulse-history-info,.pulse-history-axis,.pulse-history-legend button) { font-size:12px; }
+html body .home-metric strong { font-size:24px; }
+html body .pulse-history-chart { height:130px; }
+html body .page > main :is(.anime-details h2,.trophy-card > strong,.reader-book strong,.wave-card strong,.cinema-card strong,.watch-card strong,.project-card strong) { font-size:14px; line-height:1.45; font-weight:500; margin:0; min-height:2.9em; max-height:none; white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+html body :is(.anime-card-meta,.trophy-card small,.reader-book span,.wave-card > span,.cinema-kind,.gallery-card span,.storage-row small,.project-card-description) { font-size:12px; line-height:1.5; }
+html body .anime-cover { flex:none; width:100%; height:auto; aspect-ratio:3/2; max-height:none; }
+html body .anime-cover img { object-fit:contain; }
+html body .anime-details { gap:10px; }
+html body .anime-card .anime-card-meta { flex-wrap:wrap; margin-top:auto; }
+html body .reader-book-open > img,html body .reader-cover { height:160px; width:100%; object-fit:contain; }
+html body .cinema-cover { aspect-ratio:3/4; max-height:220px; }
+html body .wave-art,html body .gallery-card img { aspect-ratio:1; height:auto; width:100%; }
+html body #trophiesPage .trophy-card .trophy-art { width:100%; aspect-ratio:460/215; min-height:0; }
+html body #trophiesPage .trophy-card > img { width:100%; height:auto; aspect-ratio:460/215; object-fit:contain; }
+html body #trophiesPage .trophy-card { padding:var(--card-padding); gap:10px; }
+html body :is(.pulse-stat,.pulse-panel,.balance-panel,.rt-panel,.signal-panel,.security-panel,.chat-panel,.anime-panel,.trophy-panel) { min-width:0; padding:var(--card-padding); }
+html body #statisticsPage .activity-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); }
+html body #kbColumns { gap:var(--card-gap); }
+html body .kb-column { flex-basis:310px; padding:var(--card-padding); }
+html body .kb-card { padding:12px; margin-top:12px; }
+html body .kb-drop-hint { margin-top:12px; padding:12px 0; }
+/* Keep borders and material on all content surfaces, including newer modules. */
+html[data-carbon-glass] body :is(.vpn-card,.server-manager,.settings-card,.article-card,.watch-card,.storage-folder-card,.project-card,.activity-card,.rt-panel,.pulse-panel,.pulse-stat,.balance-panel,.signal-panel,.kb-column,.anime-panel,.trophy-panel) { border:1px solid var(--line); border-radius:12px; background:var(--glass-light),var(--surface); box-shadow:var(--glass-edge); }
+html body :is(button,input,select,textarea) { max-width:100%; }
+html body :is(button,a,summary,input,select,textarea):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+html body :is(.vpn-toolbar,.vpn-actions,.server-tools,.kb-tools,.content-toolbar,.reader-toolbar,.storage-toolbar,.project-toolbar,.cinema-toolbar,.anime-toolbar,.trophy-toolbar,.balance-toolbar,.wave-toolbar) { gap:10px; min-width:0; }
+html body :is(.vpn-toolbar,.vpn-actions,.server-tools,.kb-tools,.content-toolbar,.reader-toolbar,.storage-toolbar,.project-toolbar,.cinema-toolbar,.balance-toolbar,.wave-toolbar) { flex-wrap:wrap; }
+html body :is(.vpn-connection,.vpn-card-head,.pulse-panel-title) { flex-wrap:wrap; }
+html body .vpn-connection > div { min-width:0; overflow-wrap:anywhere; }
+html body .vpn-connection .vpn-actions { flex-shrink:0; }
+html body dialog:not(:where(#readerReading)) { box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; }
+html body :is(.ui-dialog-actions,.dialog-actions) { flex-wrap:wrap; }
+/* Module groups use the shared grid; the overview has a curated mosaic below. */
+html body #homeDashboard .home-grid { gap:16px; grid-auto-flow:row; grid-auto-rows:auto; }
+html body #homeDashboard .home-grid > .home-card { min-height:0; height:auto; align-self:stretch; padding:16px; display:flex; flex-direction:column; gap:0; order:0; }
+html body #homeDashboard .module-summary { flex:none; gap:10px; }
+html body #homeDashboard .module-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+html body #homeDashboard .module-stat { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:0; }
+html body #homeDashboard .module-stat span { font-size:12px; line-height:1.4; }
+html body #homeDashboard .module-stat strong { font-size:20px; line-height:1.3; }
+html body #homeDashboard :is(.home-meta,.home-subtitle,.module-summary-note,.home-empty) { font-size:13px; line-height:1.5; }
+html body #homeDashboard .home-empty { padding:0; margin:8px 0; }
+html body #homeDashboard .home-action { display:inline-flex; align-items:center; min-height:40px; font-size:13px; margin-top:auto; padding-top:8px; }
+html body #homeDashboard #homeTasks { max-height:280px; }
+html body #homeDashboard #homeTasksCount { margin-block:10px 0; }
+html body #homeDashboard .home-chat-preview { font-size:14px; line-height:1.55; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; margin-top:6px; padding:10px; }
+html body #homeDashboard .home-chat-actions { margin-top:auto; padding-top:12px; gap:10px; flex-wrap:wrap; }
+html body #homeDashboard #homeChatStart { min-height:40px; font-size:14px; }
+html body #homeDashboard .home-chat-actions .home-action { margin:0; padding:0; }
+html body #homeDashboard #homeFiles { display:grid; grid-template-columns:1fr; gap:0; }
+html body #homeDashboard .home-file strong,html body #homeDashboard .home-recent strong { font-size:14px; }
+html body #homeDashboard .home-file small { font-size:12px; }
+html body #homeDashboard .home-value,html body #homeDashboard .home-balance .module-stat strong { font-size:28px; }
+html body #homeDashboard .home-recent { padding:0; }
+html body #homeDashboard :is(.home-atlas-layout,.home-server-data) { display:block; min-width:0; }
+html body #homeDashboard .home-open,html body #homeDashboard .home-add { width:40px; height:40px; }
+@media(min-width:900px) {
+ html body #homeDashboard .home-grid { grid-template-columns:repeat(6,minmax(0,1fr)); }
+ html body #homeDashboard .home-grid > .home-card { grid-column:span 2; }
+ html body #homeDashboard .home-grid > [data-home-card=pulse] { grid-column:1/-1; }
+ html body #homeDashboard .home-grid > :is([data-home-card=kanban],[data-home-card=chat]) { grid-column:span 3; }
+ html body #homeDashboard .home-grid > [data-home-card=storage] { grid-column:1/-1; }
+ html body #homeDashboard #homeFiles { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+}
+@media(max-width:899px) {
+ html body :is(.home-grid,.settings-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body #homeDashboard .home-grid > .home-card { grid-column:auto; }
+ html body #homeDashboard .home-grid > :is([data-home-card=pulse],[data-home-card=kanban],[data-home-card=chat],[data-home-card=storage]) { grid-column:1/-1; }
+ html body #homeDashboard .home-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+ html body #homeDashboard .home-metric:nth-child(n) { grid-column:auto; padding:0; border:0; }
+ html body #homeDashboard .home-metric:nth-child(5) { grid-column:span 2; }
+ html body #homeDashboard .home-metric strong { font-size:23px; }
+ html body #homeDashboard .home-metric:nth-child(5) small { font-size:12px; }
+ html body #homeDashboard .pulse-history-legend { position:static; flex-wrap:wrap; gap:12px; }
+ html body #homeDashboard .pulse-history-info { margin:8px 0 0; }
+}
+/* Touch navigation stays readable and separate from the scrolling document. */
+@media(max-width:800px) {
+ html body .workspace-header { height:52px; min-height:52px; padding-inline:12px; gap:4px; }
+ html body .workspace-header > a:not(.brand):not(.workspace-section),html body .workspace-logout { width:44px; height:44px; min-height:44px; padding:0; }
+ html body .workspace-mobile { gap:2px; padding:4px 6px max(4px,env(safe-area-inset-bottom)); background:var(--theme-settings-surface,#161b16ed); }
+ html body .workspace-mobile > a { min-height:44px; border-radius:8px; gap:2px; padding:2px; }
+ html body .workspace-mobile span { font-size:11px; line-height:1.3; }
+ html body .workspace-mobile .ui-icon { width:22px; height:22px; }
+ html body .workspace-mobile [aria-current='page'] { background:var(--accent-soft); }
+ html body .workspace-mobile [aria-current='page']::after { bottom:2px; }
+ html body :is(.page,dialog) :is(button,input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select) { min-height:44px; }
+ html body :is(.page,dialog) :is(input:not([type=checkbox]):not([type=radio]),select,textarea) { font-size:16px; }
+ html body :is(.page,dialog) button { white-space:normal; }
+ html body :is(.page,dialog) summary { min-height:44px; padding-block:10px; }
+ html body #homeDashboard :is(.home-open,.home-add) { width:44px; height:44px; }
+ html body #kanban .kb-icon,html body :is(#kbEditor,#kbColumnEditor) .kb-icon { width:44px; height:44px; min-height:44px; }
+ html body :is(.security-grid,.maintenance-grid,.chat-settings-grid,.signal-settings-grid,.pulse-charts) { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:600px) {
+ :root { --card-gap:8px; --card-padding:10px; }
+ html.embedded-page:not(.chat-widget) body { padding:8px; }
+ html body #homeDashboard .home-grid,html body .settings-grid { grid-template-columns:minmax(0,1fr); gap:12px; }
+ html body #homeDashboard .home-grid > .home-card { grid-column:1/-1; padding:14px; }
+ html body #homeDashboard .home-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body #homeDashboard .home-metric:nth-child(5) { grid-column:1/-1; }
+ html body #homeDashboard .home-card-title { flex-wrap:nowrap; }
+ html body #homeDashboard .home-card-title h2 { font-size:16px; }
+ html body #homeDashboard .module-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+ html body #homeDashboard .home-chat-actions { display:grid; grid-template-columns:minmax(0,1fr); }
+ html body .home-chat-widget { height:320px; max-height:60dvh; }
+ html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ html body :is(.storage-folder-grid,#storageFiles,#storageTrash,#projectList) { grid-template-columns:minmax(0,1fr); }
+ html body :is(.anime-card,.trophy-card,.reader-book,.wave-card,.cinema-card,.gallery-card,.watch-card) { padding:10px; }
+ html body .reader-book-open > img,html body .reader-cover { height:132px; }
+ html body :is(.vpn-tabs,.content-tabs,.trophy-tabs,.reader-tabs) { display:flex; flex-wrap:wrap; gap:8px; }
+ html body :is(.vpn-tabs,.content-tabs,.trophy-tabs,.reader-tabs) > :is(button,a) { flex:1 1 calc(50% - 8px); min-height:44px; font-size:13px; text-align:center; justify-content:center; }
+ html body #vpn .vpn-tabs button { font-size:13px!important; }
+ html body #vpn :is(.vpn-toolbar,.vpn-actions) { gap:8px; }
+ html body #vpn .vpn-toolbar h2 { flex-basis:100%; margin-bottom:4px; }
+ html body #vpn button { min-height:44px; font-size:14px; }
+ html body .vpn-connection { align-items:stretch; flex-direction:column; gap:12px; }
+ html body .vpn-connection .vpn-actions button { flex:1 1 auto; }
+ html body dialog:not(:where(#readerReading)) { max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:16px; }
+ html body #vpnDialog { padding:16px; }
+ html body #vpnDialog :is(.vpn-fields,.vpn-checks) { grid-template-columns:minmax(0,1fr); }
+ html body #vpnDialog label { font-size:14px; line-height:1.5; }
+ html body #vpnDialog .vpn-actions { flex-wrap:wrap; gap:8px; }
+ html body #vpnDialog .vpn-actions button { flex:1 1 auto; }
+ html body .kb-column { flex-basis:calc(100vw - 48px); }
+ html body .pulse-resources { grid-template-columns:minmax(0,1fr); }
+ html body .pulse-panel-title { align-items:flex-start; gap:8px; }
+ html body .pulse-details > div { min-width:0; }
+ html body .pulse-details dd { overflow-wrap:anywhere; }
+}
+@media(max-width:359px) {
+ html body :is(.anime-list,.trophy-grid,.reader-grid,.wave-card-grid,.cinema-grid,.gallery-grid,.watch-grid) { grid-template-columns:minmax(0,1fr); }
+ html body .workspace-header .brand-name { font-size:13px; letter-spacing:.3px; }
+ html body .workspace-header .brand { gap:5px; }
+ html body #homeDashboard .module-stats { grid-template-columns:1fr; }
+ html body #homeDashboard .module-stat { flex-direction:row; justify-content:space-between; align-items:center; }
+}
+/* Navigation and filters are visible work surfaces, not loose controls on the scene. */
+html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); gap:10px; }
+html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) { flex-wrap:wrap; min-width:0; }
+html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.rt-toolbar) > :is(input,select,label) { min-width:0; max-width:100%; }
+html body :is(.activity-tabs,.trophy-tabs) { display:flex; flex-wrap:wrap; gap:8px; }
+html body :is(.activity-tabs,.trophy-tabs) > :is(a,button) { display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; border:1px solid var(--line); border-radius:8px; text-decoration:none; }
+html body :is(.activity-tabs,.trophy-tabs) > [aria-current],html body .activity-tabs > [aria-pressed=true] { border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
+@media(max-width:800px) {
+ html body :is(#wavePage,#chatPage,#trophiesPage,#animePage,#readerPage,#contentPage,#kanban,#cinemaPage,#rhythmPage,#statisticsPage,.storage-app,.projects-app) :is(button,input:not([type=checkbox]):not([type=radio]):not([type=range]),select,.content-upload,.storage-upload,.projects-upload) { min-height:44px; }
+ html body :is(#wavePage,#chatPage,#trophiesPage,#animePage,#readerPage,#contentPage,#kanban,#cinemaPage,#rhythmPage,#statisticsPage,.storage-app,.projects-app) :is(input:not([type=checkbox]):not([type=radio]),select,textarea) { font-size:16px; }
+ html body :is(.activity-tabs,.trophy-tabs) > :is(a,button) { min-height:44px; flex:1 1 auto; font-size:14px; }
+ html body #wavePage .wave-sidebar { padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--theme-settings-surface,var(--surface)); }
+ html body #wavePage #waveNav a { display:flex; align-items:center; min-height:44px; font-size:14px; white-space:normal; }
+ html body #wavePage #waveNav .wave-playlist-heading { gap:8px; }
+ html body #wavePage #waveNav #waveCreate { width:44px; min-width:44px; height:44px; }
+ html body #wavePage .wave-toolbar #waveUploadButton { min-height:44px; font-size:14px; }
+ html body #chatPage .chat-icon { width:44px; height:44px; min-height:44px; }
+ html body #chatPage .chat-mobile-nav a { min-width:44px; min-height:44px; display:grid; place-items:center; }
+ html body #chatPage .chat-toolbar { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+ html body #chatPage .chat-toolbar > select { grid-column:span 3; width:100%; min-height:44px; padding:8px; font-size:16px; }
+ html body #chatPage .chat-toolbar > #chatTopics { grid-column:1/-1; width:100%; }
+ html body #chatPage .chat-toolbar > #chatModel { width:100%; }
+ html body #chatPage .chat-toolbar > .chat-icon { grid-column:span 2; width:100%; height:44px; }
+ html body #chatPage .chat-toolbar:not(:has(#chatModel:not([hidden]):not([type=hidden]))) > #chatProvider { grid-column:1/-1; }
+ html body #chatPage #chatInput { font-size:16px; }
+ html body :is(.storage-menu,.wave-track-menu) > summary { min-width:44px; min-height:44px; }
+}
+@media(max-width:600px) {
+ html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.kb-tools,.rt-toolbar) { gap:8px; }
+ html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.kb-tools,.rt-toolbar) > input:not([type=checkbox]):not([type=radio]) { flex:1 1 100%; width:100%; min-width:0; }
+ html body .content-toolbar > select { flex:1 1 calc(50% - 8px); width:0; }
+ html body .projects-toolbar > label { flex:1 1 100%; }
+ html body .storage-toolbar .storage-upload { margin-left:0; }
+ html body .storage-toolbar > :is(button,label) { flex:1 1 auto; }
+ html body #kanban .kb-tools > select { flex:1 1 100%; }
+ html body .home-card[data-home-card=pulse] .pulse-history-chart { height:104px; }
+}
+/* Text-heavy lists need a full reading width; a kanban column keeps its own scroll. */
+html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) { grid-template-columns:minmax(0,1fr); }
+html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) .article-list { grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); max-height:none; overflow:visible; }
+html body #kanban .kb-column-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+html body #kanban .kb-column-head h3 { grid-column:1; font-size:15px; line-height:1.45; }
+html body #kanban .kb-column-actions { grid-column:1/-1; flex-wrap:wrap; }
+html body #kanban .kb-count { grid-column:2; grid-row:1; }
+@media(max-width:800px) { html body #chatPage #chatProvider { max-width:none; } }
+@media(max-width:700px) {
+ html body #articleLayout .article-list { grid-template-columns:minmax(0,1fr); max-height:260px; }
+ html body #articleLayout:not(:has(#articleReading:not([hidden]),#articleEditor:not([hidden]))) .article-list { grid-template-columns:minmax(0,1fr); max-height:none; }
+ html body #contentPage .article-card { padding:14px; }
+ html body #contentPage .article-card strong { font-size:15px; line-height:1.45; }
+ html body #contentPage .article-card :is(span,small) { font-size:13px; }
+ html body #contentPage :is(#articleEditor,#articleReading) { padding:14px; }
+ html body #wavePage .wave-toolbar input[type=search] { flex:1 1 100%; width:100%; }
+ html body #wavePage .wave-toolbar #waveUploadButton { flex:1 1 auto; }
+}
+@media(max-width:800px) {
+ html body #vpnDialog #vpnForm > .vpn-actions { position:sticky; bottom:-16px; z-index:2; padding:12px 0; margin-bottom:-16px; border-top:1px solid var(--line); background:linear-gradient(var(--theme-solid,#191b19),var(--theme-solid,#191b19)),#191b19; }
+}
+@media(max-width:800px) {
+ html body :is(#balancePage,#balanceRoot,.balance-app) :is(button,select),html body #bankRefresh { min-height:44px; }
+ html body #chatPage #chatSend,html body #readerPage .reader-card-edit,html body #storageRefresh { min-width:44px; width:44px; min-height:44px; }
+ html body :is(.pulse-periods,.pulse-history-legend) button { min-width:44px; min-height:44px; }
+ html body #readerControls button[aria-label] { min-width:44px; }
+}
+@media(max-width:800px) {
+ html body .page :is(.balance-toolbar,.balance-pagination,.balance-title,.balance-actions) button { min-height:44px; }
+ html body .page .balance-toolbar input,html body .page .balance-toolbar select { font-size:16px; min-height:44px; }
+}
+
+
+/* Overview: seven focused widgets, with the original varied tile widths.
+   Scope the mosaic to this page so module groups and dialogs stay unchanged. */
+html body #homeDashboard[data-group=overview] .home-grid {
+  gap:12px;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+html body #homeDashboard[data-group=overview] .home-grid > .home-card {
+  grid-column:span 2;
+  padding:12px;
+}
+html body #homeDashboard[data-group=overview] .home-grid > :is([data-home-card=pulse],[data-home-card=storage]) { grid-column:1/-1; }
+html body #homeDashboard[data-group=overview] .home-grid > :is([data-home-card=kanban],[data-home-card=chat]) { grid-column:span 3; }
+html body #homeDashboard[data-group=overview] .home-card-title { min-height:36px; margin-bottom:10px; padding-bottom:8px; }
+html body #homeDashboard[data-group=overview] .home-card-title h2 { font-size:15px; }
+html body #homeDashboard[data-group=overview] #homeTasks { max-height:220px; }
+html body #homeDashboard[data-group=overview] .home-chat-preview { -webkit-line-clamp:3; }
+html body #homeDashboard[data-group=overview] .home-value,
+html body #homeDashboard[data-group=overview] .home-balance .module-stat strong { font-size:26px; }
+@media(max-width:699px) {
+  html body #homeDashboard[data-group=overview] .home-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  html body #homeDashboard[data-group=overview] .home-grid > .home-card { grid-column:1/-1; }
+  html body #homeDashboard[data-group=overview] .home-grid > :is([data-home-card=statistics],[data-home-card=balance]) { grid-column:span 1; }
+  html body #homeDashboard[data-group=overview] .home-card-title { gap:6px; }
+  html body #homeDashboard[data-group=overview] .home-card-title h2 { font-size:14px; }
+  html body #homeDashboard[data-group=overview] .home-card-title .ui-icon { width:18px; height:18px; }
+  html body #homeDashboard[data-group=overview] .home-card-title > a:first-child { gap:6px; }
+  html body #homeDashboard[data-group=overview] .home-balance .module-stats { grid-template-columns:1fr; }
+  html body #homeDashboard[data-group=overview] .home-balance .module-stat { gap:4px; }
+  html body #homeDashboard[data-group=overview] .home-value,
+  html body #homeDashboard[data-group=overview] .home-balance .module-stat strong { font-size:22px; overflow-wrap:anywhere; }
+}
+@media(max-width:359px) {
+  html body #homeDashboard[data-group=overview] .home-grid > :is([data-home-card=statistics],[data-home-card=balance]) { grid-column:1/-1; }
+}
+
+/* Compact spacing: density comes from gutters and summaries, not tiny text. */
+html body .workspace-header { height:54px; min-height:54px; padding-inline:14px; gap:10px; }
+html.embedded-page:not(.chat-widget) body { padding:10px max(var(--page-gutter),env(safe-area-inset-right)) 10px max(var(--page-gutter),env(safe-area-inset-left)); }
+html body .page > .page-foot { margin-top:12px; padding-top:8px; }
+html body :is(.section-line,.content-heading) { margin-bottom:10px; padding-bottom:8px; }
+html body :is(.module-heading,.home-card-title) { min-height:32px; margin-bottom:8px; padding-bottom:6px; gap:8px; }
+html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { padding:8px; gap:6px; margin-bottom:10px; }
+html body :is(.vpn-grid,.vpn-fields,.vpn-checks,.vpn-toolbar,.vpn-actions,.server-tools,.project-toolbar,.cinema-toolbar,.balance-toolbar,.wave-toolbar) { gap:8px; }
+html body :is(.vpn-card,.server-manager,.article-card,.project-card,.activity-card,.storage-row,.storage-folder-card) { padding:12px; }
+html body .vpn-card p { margin-block:6px; }
+html body .vpn-connection { padding-block:8px; }
+html body .kb-card { padding:10px; margin-top:8px; }
+html body #homeDashboard .home-grid { gap:10px; }
+html body #homeDashboard .home-grid > .home-card { padding:10px; }
+html body #homeDashboard .home-card-title { margin-bottom:8px; padding-bottom:6px; }
+html body #homeDashboard :is(.home-open,.home-add) { width:32px; height:32px; }
+html body #homeDashboard .home-action { min-height:32px; padding-top:4px; }
+html body #homeDashboard .home-chat-actions { padding-top:8px; gap:6px; }
+html body #homeDashboard #homeTasksCount { margin-top:6px; }
+html body #homeDashboard .home-metrics { margin-bottom:8px; gap:10px; }
+html body #homeDashboard .home-metric strong { font-size:22px; }
+html body #homeDashboard .pulse-history-chart { height:96px; }
+html body #homeDashboard :is(.home-task,.home-file) { min-height:36px; padding-block:3px; }
+html body #homeDashboard[data-group=overview] .home-grid { gap:10px; }
+html body #homeDashboard[data-group=overview] .home-grid > .home-card { padding:10px; }
+html body #homeDashboard[data-group=overview] .home-card-title { min-height:32px; margin-bottom:8px; padding-bottom:6px; }
+html body #homeDashboard[data-group=overview] .home-value,
+html body #homeDashboard[data-group=overview] .home-balance .module-stat strong { font-size:24px; }
+html body #homeDashboard[data-group=overview] #homeTasks { max-height:190px; }
+html body #homeDashboard[data-group=overview] .home-balance .module-stat { gap:3px; }
+@media(min-width:801px) {
+  html body .page :is(.vpn-toolbar,.vpn-actions,.content-toolbar,.projects-toolbar,.kb-tools,.wave-toolbar) button { min-height:32px; padding:5px 9px; }
+  html body dialog:not(:where(#readerReading)) { padding:16px; }
+  html body #vpnDialog label { margin-block:7px; }
+  html body #vpnDialog :is(input,select) { padding:6px 8px; }
+}
+@media(max-width:800px) {
+  html body .workspace-header { height:52px; min-height:52px; gap:4px; padding-inline:8px; }
+  :root { --page-gutter:8px; }
+  html.embedded-page:not(.chat-widget) body { padding:8px max(var(--page-gutter),env(safe-area-inset-right)) 8px max(var(--page-gutter),env(safe-area-inset-left)); }
+  html body :is(.vpn-card,.server-manager,.article-card,.project-card,.activity-card,.storage-row,.storage-folder-card) { padding:10px; }
+  html body #homeDashboard .home-grid,
+  html body #homeDashboard[data-group=overview] .home-grid { gap:8px; }
+  html body #homeDashboard .home-grid > .home-card,
+  html body #homeDashboard[data-group=overview] .home-grid > .home-card { padding:8px 10px; }
+  html body #homeDashboard :is(.home-open,.home-add) { width:44px; height:44px; }
+  html body #homeDashboard :is(.home-task,.home-file,.home-action) { min-height:44px; }
+  html body #homeDashboard .home-chat-actions { display:flex; flex-wrap:wrap; }
+  html body #homeDashboard #homeChatStart { flex:1 1 190px; min-height:44px; }
+  html body #homeDashboard .home-metrics { grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+  html body #homeDashboard .home-metric:nth-child(n) { grid-column:span 2; padding:0; border:0; }
+  html body #homeDashboard .home-metric:nth-child(n+4) { grid-column:span 3; }
+  html body #homeDashboard .home-metric strong { font-size:20px; }
+  html body #homeDashboard .home-metric:nth-child(5) strong { font-size:15px; }
+  html body #homeDashboard .pulse-history-chart { height:76px; }
+  html body #homeDashboard .pulse-history-legend { gap:8px; }
+  html body #homeDashboard .pulse-history-info { margin-top:4px; }
+  html body #homeDashboard[data-group=overview] .home-value,
+  html body #homeDashboard[data-group=overview] .home-balance .module-stat strong { font-size:22px; }
+  html body #contentPage .article-card { padding:10px; }
+  html body #wavePage .wave-sidebar { padding:8px; }
+  html body .vpn-connection { gap:8px; }
+  html body #vpnDialog label { margin-block:6px; }
+  html body :is(dialog,#vpnDialog,#readerEditDialog) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) { font-size:16px; }
+}
+
+html body [data-card-link]{cursor:pointer}
+html body [data-card-link]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+html body [data-card-link]:hover{border-color:var(--line-strong)}
+html[data-carbon-glass=true] body :is(.settings-sidebar,.settings-card,.security-panel,.maintenance-grid>section,.chat-panel,.balance-panel,.signal-panel,.trophy-panel,.anime-panel,.server-manager,.server-report,.server-registration,#readerSettings,.settings-group){background:var(--glass-light),var(--surface);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
+/* Ordinary windows stay inside the module iframe. Only readers and the article
+   editor replace the module surface; the player keeps its own layout. */
+html body :where(dialog[open]) { box-sizing:border-box; max-height:calc(100dvh - 24px); overflow:auto; overscroll-behavior:contain; }
+html.nexus-surface-open body > :not(canvas):not(dialog) { visibility:hidden; }
+html.nexus-surface-open { scrollbar-gutter:auto; }
+html.nexus-surface-open body dialog[open] { visibility:visible; }
+html.nexus-surface-open body dialog.nexus-dialog-covered { visibility:hidden !important; }
+html body dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)[open] {
+  box-sizing:border-box; position:fixed; inset:0; margin:0;
+  width:100vw !important; min-width:0 !important; max-width:none !important;
+  height:100dvh !important; max-height:none !important;
+  border:0 !important; border-radius:0 !important;
+  padding:max(22px,env(safe-area-inset-top)) max(24px,calc((100vw - 960px)/2)) max(24px,env(safe-area-inset-bottom));
+  overflow:auto; overscroll-behavior:contain;
+  box-shadow:none !important;
+}
+html body dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)[open]::backdrop { background:transparent !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+html body dialog[open] :is(.dialog-close,[aria-label='Закрыть']) { min-width:44px; min-height:44px; flex-shrink:0; }
+html body dialog[open] .nexus-screen-close { position:sticky; top:0; float:right; z-index:5; margin:0 0 8px 12px; width:44px; height:44px; border:1px solid var(--line); border-radius:8px; background:var(--dialog-bg); color:var(--text); padding:0; font-size:25px; cursor:pointer; }
+html body #readerReading[open] { padding:0; overflow:hidden; }
+html body #readerViewport:not([data-theme='paper']):not([data-theme='sepia']) { background:transparent; }
+body.wave-shell.reader-focus #carbonBackground { visibility:visible; }
+body.wave-shell.dialog-focus { padding:0 !important; }
+body.wave-shell.dialog-focus :is(.workspace-header,.workspace-mobile,#wavePlayer,#waveTransfer,#waveRestore) { visibility:hidden; pointer-events:none; }
+body.wave-shell.dialog-focus #hubFrame { position:fixed; inset:0; width:100vw; height:100dvh !important; max-height:none; z-index:40; }
+body.wave-shell.wave-focus :is(#hubFrame,.workspace-header,.workspace-mobile,#waveTransfer,#waveRestore) { visibility:hidden; pointer-events:none; }
+body.wave-shell.wave-focus #carbonBackground { visibility:visible; }
+/* Article reading and editing now leave a full-width catalogue behind them. */
+html body #articleLayout { display:block; }
+html body #articleLayout .article-list { max-height:none; grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)); }
+html body dialog.image-viewer[open],html body dialog.storage-preview[open] { padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)); }
+html[data-perf-effect='blur'] body #readerReading[open],html[data-perf-effect='blur'] body #wavePlayer.expanded { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+@media(prefers-reduced-transparency:reduce) {
+  html[data-carbon-glass] body #readerReading[open] { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+}
+@media(max-width:650px) {
+  html body dialog:is(#articleWorkspace,#articleReadingWorkspace)[open] { padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+}
+
+/* One close control across dialogs, readers and playback; keep each view's visibility rules. */
+html body button:is(.dialog-close,[aria-label^="Закрыть"],[title^="Закрыть"]) {
+  box-sizing:border-box !important; width:44px !important; height:44px !important;
+  min-width:44px !important; max-width:44px !important; min-height:44px !important;
+  flex:0 0 44px !important; padding:0 !important;
+  border:1px solid var(--line-strong) !important; border-radius:var(--button-radius) !important;
+  background:var(--glass-light),var(--dialog-glass) !important;
+  color:var(--text) !important; box-shadow:var(--glass-edge) !important;
+  -webkit-backdrop-filter:blur(var(--glass-blur)); backdrop-filter:blur(var(--glass-blur));
+  font:400 34px/1 var(--sans) !important; letter-spacing:0; text-align:center; cursor:pointer;
+  align-items:center; justify-content:center;
+}
+html body button:is(.dialog-close,[aria-label^="Закрыть"],[title^="Закрыть"]):hover {
+  border-color:var(--accent) !important; color:var(--accent) !important;
+}
+html body button:is(.dialog-close,[aria-label^="Закрыть"],[title^="Закрыть"]):focus-visible {
+  outline:2px solid var(--accent); outline-offset:3px;
+}
+@media(prefers-reduced-transparency:reduce) {
+  html body button:is(.dialog-close,[aria-label^="Закрыть"],[title^="Закрыть"]) {
+    background:var(--dialog-bg) !important; -webkit-backdrop-filter:none; backdrop-filter:none;
+  }
+}
+
+/* Shared desktop action rows use compact text buttons; close and media controls retain their sizes. */
+@media(min-width:801px) {
+  html body .page :is(.vpn-actions,.server-actions,.server-tools,.kb-tools,.content-toolbar,.storage-toolbar,.project-toolbar,.cinema-toolbar,.anime-toolbar,.trophy-toolbar,.balance-toolbar,.chat-actions,.signal-actions,.security-actions,.dialog-actions,.ui-dialog-actions) button:not(.dialog-close) {
+    min-height:32px; padding:4px 8px; font-size:12px; line-height:20px; flex-grow:0;
+  }
+}
+
+/* Generated close controls must not narrow the first field in a prompt. */
+html body dialog.nexus-question[open] > h2 { min-height:44px; display:flex; align-items:center; margin:0 0 12px; }
+html body dialog.nexus-question[open] > form { clear:both; min-width:0; }
+
+/* Every dashboard card uses the same heading component, including module summaries. */
+html body #homeDashboard[data-group] .home-grid > .home-card > .home-card-title {
+  box-sizing:border-box; display:flex; align-items:center; flex-wrap:nowrap;
+  height:32px; min-height:32px; flex:0 0 32px;
+  margin:0 0 8px; padding:0 0 6px; gap:8px;
+  border-bottom:1px solid var(--line-soft); background:none;
+}
+html body #homeDashboard[data-group] .home-card-title > a:first-child {
+  display:flex; align-items:center; min-width:0; gap:8px; margin:0; padding:0;
+}
+html body #homeDashboard[data-group] .home-card-title h2 {
+  margin:0; padding:0; min-width:0; font:500 15px/22px var(--sans);
+  letter-spacing:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+html body #homeDashboard[data-group] .home-card-title .ui-icon {
+  width:20px; height:20px; flex:0 0 20px;
+}
+@media(max-width:800px) {
+  html body #homeDashboard[data-group] .home-card-title h2 { font-size:14px; }
+}
+
+/* Select pickers share the same glass and palette as the rest of the hub. */
+html body select { accent-color:var(--accent); }
+html body select :is(option,optgroup) { color:var(--text); background:transparent; }
+html body select option:checked { background:var(--button-active); color:var(--accent); }
+@supports (appearance:base-select) {
+  html body select:not([multiple]):not([size]),
+  html body select:not([multiple])[size='1'],
+  html body select::picker(select) { appearance:base-select; }
+  html body select::picker(select) {
+    border:1px solid var(--line-strong); border-radius:10px; padding:4px;
+    background:var(--glass-light,linear-gradient(transparent,transparent)),var(--dialog-glass);
+    color:var(--text); box-shadow:0 8px 28px #0005,var(--glass-edge,0 0 transparent);
+    backdrop-filter:blur(var(--glass-blur,16px)); -webkit-backdrop-filter:blur(var(--glass-blur,16px));
+    max-height:min(360px,65dvh); max-width:calc(100vw - 16px);
+    overflow:auto; overscroll-behavior:contain;
+    scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
+  }
+  html body select option {
+    min-height:32px; padding:6px 10px; border-radius:6px; gap:8px;
+    font:inherit; white-space:normal; overflow-wrap:anywhere;
+  }
+  html body select option:not(:disabled):hover { background:var(--button-hover); }
+  html body select option:checked { background:var(--button-active); color:var(--accent); }
+  html body select option:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
+  html body select option:disabled { opacity:.45; }
+  html body select option::checkmark { color:var(--accent); }
+  html body select::picker-icon { color:var(--accent); }
+  @media(max-width:800px) { html body select option { min-height:44px; padding:10px; } }
+  @media(prefers-reduced-transparency:reduce) {
+    html body select::picker(select) { background:var(--dialog-bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+  }
+}
+html body .nexus-select-menu {
+  position:fixed; inset:auto; margin:0; z-index:2147483647;
+  padding:4px; border:1px solid var(--line-strong); border-radius:10px;
+  max-height:min(360px,65dvh); max-width:calc(100vw - 16px); overflow:auto;
+  background:var(--glass-light,linear-gradient(transparent,transparent)),var(--dialog-glass);
+  color:var(--text); box-shadow:0 8px 28px #0005,var(--glass-edge,0 0 transparent);
+  backdrop-filter:blur(var(--glass-blur,16px)); -webkit-backdrop-filter:blur(var(--glass-blur,16px));
+  font:14px/1.4 var(--sans); text-align:left; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
+}
+html body .nexus-select-menu:focus { outline:none; }
+html body .nexus-select-option {
+  display:flex; gap:8px; align-items:center; min-height:32px; padding:6px 10px;
+  border-radius:6px; cursor:pointer; overflow-wrap:anywhere;
+}
+html body .nexus-select-option::before { content:''; width:1em; flex:none; }
+html body .nexus-select-option[aria-selected=true] { background:var(--button-active); color:var(--accent); }
+html body .nexus-select-option[aria-selected=true]::before { content:'✓'; }
+html body .nexus-select-option[data-active] { outline:1px solid var(--accent); outline-offset:-1px; }
+html body .nexus-select-option[aria-disabled=true] { opacity:.45; cursor:default; }
+html body .nexus-select-group { padding:8px 10px 4px; font-size:12px; color:var(--muted); }
+@media(max-width:800px) {
+  html body .nexus-select-menu { font-size:16px; }
+  html body .nexus-select-option { min-height:44px; padding:10px; }
+}
+@media(prefers-reduced-transparency:reduce) {
+  html body .nexus-select-menu { background:var(--dialog-bg); backdrop-filter:none; -webkit-backdrop-filter:none; }
+}

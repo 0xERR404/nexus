@@ -1,0 +1,188 @@
+.security-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--card-gap, 8px);
+}
+.security-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 14px;
+  min-width: 0;
+}
+.security-panel h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+.security-panel form,
+.security-panel label,
+#securityConfirmForm {
+  display: grid;
+  gap: 8px;
+}
+.security-panel label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.security-panel form {
+  gap: 12px;
+}
+.security-panel input,
+.security-panel select,
+#securityConfirm input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--text);
+  padding: 7px 9px;
+  font: 13px var(--sans);
+}
+.security-panel button,
+#securityConfirm button,
+#securityCodes button,
+#factorLogin button {
+  min-height: var(--control-height);
+  padding: var(--button-padding);
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  color: var(--text);
+  background: var(--button-bg);
+  cursor: pointer;
+  font: var(--button-font);
+}
+.security-panel button:disabled {
+  opacity: 0.5;
+}
+.security-panel small,
+.security-panel p,
+#securityCodes p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.security-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.security-row > div {
+  min-width: 0;
+}
+.security-row strong,
+.security-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.security-row strong {
+  font-size: 13px;
+}
+.security-row button {
+  flex-shrink: 0;
+}
+.security-wide {
+  grid-column: 1/-1;
+}
+.security-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.security-heading h2 {
+  margin: 0;
+}
+.security-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+#securityStatus {
+  color: var(--amber);
+  font-size: 12px;
+}
+#securityStatus:empty {
+  display: none;
+}
+#securityConfirm,
+#securityCodes {
+  width: min(460px, calc(100vw - 32px));
+  padding: 18px;
+}
+#securityCodesText {
+  font: 11px/1.8 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+#securityConfirm .dialog-close,
+#securityCodes .dialog-close {
+  font-size: 28px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+#factorLogin details {
+  margin-top: 20px;
+  font-size: 13px;
+}
+#factorLogin details form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+#factorLogin input {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--text);
+}
+#factorLogin > a {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 12px;
+}
+@media (max-width: 650px) {
+  .security-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .security-panel {
+    padding: 12px;
+  }
+  .security-row {
+    align-items: flex-start;
+  }
+  .security-heading .security-actions {
+    margin: 0;
+  }
+  #securityCodesText {
+    font-size: 10px;
+  }
+}
+
+#passkeyEnter {
+  width: 100%;
+  margin-top: 14px;
+}
+#passwordFallback {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#passwordFallback summary {
+  cursor: pointer;
+}
+#passwordFallback .login-form {
+  margin-top: 12px;
+}
+#passkeyLogin button:disabled {
+  opacity: 0.5;
+}

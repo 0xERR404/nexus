@@ -1,0 +1,26 @@
+name: nexus404
+
+networks:
+  default:
+    name: nexus404
+    external: true
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

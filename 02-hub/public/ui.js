@@ -1,0 +1,817 @@
+// Keep real select elements for form values, validation, labels and module listeners.
+// Browsers with customizable selects use the CSS picker; others share this fallback.
+(() => {
+  if (CSS.supports('appearance', 'base-select')) return;
+  let current, sequence = 0;
+  const eligible = node => node instanceof HTMLSelectElement && !node.multiple && node.size <= 1 && !node.matches(':disabled');
+  function close(restore = false) {
+    if (!current) return;
+    const {select, menu, observer, expanded, controls} = current;
+    current = null;
+    observer.disconnect(); menu.remove();
+    for (const [name, value] of [['aria-expanded', expanded], ['aria-controls', controls]])
+      value === null ? select.removeAttribute(name) : select.setAttribute(name, value);
+    if (restore && select.isConnected) select.focus({preventScroll:true});
+  }
+  function open(select) {
+    if (current?.select === select) { close(true); return; }
+    close();
+    const menu = document.createElement('div');
+    menu.className = 'nexus-select-menu'; menu.id = 'nexus-select-' + ++sequence;
+    menu.setAttribute('role','listbox'); menu.tabIndex = -1;
+    const labelled = select.getAttribute('aria-labelledby');
+    if (labelled) menu.setAttribute('aria-labelledby',labelled);
+    else {
+      const label = select.labels?.[0]?.cloneNode(true);
+      label?.querySelectorAll('select,input,button').forEach(node=>node.remove());
+      menu.setAttribute('aria-label',select.getAttribute('aria-label') || label?.textContent.trim() || select.title || 'Выбери вариант');
+    }
+    let rows = [], active = -1, buffer = '', typedAt = 0;
+    const enabled = () => rows.map((row,i)=>row.option.disabled || row.option.parentElement?.disabled ? -1 : i).filter(i=>i>=0);
+    function activate(index, scroll = true) {
+      active = index;
+      rows.forEach((row,i)=>row.node.toggleAttribute('data-active',i===active));
+      if (rows[active]) {
+        menu.setAttribute('aria-activedescendant',rows[active].node.id);
+        if (scroll) rows[active].node.scrollIntoView({block:'nearest'});
+      } else menu.removeAttribute('aria-activedescendant');
+    }
+    function choose(index) {
+      const option = rows[index]?.option;
+      if (!option || !eligible(select) || !select.isConnected || !select.getClientRects().length || !enabled().includes(index)) return;
+      const actual = [...select.options].indexOf(option);
+      if (actual < 0) return;
+      const changed = select.selectedIndex !== actual;
+      select.selectedIndex = actual;
+      close(true);
+      if (changed) {
+        select.dispatchEvent(new Event('input',{bubbles:true}));
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    }
+    function place() {
+      const rect = select.getBoundingClientRect(), width = document.documentElement.clientWidth, height = window.innerHeight;
+      menu.style.width = Math.min(Math.max(rect.width,180),width-16)+'px';
+      menu.style.left = Math.max(8,Math.min(rect.left,width-menu.offsetWidth-8))+'px';
+      const below = height-rect.bottom-8, above = rect.top-8;
+      const down = below >= Math.min(menu.scrollHeight,240) || below >= above;
+      menu.style.maxHeight = Math.max(44,Math.min(360,height*.65,down?below:above))+'px';
+      menu.style.top = Math.max(8,down?rect.bottom+4:rect.top-menu.offsetHeight-4)+'px';
+    }
+    function render() {
+      if (!eligible(select) || !select.isConnected) { close(); return; }
+      const previous = rows[active]?.option;
+      rows = []; menu.replaceChildren();
+      for (const child of select.children) {
+        if (child.hidden) continue;
+        if (child.tagName === 'OPTGROUP') {
+          const heading = document.createElement('div'); heading.className='nexus-select-group'; heading.textContent=child.label; menu.append(heading);
+        }
+        for (const option of child.tagName === 'OPTGROUP' ? child.children : [child]) {
+          if (option.tagName !== 'OPTION' || option.hidden) continue;
+          const node=document.createElement('div'), index=rows.length;
+          node.className='nexus-select-option'; node.id=menu.id+'-'+index;
+          node.setAttribute('role','option'); node.setAttribute('aria-selected',String(option.selected));
+          node.setAttribute('aria-disabled',String(option.disabled || !!option.parentElement?.disabled));
+          node.textContent=option.label;
+          node.addEventListener('pointermove',()=>{if(enabled().includes(index))activate(index,false);});
+          node.addEventListener('click',()=>choose(index));
+          rows.push({node,option}); menu.append(node);
+        }
+      }
+      place();
+      let index=rows.findIndex(row=>row.option===previous);
+      if(index<0) index=rows.findIndex(row=>row.option.selected);
+      activate(enabled().includes(index)?index:(enabled()[0]??-1));
+    }
+    const observer=new MutationObserver(render);
+    current={select,menu,observer,render,expanded:select.getAttribute('aria-expanded'),controls:select.getAttribute('aria-controls')};
+    select.setAttribute('aria-expanded','true'); select.setAttribute('aria-controls',menu.id);
+    (select.closest('dialog[open]') || document.body).append(menu);
+    if (typeof menu.showPopover === 'function') { menu.setAttribute('popover','manual'); menu.showPopover(); }
+    render(); menu.focus({preventScroll:true});
+    observer.observe(select,{childList:true,subtree:true,attributes:true,characterData:true,attributeFilter:['disabled','hidden','selected','label','value','multiple','size']});
+    menu.addEventListener('keydown',event=>{
+      const keys=enabled(), index=keys.indexOf(active);
+      if (event.key==='Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key==='Tab') { close(true); return; }
+      if (event.key==='Enter' || event.key===' ') { event.preventDefault(); choose(active); return; }
+      let next;
+      if(event.key==='ArrowDown')next=keys[Math.min(keys.length-1,index+1)];
+      if(event.key==='ArrowUp')next=keys[Math.max(0,index-1)];
+      if(event.key==='Home')next=keys[0];
+      if(event.key==='End')next=keys.at(-1);
+      if(event.key==='PageDown')next=keys[Math.min(keys.length-1,index+8)];
+      if(event.key==='PageUp')next=keys[Math.max(0,index-8)];
+      if(next!==undefined) {event.preventDefault();activate(next);return;}
+      if(event.key.length===1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();const now=Date.now();buffer=now-typedAt<700?buffer+event.key:event.key;typedAt=now;
+        const query=[...buffer].every(c=>c===buffer[0])?buffer[0]:buffer;
+        const ordered=[...keys.slice(index+1),...keys.slice(0,index+1)];
+        const match=ordered.find(i=>rows[i].option.label.toLocaleLowerCase().startsWith(query.toLocaleLowerCase()));
+        if(match!==undefined)activate(match);
+      }
+    });
+  }
+  document.addEventListener('pointerdown',event=>{
+    if(current && !current.menu.contains(event.target) && event.target!==current.select)close();
+    if(eligible(event.target) && event.button===0)event.preventDefault();
+  },true);
+  document.addEventListener('mousedown',event=>{if(eligible(event.target) && event.button===0)event.preventDefault();},true);
+  document.addEventListener('click',event=>{if(eligible(event.target)){event.preventDefault();open(event.target);}},true);
+  document.addEventListener('keydown',event=>{
+    if(eligible(event.target) && ['ArrowDown','ArrowUp',' ','Enter'].includes(event.key)) {event.preventDefault();open(event.target);}
+  });
+  document.addEventListener('focusin',event=>{if(current && event.target!==current.select && !current.menu.contains(event.target))close();});
+  document.addEventListener('change',event=>{if(current?.select===event.target)current.render();});
+  document.addEventListener('reset',()=>queueMicrotask(()=>current?.render()));
+  document.addEventListener('scroll',event=>{if(current && !current.menu.contains(event.target))close();},true);
+  addEventListener('resize',()=>close()); addEventListener('pagehide',()=>close());
+})();
+
+const nexusNotices = (() => {
+  const legacy = 'nexus-pending-notices-v1', prefix = 'nexus-notice-v2:';
+  let memory = new Map(), busy = false, timer, failures = 0;
+  const valid = v => v && /^[a-z][a-z0-9-]{0,31}$/.test(v.source) && /^(summary|home|request|task|history|connection)$/.test(v.code) && (v.active === undefined || typeof v.active === 'boolean');
+  const owner = () => { try { return parent !== window && parent.Nexus?.notice; } catch { return null; } };
+  const entries = () => {
+    const found = new Map(memory);
+    try { for (let i=0;i<localStorage.length;i++) { const key=localStorage.key(i); if(!key?.startsWith(prefix))continue; try {const v=JSON.parse(localStorage.getItem(key));if(valid(v) && Number.isFinite(v.at))found.set(key,v);}catch{} } } catch {}
+    return [...found].sort((a,b)=>a[1].at-b[1].at || a[0].localeCompare(b[0]));
+  };
+  const remove = key => { memory.delete(key);try {localStorage.removeItem(key);} catch {} };
+  const enqueue = (source,code,active) => {
+    const items=entries(),previous=items.filter(([,v])=>v.source===source&&v.code===code).at(-1);
+    if(previous && previous[1].active===active)return;
+    const at=Math.max(Date.now(),(items.at(-1)?.[1].at||0)+1),id=prefix+at.toString(36)+'-'+Math.random().toString(36).slice(2),value={source,code,active,at};
+    try {localStorage.setItem(id,JSON.stringify(value));} catch {memory.set(id,value);}
+    for(const [key] of items.slice(0,Math.max(0,items.length-63)))remove(key);
+  };
+  async function flush() {
+    if(owner() || busy || globalThis.navigator?.onLine===false || !entries().length)return;
+    busy=true;clearTimeout(timer);
+    try {
+      const drain=async()=>{for(let item; (item=entries()[0]);) {
+        const [key,{source,code,active}]=item;
+        const response=await fetch('/api/notices',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({source,code,active}),signal:AbortSignal.timeout(8000)});
+        if(response.status===401 || response.status===403)return;
+        if(response.status===400){remove(key);continue;}
+        if(!response.ok || (await response.json()).ok!==true)throw Error('Notice pending');
+        remove(key);failures=0;
+      }};
+      if(globalThis.navigator?.locks?.request)await navigator.locks.request('nexus-notices',drain);else await drain();
+    } catch {timer=setTimeout(flush,Math.min(300000,5000*2**Math.min(failures++,6)));}
+    finally {busy=false;}
+  }
+  if(!owner())try {
+    const saved=JSON.parse(localStorage.getItem(legacy)||'[]');
+    if(Array.isArray(saved))for(const v of saved.slice(-64))if(valid(v))enqueue(v.source,v.code,v.active!==false);
+    localStorage.removeItem(legacy);
+  } catch {}
+  if(typeof addEventListener==='function') {addEventListener('online',flush);addEventListener('pageshow',flush);addEventListener('storage',e=>{if(e.key?.startsWith(prefix))void flush();});}
+  return (source,code='request',active=true) => {
+    const delegate=owner();if(delegate)return delegate(source,code,active);
+    if(!valid({source,code,active}))return;
+    enqueue(source,code,active);void flush();
+  };
+})();
+// A new module always starts at its beginning; reading progress is owned by the reader.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+addEventListener('pageshow', () => { if (!location.hash) scrollTo(0, 0); });
+const nexusViews = new Map(), nexusLeaveGuards = new Set();
+let nexusQuestionOpen = false;
+window.Nexus = Object.freeze({
+  notice: nexusNotices,
+  viewSnapshot(key, value) {
+    try { if (parent !== window && parent.Nexus) return parent.Nexus.viewSnapshot(key, value); } catch {}
+    if (value !== undefined) {
+      nexusViews.delete(key);
+      nexusViews.set(key, value);
+      if (nexusViews.size > 40) nexusViews.delete(nexusViews.keys().next().value);
+    }
+    return nexusViews.get(key);
+  },
+  rememberView(fields = [], capture = () => ({})) {
+    const key = () => { const u = new URL(location.href); for (const name of ['_view','new','book','file','image','anime','game','card','project','track']) u.searchParams.delete(name); return u.pathname + u.search; };
+    const saved = Nexus.viewSnapshot(key()), touched = new Set();
+    const applyFields = () => {
+      if (!saved) return;
+        for (const id of fields) {
+          const el = document.getElementById(id), value = saved.values[id];
+          if (!el || value === undefined || touched.has(id)) continue;
+          if (el.type === 'checkbox') el.checked = value;
+          else if (el.tagName !== 'SELECT' || [...el.options].some(o => o.value === value)) el.value = value;
+        }
+    };
+    applyFields();
+    for (const id of fields) for (const type of ['input','change']) document.getElementById(id)?.addEventListener(type, () => touched.add(id));
+    let restored = false;
+    const save = () => {
+      if (!restored && !touched.size) return;
+      const values = {};
+      for (const id of fields) {
+        const el = document.getElementById(id);
+        if (el && el.type !== 'password' && el.type !== 'file') values[id] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+      const scroll = [...document.querySelectorAll('[id]')].filter(el => el.scrollTop || el.scrollLeft).map(el => [el.id, el.scrollLeft, el.scrollTop]);
+      Nexus.viewSnapshot(key(), {values, extra:capture(), scroll, x:scrollX, y:scrollY});
+    };
+    addEventListener('pagehide', save);
+    addEventListener('nexus:leave', save);
+    return {
+      value: saved?.extra || {},
+      restore(render) {
+        if (restored) return false;
+        restored = true;
+        if (!saved) return false;
+        applyFields();
+        Promise.resolve(render?.(saved.extra)).then(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!location.hash) window.scrollTo(0, 0);
+        }))).catch(() => nexusNotices('hub','request'));
+        return true;
+      }
+    };
+  },
+  beforeLeave(guard) { nexusLeaveGuards.add(guard); return () => nexusLeaveGuards.delete(guard); },
+  async prepareLeave() {
+    for (const guard of nexusLeaveGuards) if (await guard() === false) return false;
+    if (await (window.NexusUI || parent.NexusUI)?.prepareLeave?.() === false) return false;
+    dispatchEvent(new Event('nexus:leave'));
+    return true;
+  },
+  empty(title, description, label, action) {
+    const box = Nexus.node('div', undefined, 'ui-empty');
+    box.append(Nexus.node('h3', title));
+    if (description) box.append(Nexus.node('p', description));
+    if (label && action) {
+      const control = Nexus.node(typeof action === 'string' ? 'a' : 'button', label);
+      if (typeof action === 'string') control.href = action;
+      else { control.type = 'button'; control.onclick = action; }
+      box.append(control);
+    }
+    return box;
+  },
+  problem(target, source, error) {
+    if (!target) return;
+    // Validation and conflicts must remain actionable beside the user's input.
+    if ([400, 409, 422].includes(error?.status)) {
+      target.textContent = error.message;
+      return;
+    }
+    nexusNotices(source, 'request');
+    target.replaceChildren(document.createTextNode(
+      error?.status === 401 ? 'Войди в хаб заново. ' : 'Действие не завершено. '
+    ));
+    const link = Nexus.node('a', error?.status === 401 ? 'Войти' : 'Открыть Гермес');
+    link.href = error?.status === 401 ? '/login' : '/modules/signal/';
+    target.append(link);
+  },
+  question(message, value, options = {}) {
+    const isPrompt = value !== undefined;
+    if (nexusQuestionOpen) return Promise.resolve(isPrompt ? null : false);
+    nexusQuestionOpen = true;
+    return new Promise((resolve, reject) => {
+      const dialog = document.createElement('dialog');
+      dialog.className = 'nexus-question';
+      dialog.dataset.uiPersistent = 'true';
+      const heading = Nexus.node(
+        'h2',
+        options.title || (isPrompt ? 'Ввод данных' : 'Подтверждение')
+      );
+      heading.id = 'nexusQuestionTitle';
+      dialog.setAttribute('aria-labelledby', heading.id);
+      const label = Nexus.node('label', message);
+      const form = document.createElement('form');
+      form.method = 'dialog';
+      let input,
+        answer = isPrompt ? null : false;
+      if (isPrompt) {
+        input = document.createElement(options.multiline ? 'textarea' : 'input');
+        input.value = String(value);
+        if (!options.multiline) input.type = 'text';
+        input.maxLength = options.maxLength || 10000;
+        label.append(input);
+      }
+      const buttons = Nexus.node('div', undefined, 'nexus-question-actions');
+      const cancel = Nexus.node('button', 'Отмена');
+      cancel.type = 'button';
+      const accept = Nexus.node(
+        'button',
+        options.accept || (isPrompt ? 'Сохранить' : 'Подтвердить')
+      );
+      accept.type = 'submit';
+      cancel.onclick = () => dialog.close();
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        answer = isPrompt ? input.value : true;
+        dialog.close();
+      };
+      buttons.append(cancel, accept);
+      form.append(label, buttons);
+      dialog.append(heading, form);
+      const previousFocus = document.activeElement;
+      dialog.addEventListener(
+        'close',
+        () => {
+          dialog.remove();
+          nexusQuestionOpen = false;
+          if (previousFocus?.isConnected) previousFocus.focus({preventScroll: true});
+          resolve(answer);
+        },
+        {once: true}
+      );
+      try {
+        document.body.append(dialog);
+        dialog.showModal();
+        (input || cancel).focus();
+        input?.select();
+      } catch (error) {
+        dialog.remove();
+        nexusQuestionOpen = false;
+        reject(error);
+      }
+    });
+  },
+  prompt(message, value = '', options) {
+    return Nexus.question(message, String(value ?? ''), options);
+  },
+  confirm(message, options) {
+    return Nexus.question(message, undefined, options);
+  },
+  async request(url, data, options = {}) {
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(45000),
+      ...(data === undefined
+        ? {}
+        : {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+          }),
+      ...options
+    });
+    const error = (message, status = response.status) => Object.assign(Error(message), {status});
+    if (response.redirected || response.status === 401) throw error('Войди в хаб заново', 401);
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw error('Не удалось прочитать ответ сервера');
+    }
+    if (!response.ok)
+      throw error(typeof result?.error === 'string' ? result.error : 'Ошибка запроса');
+    return result;
+  },
+  node(tag, text, className) {
+    const element = document.createElement(tag);
+    if (text !== undefined) element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  }
+});
+
+(() => {
+  const root = document.documentElement;
+  const separateSurface = 'dialog:is(#readerReading,#articleWorkspace,#articleReadingWorkspace)';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const own = window.parent === window || !window.parent.NexusUI;
+  const stack = [],
+    watched = new Map(),
+    cancelling = new WeakSet();
+  const push = history.pushState.bind(history),
+    replace = history.replaceState.bind(history);
+  let marker = false,
+    rewinding = false,
+    promptFor,
+    deferredNavigation;
+  const flushNavigation = () => {
+    if (!marker && !rewinding && !live().length && deferredNavigation) {
+      const run = deferredNavigation;
+      deferredNavigation = null;
+      run();
+    }
+  };
+  const fields = (d) =>
+    JSON.stringify(
+      [...d.querySelectorAll('input,textarea,select,[contenteditable=true]')].map((n) => [
+        n.type,
+        n.type === 'file'
+          ? [...n.files].map((f) => [f.name, f.size, f.lastModified])
+          : (n.value ?? n.textContent),
+        n.checked
+      ])
+    );
+  const editable = (d) =>
+    !d.dataset?.uiPersistent &&
+    d.querySelector(
+      'form:not([method=dialog]),textarea,input:not([type=search]):not([type=range]),[contenteditable=true]'
+    );
+  const live = () => stack.filter((e) => e.dialog.isConnected && e.dialog.open);
+  function mark() {
+    if (!marker && !rewinding && live().length) {
+      push({...history.state, nexusDialogs: true}, '', location.href);
+      marker = true;
+    }
+  }
+  function register(dialog, controller) {
+    if (stack.some((e) => e.dialog === dialog)) return;
+    stack.push({dialog, controller});
+    mark();
+  }
+  function unregister(dialog, rewind = true) {
+    const index = stack.findIndex((e) => e.dialog === dialog);
+    if (index >= 0) stack.splice(index, 1);
+    if (!live().length && marker) {
+      marker = false;
+      if (rewind) {
+        rewinding = true;
+        history.back();
+      }
+    }
+    flushNavigation();
+  }
+  const owner = own ? {register, unregister} : window.parent.NexusUI;
+  function requestClose(dialog, discard = false) {
+    if (!dialog?.open) return true;
+    if (dialog.querySelector('button[type=submit]:disabled')) return false;
+    cancelling.add(dialog);
+    const accepted = dialog.dispatchEvent(new Event('cancel', {cancelable: true}));
+    cancelling.delete(dialog);
+    if (!accepted) return false;
+    const before = watched.get(dialog);
+    if (!discard && before !== null && before !== undefined && before !== fields(dialog)) {
+      if (promptFor?.open) return false;
+      promptFor?.remove();
+      const confirm = document.createElement('dialog');
+      promptFor = confirm;
+      confirm.className = 'ui-discard';
+      confirm.setAttribute('aria-labelledby', 'uiDiscardTitle');
+      confirm.innerHTML =
+        '<h2 id="uiDiscardTitle">Закрыть без сохранения?</h2><p>Изменения в этом окне будут потеряны.</p><div class="ui-dialog-actions"><button type="button" data-keep>Остаться</button><button type="button" data-discard>Закрыть</button></div>';
+      document.body.append(confirm);
+      confirm.querySelector('[data-keep]').onclick = () => confirm.close();
+      confirm.querySelector('[data-discard]').onclick = () => {
+        confirm.close();
+        requestClose(dialog, true);
+      };
+      confirm.addEventListener(
+        'close',
+        () => {
+          if (promptFor === confirm) promptFor = null;
+          confirm.remove();
+        },
+        {once: true}
+      );
+      confirm.showModal();
+      return false;
+    }
+    dialog.close();
+    syncDialogs();
+    return true;
+  }
+  const controller = {requestClose, changed(dialog) {
+    const before = watched.get(dialog);
+    return before != null && before !== fields(dialog);
+  }};
+  function watchDialogs() {
+    const dialogs = [...document.querySelectorAll('dialog[open]')].filter((d) =>
+      d.matches(':modal')
+    );
+    for (const d of watched.keys())
+      if (!dialogs.includes(d)) {
+        d.classList.remove('nexus-dialog-covered');
+        watched.delete(d);
+        owner.unregister(d);
+      }
+    for (const d of dialogs)
+      if (!watched.has(d)) {
+        if (d.querySelector('form') && !d.classList.contains('ui-discard') &&
+            !d.querySelector('.dialog-close,[data-close],[data-chat-close],[aria-label^="Закрыть"]')) {
+          const close = document.createElement('button');
+          close.type = 'button';
+          close.className = 'dialog-close nexus-screen-close';
+          close.setAttribute('aria-label', 'Закрыть окно');
+          close.textContent = '×';
+          d.prepend(close);
+        }
+        watched.set(d, editable(d) ? fields(d) : null);
+        owner.register(d, controller);
+      }
+    // A compact child dialog leaves its reader/editor visible underneath it.
+    const ordered = [...watched.keys()];
+    const surfaceIndex = ordered.findLastIndex(d => d.matches(separateSurface));
+    ordered.forEach((d, index) => d.classList.toggle('nexus-dialog-covered', index < surfaceIndex));
+  }
+  if (own) {
+    window.NexusUI = {
+      register,
+      unregister,
+      async prepareLeave() {
+        const dialogs = live();
+        if (dialogs.some(({dialog}) => dialog.querySelector('button[type=submit]:disabled'))) return false;
+        if (dialogs.some(({dialog,controller}) => controller.changed(dialog)) &&
+            !await Nexus.confirm('В открытом окне есть несохранённые изменения. Перейти и закрыть его?', {accept:'Перейти'})) return false;
+        for (const {dialog} of dialogs) dialog.close();
+        syncDialogs();
+        await new Promise(resolve => { deferredNavigation = resolve; flushNavigation(); });
+        return true;
+      },
+      afterDialogs(run) {
+        deferredNavigation = run;
+        flushNavigation();
+      }
+    };
+    addEventListener(
+      'popstate',
+      (event) => {
+        if (rewinding) {
+          rewinding = false;
+          event.stopImmediatePropagation();
+          mark();
+          flushNavigation();
+          return;
+        }
+        if (marker) {
+          event.stopImmediatePropagation();
+          marker = false;
+          const top = live().at(-1);
+          if (top) top.controller.requestClose(top.dialog);
+          mark();
+          flushNavigation();
+          return;
+        }
+        if (history.state?.nexusDialogs) {
+          event.stopImmediatePropagation();
+          const state = {...history.state};
+          delete state.nexusDialogs;
+          replace(state, '', location.href);
+        }
+      },
+      true
+    );
+  }
+  addEventListener(
+    'keydown',
+    (event) => {
+      if (
+        !['Escape', 'Backspace'].includes(event.key) ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      )
+        return;
+      if (
+        event.key === 'Backspace' &&
+        event.target.closest?.('input,textarea,select,[contenteditable]')
+      )
+        return;
+      const top = own
+        ? live().at(-1)
+        : [...watched.keys()]
+            .filter((d) => d.open)
+            .map((dialog) => ({dialog, controller}))
+            .at(-1);
+      if (!top) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      top.controller.requestClose(top.dialog);
+    },
+    true
+  );
+  document.addEventListener(
+    'cancel',
+    (event) => {
+      if (event.target.tagName !== 'DIALOG' || cancelling.has(event.target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestClose(event.target);
+    },
+    true
+  );
+  let backdrop;
+  const outside = (d, e) => {
+    const r = d.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      backdrop =
+        event.target.tagName === 'DIALOG' && outside(event.target, event) ? event.target : null;
+    },
+    true
+  );
+  document.addEventListener(
+    'click',
+    (event) => {
+      const top = own ? live().at(-1) : null;
+      if (top && top.dialog.ownerDocument !== document) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        top.controller.requestClose(top.dialog);
+        return;
+      }
+      const d = event.target.closest?.('dialog');
+      if (!d) return;
+      if (backdrop === d && event.target === d && outside(d, event)) {
+        backdrop = null;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        requestClose(d);
+        return;
+      }
+      backdrop = null;
+      const b = event.target.closest('button');
+      if (
+        b &&
+        !d.classList.contains('ui-discard') &&
+        (b.matches('.dialog-close,[data-close],[data-chat-close],[aria-label^="Закрыть"]') ||
+          /^(Отмена|Отменить|Закрыть)$/.test(b.textContent.trim()))
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        requestClose(d);
+      }
+    },
+    true
+  );
+  let locked, dialogFocusState,
+    suspended = false;
+  function unlockScroll() {
+    root.classList.remove('nexus-surface-open');
+    if (!locked) return;
+    const saved = locked;
+    locked = null;
+    root.classList.remove('nexus-dialog-open');
+    root.style.removeProperty('--nexus-dialog-x');
+    root.style.removeProperty('--nexus-dialog-y');
+    const behavior = root.style.getPropertyValue('scroll-behavior');
+    const priority = root.style.getPropertyPriority('scroll-behavior');
+    root.style.setProperty('scroll-behavior', 'auto', 'important');
+    scrollTo(saved.x, saved.y);
+    if (behavior) root.style.setProperty('scroll-behavior', behavior, priority);
+    else root.style.removeProperty('scroll-behavior');
+  }
+  function syncDialogs() {
+    if (suspended) return;
+    const open = [...document.querySelectorAll('dialog[open]')].some((d) => d.matches(':modal'));
+    const surfaceOpen = !!document.querySelector(`${separateSurface}[open]:modal`);
+    root.classList.toggle('nexus-surface-open', surfaceOpen);
+    if (!open) unlockScroll();
+    else if (!locked) {
+      locked = {x: scrollX, y: scrollY};
+      root.style.setProperty('--nexus-dialog-x', `-${locked.x}px`);
+      root.style.setProperty('--nexus-dialog-y', `-${locked.y}px`);
+      root.classList.add('nexus-dialog-open');
+    }
+    if (parent !== window && dialogFocusState !== surfaceOpen) {
+      dialogFocusState = surfaceOpen;
+      parent.postMessage({type:'nexus:dialog-focus', active:surfaceOpen}, location.origin);
+    }
+    watchDialogs();
+  }
+  document.addEventListener('close', syncDialogs, true);
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      if (event.target.tagName === 'DIALOG') syncDialogs();
+    },
+    true
+  );
+  addEventListener('pagehide', () => {
+    suspended = true;
+    unlockScroll();
+    for (const d of watched.keys()) owner.unregister(d, false);
+    watched.clear();
+  });
+  addEventListener('pageshow', () => {
+    suspended = false;
+    if (own && !marker && history.state?.nexusDialogs) {
+      const state = {...history.state};
+      delete state.nexusDialogs;
+      replace(state, '', location.href);
+    }
+    syncDialogs();
+  });
+
+  // The document remains a valid observer target during rapid iframe replacements.
+  new MutationObserver(syncDialogs).observe(document, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['open']
+  });
+  syncDialogs();
+
+  const tabs = '.trophy-tabs, .settings-tabs, #waveNav';
+  const ignore =
+    'input, textarea, select, button, audio, video, [contenteditable], dialog, .wave-player, #wavePlayer';
+  let gesture,
+    suppressClickUntil = 0,
+    suppressClickTarget,
+    animation;
+  document.addEventListener(
+    'touchstart',
+    (event) => {
+      gesture = null;
+      suppressClickUntil = 0;
+      if (event.touches.length !== 1 || locked || innerWidth > 1000) return;
+      const target = event.target;
+      if (target.closest(ignore) || !target.closest('main')) return;
+      // Preserve native horizontal scrollers and the browser's edge gesture.
+      for (let node = target; node && node !== document.body; node = node.parentElement) {
+        if (
+          node.scrollWidth > node.clientWidth + 2 &&
+          /auto|scroll/.test(getComputedStyle(node).overflowX)
+        )
+          return;
+      }
+      const touch = event.touches[0];
+      if (touch.clientX < 24 || touch.clientX > innerWidth - 24) return;
+      const nav = document.querySelector(tabs);
+      if (!nav) return;
+      gesture = {x: touch.clientX, y: touch.clientY, time: performance.now(), nav, target};
+    },
+    {passive: true}
+  );
+  document.addEventListener(
+    'touchmove',
+    (event) => {
+      if (!gesture) return;
+      if (event.touches.length !== 1) {
+        gesture = null;
+        return;
+      }
+      const t = event.touches[0];
+      const dx = Math.abs(t.clientX - gesture.x),
+        dy = Math.abs(t.clientY - gesture.y);
+      if (dy > 22) gesture = null;
+      else if (dx > 12 && dx > dy * 2.5 && event.cancelable) event.preventDefault();
+    },
+    {passive: false}
+  );
+  document.addEventListener(
+    'touchcancel',
+    () => {
+      gesture = null;
+    },
+    {passive: true}
+  );
+  document.addEventListener(
+    'touchend',
+    (event) => {
+      const start = gesture;
+      gesture = null;
+      if (!start || locked || !event.changedTouches.length) return;
+      const t = event.changedTouches[0],
+        dx = t.clientX - start.x,
+        dy = t.clientY - start.y;
+      if (
+        performance.now() - start.time > 900 ||
+        Math.abs(dx) < 65 ||
+        Math.abs(dx) < Math.abs(dy) * 2.5
+      )
+        return;
+      const links = [...start.nav.querySelectorAll('a[href]')].filter(
+        (a) => a.getClientRects().length
+      );
+      const index = links.findIndex((a) => a.getAttribute('aria-current') === 'page');
+      const next = index < 0 ? null : links[index + (dx < 0 ? 1 : -1)];
+      if (!next) return;
+      suppressClickUntil = performance.now() + 500;
+      suppressClickTarget = start.target;
+      next.click();
+    },
+    {passive: true}
+  );
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (
+        event.isTrusted &&
+        performance.now() < suppressClickUntil &&
+        suppressClickTarget?.contains(event.target)
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+  document.addEventListener('click', (event) => {
+    if (
+      reduced.matches ||
+      !event.target.closest('[data-trophy-provider], [data-wave-nav]') ||
+      !event.defaultPrevented
+    )
+      return;
+    const main = document.querySelector('main');
+    animation?.cancel();
+    animation = main?.animate([{opacity: 0.45}, {opacity: 1}], {duration: 220, easing: 'ease-out'});
+  });
+})();
