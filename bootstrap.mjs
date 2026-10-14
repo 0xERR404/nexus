@@ -51,6 +51,8 @@ export function git(args) {
 const sameRemote = (a, b) =>
   a.replace(/\.git\/?$/, '').replace(/\/$/, '') === b.replace(/\.git\/?$/, '').replace(/\/$/, '');
 export const projectFiles = [
+  'README.md',
+  'CHANGELOG.md',
   'package.json',
   'package-lock.json',
   "03-modules/vpn/flags/ad.svg",

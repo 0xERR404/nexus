@@ -7,6 +7,7 @@ import {Projects, fail} from './store.mjs';
 
 const directory = path.join(process.env.DATA_DIR ?? '/app/data', 'projects');
 export const projects = new Projects(directory);
+export function close() { projects.db?.close(); projects.db = null; }
 const page = `<link rel="stylesheet" href="/modules/projects/projects.css"><script src="/modules/projects/projects.js" defer></script>
 <section class="projects-app"><div class="projects-toolbar"><button id="projectNew">＋ Проект</button><input id="projectSearch" type="search" placeholder="Поиск проектов" aria-label="Поиск проектов"></div>
 <p id="projectStatus" role="status"></p><div id="projectList"></div><section id="projectDetail" hidden><div class="projects-toolbar"><h2 id="projectTitle"></h2><button id="projectEdit" type="button">Изменить</button><button id="projectDelete" type="button">Удалить</button></div><p id="projectDescription"></p>

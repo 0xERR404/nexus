@@ -869,6 +869,20 @@ export function createApp({
   server.keepAliveTimeout = 5000;
   return server;
 }
+export async function closeApp(app, modules, {drainMs = 5000} = {}) {
+  // Stop accepting requests before closing the stores used by existing handlers.
+  let force;
+  try {
+    await new Promise(resolve => {
+      force = setTimeout(() => app.closeAllConnections(), drainMs);
+      force.unref?.();
+      app.close(resolve);
+    });
+  } finally {
+    clearTimeout(force);
+  }
+  await Promise.allSettled([...modules.values()].map(module => Promise.resolve().then(() => module.close?.())));
+}
 async function main() {
   const config = JSON.parse(readFileSync(process.env.AUTH_FILE ?? '/app/config/auth.json', 'utf8'));
   const modules = await loadModules(process.env.MODULES_DIR ?? path.resolve(root, '../03-modules'), {
@@ -891,11 +905,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     const deadline = setTimeout(() => process.exit(1), 25000);
-    app.close();
-    await Promise.allSettled(
-      [...modules.values()].map((module) => Promise.resolve().then(() => module.close?.()))
-    );
-    app.closeAllConnections();
+    await closeApp(app, modules);
     clearTimeout(deadline);
     process.exit(0);
   };

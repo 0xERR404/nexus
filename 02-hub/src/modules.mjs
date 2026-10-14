@@ -42,7 +42,7 @@ export function validateManifest(manifest) {
     throw new Error('Invalid manifest');
   return manifest;
 }
-export async function loadModules(directory, {start: initialize = false} = {}) {
+export async function loadModules(directory, {start: initialize = false, only} = {}) {
   const modules = new Map();
   modules.diagnostics = [];
   let entries;
@@ -54,6 +54,7 @@ export async function loadModules(directory, {start: initialize = false} = {}) {
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory() || !/^[a-z][a-z0-9-]{0,31}$/.test(entry.name)) continue;
+    if (only && !only.has(entry.name)) continue;
     let cleanup;
     try {
       const manifest = currentManifest(

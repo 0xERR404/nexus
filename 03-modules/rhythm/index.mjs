@@ -26,37 +26,36 @@ export function createModule(directory, options = {}) {
   const store = new Rhythm(directory),
     reports = new Reports(store, options);
   const refresh = new Refresh(store);
-  let timer,
-    busy = false;
+  let timer, job, closed = false;
   const counts = new Map();
   const clock = options.now ?? Date.now;
   const wake = new WakeReports(store, reports, clock);
   let pending;
-  const run = async () => {
-    if (busy || pending) return;
-    busy = true;
-    try {
-      await wake.tick();
-    } catch {
-    } finally {
-      busy = false;
-    }
+  const run = () => {
+    if (closed || pending || job) return job;
+    job = Promise.resolve().then(() => wake.tick()).catch(() => {}).finally(() => { job = null; });
+    return job;
   };
   return {
     store,
     reports,
     wake,
     start() {
+      if (timer || closed) return;
       reports.recover();
       wake.recover();
       void run();
       timer = setInterval(run, 60000);
       timer.unref();
     },
-    close() {
+    async close() {
+      closed = true;
       clearInterval(timer);
       clearTimeout(pending);
       refresh.close();
+      await job;
+      store.db?.close();
+      store.db = null;
     },
     home() {
       const day=store.daily(dayName(Date.now(),store.config().zone));

@@ -6,8 +6,30 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {stdin, stdout} from 'node:process';
 import {check} from './restore-check.mjs';
+import {loadModules, validateManifest} from '../../02-hub/src/modules.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+export async function loadRestoredModules(directory, source = path.join(root, '03-modules'), load = loadModules) {
+  const installed = path.join(directory, 'opt/nexus404/hub-platform/modules');
+  const expected = new Set();
+  if (fs.existsSync(installed)) {
+    for (const entry of fs.readdirSync(installed, {withFileTypes: true})) {
+      if (entry.name.startsWith('.')) continue;
+      if (!entry.isDirectory() || !/^[a-z][a-z0-9-]{0,31}$/.test(entry.name))
+        throw new Error('Некорректный каталог модуля в копии: ' + entry.name);
+      const manifest = validateManifest(JSON.parse(fs.readFileSync(path.join(installed, entry.name, 'manifest.json'), 'utf8')));
+      if (manifest.enabled) expected.add(entry.name);
+    }
+  }
+  const modules = await load(source, {start: false, only: expected});
+  const missing = [...expected].filter(id => !modules.has(id));
+  if (missing.length) {
+    await Promise.allSettled([...modules.values()].map(module => Promise.resolve().then(() => module.close?.())));
+    throw new Error('Не удалось проверить модули из копии: ' + missing.join(', '));
+  }
+  return modules;
+}
 
 async function hiddenPassword() {
   if (!stdin.isTTY) throw new Error('Для ввода пароля нужен терминал');
@@ -42,20 +64,9 @@ async function serve(directory) {
   globalThis.fetch = async () => {
     throw new Error('Внешние запросы отключены при проверке восстановления');
   };
-  const [{createApp}, {loadModules}] = await Promise.all([
-    import('../../02-hub/src/server.mjs'),
-    import('../../02-hub/src/modules.mjs')
-  ]);
+  const {createApp, closeApp} = await import('../../02-hub/src/server.mjs');
   const config = JSON.parse(fs.readFileSync(auth, 'utf8'));
-  const modules = await loadModules(path.join(root, '03-modules'), {start: false});
-  const installed = path.join(directory, 'opt/nexus404/hub-platform/modules');
-  if (fs.existsSync(installed)) {
-    for (const id of modules.keys()) {
-      const manifest = path.join(installed, id, 'manifest.json');
-      if (!fs.existsSync(manifest) || !JSON.parse(fs.readFileSync(manifest)).enabled)
-        modules.delete(id);
-    }
-  }
+  const modules = await loadRestoredModules(directory);
   const app = createApp({
     config,
     modules,
@@ -67,7 +78,9 @@ async function serve(directory) {
   app.listen(0, '127.0.0.1', () =>
     process.send?.({port: app.address().port, modules: [...modules.keys()]})
   );
-  process.on('SIGTERM', () => app.close());
+  process.once('SIGTERM', async () => {
+    await closeApp(app, modules);
+  });
 }
 
 async function smoke(archive, key) {
@@ -134,7 +147,7 @@ async function smoke(archive, key) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === 'serve' && process.argv.length === 4)
     serve(process.argv[3]).catch((e) => {
       console.error(e.message);

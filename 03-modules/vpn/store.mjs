@@ -16,6 +16,7 @@ export function applicationState(node){
   if(node.stale)return 'offline';
   if(s?.state==='rejected')return 'rejected';
   if(s?.state==='expired')return 'expired';
+  if(s?.state==='stopped'&&!s.running)return 'stopped';
   if(s?.revision!==node.revision)return 'pending';
   return s?.state==='applied'&&s.running?'applied':'stopped';
 }

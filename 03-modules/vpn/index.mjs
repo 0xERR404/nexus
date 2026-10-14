@@ -66,5 +66,5 @@ async function refreshLists(force=false){
   const previous=pending,job=(async()=>{await previous;return refreshSources(store(),undefined,{force});})();pending=job;
   try{return await job;}finally{if(pending===job)pending=null;}
 }
-export function start(){store();timer=setInterval(()=>{if(!pending)void refreshLists().catch(()=>{});},60000);timer.unref();}
-export async function close(){diagnostics.close();clearInterval(timer);await pending;instance?.close();instance=null;}
+export function start(){if(timer)return;store();timer=setInterval(()=>{if(!pending)void refreshLists().catch(()=>{});},60000);timer.unref();}
+export async function close(){diagnostics.close();clearInterval(timer);timer=null;try{await pending;}finally{instance?.close();instance=null;}}

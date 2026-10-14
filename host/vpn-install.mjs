@@ -61,7 +61,10 @@ export async function installVPNNode(ui,{update=false}={}){
   for(const [folder,owner,group,mode]of [['',0,0,0o755],['private',uid,gid,0o700],['status',uid,agentGroup,0o2750],['requests',agent,gid,0o2750],['certs',0,gid,0o750]]){const dir=path.join(VPN_DIR,folder);fs.mkdirSync(dir,{recursive:true});fs.chownSync(dir,owner,group);fs.chmodSync(dir,mode);}
   installVPNRuntime();
   prepareTCP(ui);
-  if(update)await ui.run('Обновление обмена с хабом','systemctl',['restart','nexus404-agent.service']);
+  // On a fresh install the agent starts before requests/ exists. Its optional
+  // ReadWritePaths mount is then absent from the ProtectSystem=strict namespace.
+  // Recreate that namespace after preparing the directory, on every install.
+  await ui.run('Обновление обмена с хабом','systemctl',['restart','nexus404-agent.service']);
   durable(VPN_DIR+'/settings.json',{node:identity.id},0o644);
   const arch={x64:'64',arm64:'arm64-v8a'}[os.arch()];check(arch,'VPN-нода поддерживает amd64 и arm64');
   const target='/opt/nexus404/vpn';fs.mkdirSync(target,{recursive:true,mode:0o755});fs.chmodSync(target,0o755);
@@ -84,8 +87,9 @@ export async function installVPNNode(ui,{update=false}={}){
   await ui.run('Обновление служб','systemctl',['daemon-reload']);await ui.run('Автозапуск VPN-ноды','systemctl',['enable','nexus404-vpn.service']);const restartAt=Date.now();await ui.run('Применение обновления VPN','systemctl',['restart','nexus404-vpn.service']);
   check(query('systemctl',['is-active','--quiet','nexus404-vpn.service']).ok,'VPN-служба не запустилась. Проверь journalctl -u nexus404-vpn.');
   const runtime=await verifyVPNRuntime({since:restartAt});
-  ui.line('[✓] VPN-нода '+runtime.nodeVersion+' запущена. Trojan TCP, XHTTP и gRPC поддерживаются.');
+  ui.line('[✓] Служба VPN-ноды '+runtime.nodeVersion+' запущена.');
   if(runtime.state==='rejected')ui.line('[!] Конфигурация отклонена: '+runtime.error+'. Подробности — в Арго.');
+  else if(!runtime.running)ui.line('[!] VPN-ядро пока не работает. Проверь применение настроек в Арго и журналы VPN-ноды и агента.');
   else ui.line('Статус применения подключений — в Арго. Хаб на VPS не установлен.');
 }
 

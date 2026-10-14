@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {Readable} from 'node:stream';
 import {BlockList, isIP} from 'node:net';
 import {Resolver} from 'node:dns/promises';
 import http from 'node:http';
@@ -10,6 +11,35 @@ import {DatabaseSync} from 'node:sqlite';
 import {imageType} from '#hub/content-store.mjs';
 import {ID, fail} from '#hub/input.mjs';
 const MAX = 8 * 1024 ** 3;
+export function isVideo(file) {
+  return file?.length > 0 && /\.(mp4|m4v|webm|mkv|mov|ogv)$/i.test(file.name);
+}
+export function videoFiles(files = []) {
+  return files.map((f, index) => ({index, name: f.name, length: f.length,
+    type: f.type, playable: isVideo(f)})).filter(f => f.playable);
+}
+export function videoPiece(torrent, file, index) {
+  return isVideo(file) && Number.isInteger(index) &&
+    index >= Math.floor(file.offset / torrent.pieceLength) &&
+    index <= Math.floor((file.offset + file.length - 1) / torrent.pieceLength);
+}
+export function videoDownloaded(torrent, file) {
+  if (!isVideo(file)) return 0;
+  let bytes = 0;
+  const end = file.offset + file.length;
+  for (let i = Math.floor(file.offset / torrent.pieceLength); i * torrent.pieceLength < end; i++)
+    if (torrent.bitfield.get(i)) bytes += Math.min(end, (i + 1) * torrent.pieceLength) -
+      Math.max(file.offset, i * torrent.pieceLength);
+  return bytes;
+}
+// WebTorrent 3.0.21 can request allowed-fast pieces outside selections. Gate its
+// scheduler before reservations, including before the user chooses a video.
+export function restrictVideo(torrent, selected) {
+  const request = torrent._request;
+  torrent._request = function(wire, index, hotswap) {
+    return videoPiece(this, selected(), index) ? request.call(this, wire, index, hotswap) : false;
+  };
+}
 export function validateTorrent(t) {
   if (
     !t.files?.length ||
@@ -31,6 +61,7 @@ export function validateTorrent(t) {
       /^[A-Za-z]:/.test(f.path)
     )
       throw fail('Небезопасные пути раздачи');
+  if (!t.files.some(isVideo)) throw fail('В раздаче нет поддерживаемого видео: MP4, M4V, WebM, MKV, MOV или OGV');
   if (t.private) throw fail('В этой версии поддерживаются публичные раздачи через DHT');
 }
 export class PieceStore {
@@ -299,6 +330,11 @@ export function downloadOnly(wire) {
   };
   wire.allowedFastSet = [];
   wire.allowedFast = () => {};
+  // Keep metadata requests/downloads for magnets, but never serve metadata.
+  if (wire.ut_metadata) {
+    wire.ut_metadata._onRequest = piece => wire.ut_metadata._reject(piece);
+    wire.ut_metadata._data = piece => wire.ut_metadata._reject(piece);
+  }
   wire.choke();
 }
 export class Cinema {
@@ -307,6 +343,9 @@ export class Cinema {
     this.options = options;
     this.active = null;
     this.job = null;
+    this.generation = 0;
+    this.closed = false;
+    this.streams = new Set();
   }
   load() {
     if (this.db) return;
@@ -386,7 +425,7 @@ export class Cinema {
     return this.db
       .prepare('SELECT id,title,kind,created,files,coverVersion FROM titles ORDER BY created DESC')
       .all()
-      .map((r) => ({...r, files: JSON.parse(r.files)}));
+      .map((r) => ({...r, files: JSON.parse(r.files).filter(isVideo)}));
   }
   async add(input) {
     const title = String(input.title || '').trim(),
@@ -444,8 +483,10 @@ export class Cinema {
     return {id};
   }
   async client() {
+    if (this.closed) throw fail('Дионис остановлен', 409);
     if (this.engine) return this.engine;
     const {default: WebTorrent} = await import('webtorrent');
+    if (this.closed) throw fail('Дионис остановлен', 409);
     this.engine = new WebTorrent({
       dht: {
         bootstrap: ['dht.libtorrent.org:25401', 'dht.anacrolix.link:42069', 'dht.aelitis.com:6881']
@@ -466,6 +507,7 @@ export class Cinema {
     return this.engine;
   }
   async open(id) {
+    if (this.closed) throw fail('Дионис остановлен', 409);
     if (this.active?.id === id && this.active.torrent.ready && !this.active.torrent.destroyed)
       return this.status();
     if (this.job) throw fail('Дождись получения метаданных текущей раздачи', 409);
@@ -478,8 +520,14 @@ export class Cinema {
   }
   async prepare(id) {
     const item = this.item(id);
-    await this.stop();
+    const stopping = this.stop(), generation = this.generation;
+    const current = () => {
+      if (this.closed || generation !== this.generation) throw fail('Раздача остановлена', 409);
+    };
+    await stopping;
+    current();
     const engine = await this.client();
+    current();
     let source = item.hash,
       trackers = JSON.parse(item.trackers);
     if (item.metadata) {
@@ -489,8 +537,10 @@ export class Cinema {
       source.announce = [];
       source.urlList = [];
     }
+    current();
     const announce = await resolveTrackers(trackers, this.options.lookup),
       webTrackers = webTrackerURLs(trackers);
+    current();
     const cache = path.join(this.directory, 'cache');
     fs.mkdirSync(cache, {recursive: true, mode: 0o700});
     const disk = fs.statfsSync(cache);
@@ -528,6 +578,7 @@ export class Cinema {
         controller: new AbortController()
       };
       const active = this.active;
+      restrictVideo(torrent, () => this.active === active && torrent.files?.[active.selected]);
       const poll = async (url, started = true) => {
         let interval = 60;
         try {
@@ -544,12 +595,12 @@ export class Cinema {
             },
             {lookup: this.options.lookup, signal: active.controller.signal}
           );
-          if (this.active !== active) return;
+          if (this.active !== active || active.controller.signal.aborted) return;
           active.trackerReplies++;
           interval = result.interval;
           for (const peer of result.peers) torrent.addPeer(peer.ip + ':' + peer.port);
         } catch (e) {
-          if (this.active !== active) return;
+          if (this.active !== active || active.controller.signal.aborted) return;
           active.warnings++;
           active.warning = /HTTP \d+|DNS:|12 секунд|Некорректный|отклонил|большой ответ/.test(
             e.message
@@ -557,7 +608,7 @@ export class Cinema {
             ? e.message
             : 'Ошибка подключения к HTTP-трекеру';
         }
-        if (this.active === active) {
+        if (this.active === active && !active.controller.signal.aborted) {
           const timer = setTimeout(() => {
             active.webTimers.delete(timer);
             void poll(url, false);
@@ -591,8 +642,9 @@ export class Cinema {
       const timer = setTimeout(() => {
         this.error = 'Не удалось получить метаданные за 90 секунд. Проверь наличие пиров.';
         finish(fail(this.error, 504));
-        torrent.destroy();
-        this.active = null;
+        active.controller.abort();
+        for (const pending of active.webTimers) clearTimeout(pending);
+        active.teardown = new Promise(resolve => torrent.destroy(resolve));
       }, 90000);
       timer.unref?.();
       torrent.once('close', () => finish(fail('Раздача остановлена', 409)));
@@ -603,23 +655,17 @@ export class Cinema {
       torrent.on('metadata', () => {
         try {
           validateTorrent(torrent);
-          const available = fs.statfsSync(cache);
-          if (available.bavail * available.bsize < torrent.length + 128 * 1024 ** 2)
-            throw fail('Для раздачи недостаточно свободного места', 507);
         } catch (e) {
-          torrent.destroy();
-          this.active = null;
+          this.error = e.message;
           finish(e);
+          active.controller.abort();
+          for (const pending of active.webTimers) clearTimeout(pending);
+          active.teardown = new Promise(resolve => torrent.destroy(resolve));
         }
       });
       torrent.once('ready', () => {
-        const files = torrent.files.map((f, index) => ({
-          index,
-          name: f.name,
-          length: f.length,
-          type: f.type,
-          playable: /\.(mp4|m4v|webm|mkv|mov|ogg|ogv)$/i.test(f.name)
-        }));
+        if (this.active !== active || torrent.destroyed) return;
+        const files = videoFiles(torrent.files);
         this.db.prepare('UPDATE titles SET files=? WHERE id=?').run(JSON.stringify(files), id);
         finish();
       });
@@ -627,7 +673,9 @@ export class Cinema {
   }
   status() {
     const a = this.active,
-      t = a?.torrent;
+      t = a?.torrent,
+      selected = t?.files?.[a?.selected],
+      downloaded = selected && !t.destroyed ? videoDownloaded(t, selected) : 0;
     return {
       id: a?.id ?? null,
       ready: Boolean(t?.ready && !t.destroyed),
@@ -652,12 +700,13 @@ export class Cinema {
       dhtNodes: this.engine?.dht?.toJSON?.().nodes.length ?? 0,
       warnings: a?.warnings ?? 0,
       warning: a?.warning ?? null,
-      progress: t?.progress || 0,
-      downloaded: t?.downloaded || 0,
+      progress: selected ? downloaded / selected.length : 0,
+      downloaded,
+      total: selected?.length || 0,
       speed: t?.downloadSpeed || 0,
       peers: t?.numPeers || 0,
       error: this.error || null,
-      files: t?.ready ? JSON.parse(this.item(a.id).files) : []
+      files: t?.ready && !t.destroyed ? videoFiles(t.files) : []
     };
   }
   file(id, index) {
@@ -665,20 +714,93 @@ export class Cinema {
       throw fail('Сначала открой раздачу', 409);
     if (!Number.isInteger(index) || index < 0) throw fail('Некорректный файл');
     const f = this.active.torrent.files[index];
-    if (!f || !f.length || !/\.(mp4|m4v|webm|mkv|mov|ogg|ogv)$/i.test(f.name))
+    if (!isVideo(f))
       throw fail('Видеофайл не найден', 404);
-    this.active.selected = index;
+    if (this.active.selected !== index) {
+      // Close old readers before admitting requests for a different video.
+      this.active.selected = null;
+      this.stopStreams();
+      for (const wire of this.active.torrent.wires || [])
+        for (const r of [...wire.requests]) wire.cancel(r.piece, r.offset, r.length);
+      this.active.selected = index;
+    }
     return f;
   }
-  async stop() {
+  stopStreams() {
+    for (const abort of this.streams) abort();
+    this.streams.clear();
     this.converter?.();
     this.converter = null;
+  }
+  stream(file, {start = 0, end = file.length - 1} = {}) {
+    const t = this.active?.torrent;
+    if (!t || t.files[this.active.selected] !== file || !isVideo(file))
+      throw fail('Видеофайл не выбран', 409);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 ||
+        end < start || end >= file.length) throw fail('Некорректный диапазон', 416);
+    const controller = new AbortController(), {signal} = controller;
+    // Explicit bounds also fix WebTorrent's end=0 fallback to the entire file.
+    const chunks = async function* () {
+      const first = Math.floor((file.offset + start) / t.pieceLength),
+        last = Math.floor((file.offset + end) / t.pieceLength);
+      // Stream selections are separate: overlapping browser ranges must not
+      // deselect each other (pinned WebTorrent 3.0.21 selection API).
+      if (signal.aborted || t.destroyed) return;
+      t._select(first, last, 1, null, true);
+      try {
+        for (let index = first; index <= last; index++) {
+          if (signal.aborted || t.destroyed) return;
+          if (!t.bitfield.get(index)) await new Promise((resolve, reject) => {
+            const cleanup = () => {
+              t.removeListener('verified', verified);
+              t.removeListener('close', stopped);
+              t.removeListener('error', failed);
+              signal.removeEventListener('abort', stopped);
+            };
+            const stopped = () => { cleanup(); resolve(); };
+            const failed = error => { cleanup(); reject(error); };
+            const verified = piece => { if (piece === index) stopped(); };
+            t.on('verified', verified); t.once('close', stopped); t.once('error', failed);
+            signal.addEventListener('abort', stopped, {once: true});
+            t.critical(index, Math.min(last, index + 2));
+          });
+          if (signal.aborted || t.destroyed) return;
+          const offset = Math.max(0, file.offset + start - index * t.pieceLength),
+            length = Math.min((index + 1) * t.pieceLength, file.offset + end + 1) -
+              (index * t.pieceLength + offset);
+          const buffer = await new Promise((resolve, reject) =>
+            t.store.get(index, {offset, length}, (err, data) => err ? reject(err) : resolve(data)));
+          if (signal.aborted || t.destroyed) return;
+          yield buffer;
+        }
+      } finally {
+        if (!t.destroyed) t._deselect(first, last, true);
+      }
+    };
+    const stream = Readable.from(chunks()), destroy = stream.destroy;
+    // Wake pending piece waits before Readable.from waits for iterator.return().
+    stream.destroy = function(error) { controller.abort(); return destroy.call(this, error); };
+    const abort = () => stream.destroy();
+    this.streams.add(abort);
+    stream.once('close', () => { controller.abort(); this.streams.delete(abort); });
+    return stream;
+  }
+  stop() {
+    this.generation++;
+    // Serialize teardown so an earlier stop cannot delete a newer torrent's cache.
+    const job = (this.stopping ?? Promise.resolve()).catch(() => {}).then(() => this.clearActive());
+    this.stopping = job;
+    return job.finally(() => { if (this.stopping === job) this.stopping = null; });
+  }
+  async clearActive() {
+    this.stopStreams();
     if (this.active) {
       this.active.controller?.abort();
       for (const timer of this.active.webTimers || []) clearTimeout(timer);
-      const t = this.active.torrent;
+      const {torrent: t, teardown} = this.active;
       this.active = null;
-      if (!t.destroyed) await new Promise((r) => t.destroy(r));
+      if (teardown) await teardown;
+      else if (!t.destroyed) await new Promise((r) => t.destroy(r));
     }
     fs.rmSync(path.join(this.directory, 'cache'), {recursive: true, force: true});
   }
@@ -689,8 +811,11 @@ export class Cinema {
     this.db.prepare('DELETE FROM titles WHERE id=?').run(id);
   }
   async close() {
+    this.closed = true;
     await this.stop();
+    await this.job?.catch(() => {});
     if (this.engine && !this.engine.destroyed) await new Promise((r) => this.engine.destroy(r));
     this.db?.close();
+    this.db = null;
   }
 }

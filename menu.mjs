@@ -102,6 +102,7 @@ export async function modulesMenu(
       continue;
     }
     try {
+      ui.clear?.();
       await lock(() => install(ui, selected));
     } catch (error) {
       report(error.message);

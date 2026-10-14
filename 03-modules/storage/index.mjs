@@ -9,6 +9,7 @@ import {Storage, ID, fail} from './store.mjs';
 
 const directory = path.join(process.env.DATA_DIR ?? '/app/data', 'storage');
 export const storage = new Storage(directory);
+export function close() { storage.db?.close(); storage.db = null; }
 const phone = new PhoneUploads(storage, contentStore);
 export const publicHandle = ({request}) => phone.handle(request);
 const page = `<link rel="stylesheet" href="/modules/storage/storage.css"><script src="/modules/storage/storage.js" defer></script>
