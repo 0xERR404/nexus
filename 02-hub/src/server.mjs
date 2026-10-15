@@ -33,6 +33,7 @@ const assets = [
   'servers.js',
   'servers.css',
   'card-layout.css',
+  'mobile.css',
   'settings.css',
   'settings.js',
   'backgrounds/code-reference.webp',

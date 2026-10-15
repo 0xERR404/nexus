@@ -345,6 +345,7 @@ export const projectFiles = [
   'host/event-reader.mjs',
 
   '02-hub/public/card-layout.css',
+  '02-hub/public/mobile.css',
   '02-hub/public/settings.css',
   '02-hub/public/settings.js',
   '02-hub/public/backgrounds/code-reference.webp',
