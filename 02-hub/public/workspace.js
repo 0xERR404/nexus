@@ -10,6 +10,7 @@
     const id=current.pathname==='/'?'home':current.pathname.startsWith('/modules/')?current.pathname.split('/')[2]:current.pathname.split('/')[1];
     const group=id==='home'?current.searchParams.get('group')||'overview':Object.keys(groups).find(g=>groups[g].includes(id));
     links.forEach(a=>{if(a.dataset.workspaceGroup===group)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+    document.querySelectorAll('[data-workspace-module]').forEach(a=>{const active=a.dataset.workspaceModule===id&&(id!=='home'||group==='overview');if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
     const section=document.getElementById('workspaceSection');if(section){const selectedLink=links.find(a=>a.dataset.workspaceGroup===group);const title=document.createElement('span');title.textContent=selectedLink?.textContent.trim()||({'settings':'Настройки','status':'Состояние','search':'Поиск'}[id]??'Модуль');section.replaceChildren();const glyph=selectedLink?.querySelector('svg')?.cloneNode(true);if(glyph)section.append(glyph);section.append(title);section.href='/?group='+(group||'overview');}
   }
   frame.addEventListener('load',selected);

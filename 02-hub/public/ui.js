@@ -1,7 +1,6 @@
 // Keep real select elements for form values, validation, labels and module listeners.
-// Browsers with customizable selects use the CSS picker; others share this fallback.
+// A shared popup keeps text layout consistent; the native control retains form semantics.
 (() => {
-  if (CSS.supports('appearance', 'base-select')) return;
   let current, sequence = 0;
   const eligible = node => node instanceof HTMLSelectElement && !node.multiple && node.size <= 1 && !node.matches(':disabled');
   function close(restore = false) {
@@ -94,6 +93,7 @@
     menu.addEventListener('keydown',event=>{
       const keys=enabled(), index=keys.indexOf(active);
       if (event.key==='Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key==='Backspace') { event.preventDefault(); event.stopPropagation(); buffer=buffer.slice(0,-1); return; }
       if (event.key==='Tab') { close(true); return; }
       if (event.key==='Enter' || event.key===' ') { event.preventDefault(); choose(active); return; }
       let next;
@@ -557,6 +557,7 @@ window.Nexus = Object.freeze({
     (event) => {
       if (
         !['Escape', 'Backspace'].includes(event.key) ||
+        event.target.closest?.('.nexus-select-menu') ||
         event.defaultPrevented ||
         event.repeat ||
         event.isComposing ||

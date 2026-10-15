@@ -60,6 +60,7 @@ export async function publicHandle({request,path:route}){
   const format=({m:'mihomo',b:'base64',l:'links'})[match[2]]??'xray';
   try{const u=store().subscription(match[1]),body=exportSubscription(store(),u,format);return new Response(body,{headers:{'content-type':['xray','mihomo'].includes(format)?'application/json; charset=utf-8':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','profile-update-interval':'1',...(format==='xray'?{'profile-title':'NEXUS404','dns-from-json-enable':'true'}:{}),'subscription-userinfo':`upload=${store().total(u.id).up}; download=${store().total(u.id).down}; total=${u.limit}; expire=${Math.floor(u.expires/1000)}`}});}catch(error){if(error.unsupportedTransport)return new Response(MIHOMO_TROJAN_XHTTP,{status:400,headers:{'cache-control':'no-store'}});return new Response('Подписка недоступна или профиль ещё не готов',{status:404});}
 }
+export function home(){const s=store().snapshot();return {items:s.connections.filter(c=>c.enabled).slice(0,3).map(c=>({title:connectionLabel(c),cloud:c.delivery==='cloudflare',href:'/modules/vpn/'})),total:s.connections.filter(c=>c.enabled).length};}
 export async function summary(){const s=store().snapshot();return {state:'ok',items:[{label:'Пользователи',value:s.users.filter(u=>u.active).length},{label:'Ноды',value:s.nodes.length},{label:'Подключения',value:s.connections.filter(c=>c.enabled).length}]};}
 async function refreshLists(force=false){
   if(pending&&!force)return pending;

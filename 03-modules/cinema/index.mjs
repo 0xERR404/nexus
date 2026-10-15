@@ -69,7 +69,7 @@ export function createModule(
     },
     store,
     close: () => store.close(),
-    home: () => {const rows=store.list();return {total:rows.length,items:rows.slice(0,6).map(t=>({title:t.title,detail:t.kind==='anime'?'Аниме':'Кино',href:'/modules/cinema/?id='+encodeURIComponent(t.id)})),note:'Последние добавленные фильмы'};},
+    home: () => {const rows=store.list();return {total:rows.length,items:rows.slice(0,6).map(t=>({title:t.title,cover:t.coverVersion?'/modules/cinema/cover/'+encodeURIComponent(t.id)+'?v='+t.coverVersion:null,detail:t.kind==='anime'?'Аниме':'Кино',href:'/modules/cinema/?id='+encodeURIComponent(t.id)})),note:'Последние добавленные фильмы'};},
     summary: () => ({
       state: 'ok',
       items: [

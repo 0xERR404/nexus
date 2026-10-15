@@ -65,7 +65,7 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
       id.startsWith('photo:')
         ? store().removeArtistPhoto(id.slice(6))
         : store().change({action: 'delete', id}),
-    home: () => { const tracks=store().snapshot().tracks;return {total:tracks.length,items:[...tracks].sort((a,b)=>(b.added||0)-(a.added||0)).slice(0,6).map(t=>({title:t.title,detail:[t.artist,t.album].filter(Boolean).join(' · '),href:'/modules/wave/?view=tracks&track='+encodeURIComponent(t.id)})),note:'Последние добавленные треки'}; },
+    home: () => { const tracks=store().snapshot().tracks;return {total:tracks.length,items:[...tracks].sort((a,b)=>(b.added||0)-(a.added||0)).slice(0,6).map(t=>({title:t.title,cover:t.cover?'/modules/wave/cover/'+encodeURIComponent(t.id):null,duration:t.duration,detail:[t.artist,t.album].filter(Boolean).join(' · '),href:'/modules/wave/?view=tracks&track='+encodeURIComponent(t.id)})),note:'Последние добавленные треки'}; },
     summary: () => {
       const data = store().snapshot();
       return {

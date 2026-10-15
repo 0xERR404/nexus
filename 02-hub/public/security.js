@@ -79,10 +79,7 @@
     }
   }
   const enter = () => {
-    try {
-      sessionStorage.setItem('nexus-intro-pending', String(Date.now()));
-    } catch {}
-    window.top.location.href = '/';
+window.top.location.href = '/';
   };
   if (passkey) {
     let controller;

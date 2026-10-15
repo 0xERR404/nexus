@@ -23,8 +23,8 @@ body :where(input[type='checkbox'], input[type='radio']) {
 }
 body :where(dialog) {
   background: var(--dialog-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  
+  
   color: var(--text);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -223,11 +223,6 @@ body .nexus-question {
   margin: 10px 0;
   color: var(--muted);
 }
-.intro-settings {
-  max-width: none;
-  background: var(--surface);
-}
-
 body :where(button, input, select, textarea) {
   font-family: var(--sans, system-ui);
   font-size: 13px;
@@ -238,10 +233,8 @@ button:disabled {
 }
 
 :root {
-  --button-bg: #d5dad408;
-  --button-hover: #d5dad417;
-  --button-active: var(--accent-glow);
-  --button-radius: 6px;
+--button-hover: #d5dad417;
+--button-radius: 6px;
   --button-padding: 3px 8px;
   --button-font: 400 12px/1.35 var(--sans, system-ui);
 }
@@ -354,13 +347,6 @@ select optgroup {
   color: var(--text);
 }
 
-html[data-perf-effect='blur'] *,
-html[data-perf-effect='blur'] *::before,
-html[data-perf-effect='blur'] *::after,
-html[data-perf-effect='blur'] dialog::backdrop {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
 html[data-perf-effect='shadows'] *,
 html[data-perf-effect='shadows'] *::before,
 html[data-perf-effect='shadows'] *::after {

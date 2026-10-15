@@ -433,7 +433,7 @@ html body #animePage .anime-progress progress { flex: 1; width: 0; min-width: 12
   .anime-toolbar select {
     width: 100%;
     font-size: var(--ui-meta-size) !important;
-    padding: 5px !important;
+    padding: 5px;
   }
   .anime-card {
     flex-direction: column;

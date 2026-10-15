@@ -346,11 +346,9 @@ export const projectFiles = [
 
   '02-hub/public/card-layout.css',
   '02-hub/public/mobile.css',
+  '02-hub/public/orbit.css',
   '02-hub/public/settings.css',
   '02-hub/public/settings.js',
-  '02-hub/public/backgrounds/code-reference.webp',
-  '02-hub/public/backgrounds/network-reference.webp',
-  '02-hub/public/backgrounds/scanner-reference.webp',
 
   '01-caddy-docker/docker-compose.yml',
   '02-hub/Dockerfile',
@@ -466,9 +464,6 @@ export const projectFiles = [
   '02-hub/public/icon-192.png',
   '02-hub/public/icon-512.png',
   '02-hub/public/icon.svg',
-  '02-hub/public/intro-voice.mp3',
-  '02-hub/public/intro.css',
-  '02-hub/public/intro.js',
   '02-hub/public/legacy-clients.js',
   '02-hub/public/manifest.json',
   '02-hub/public/mark.svg',

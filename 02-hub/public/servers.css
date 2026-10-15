@@ -2,7 +2,7 @@
 
 /* Atlant: server tabs share one metrics/settings panel. */
 .server-report{margin-bottom:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.server-report[open]{background:var(--glass-light),var(--surface);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.server-report[open]{background:var(--surface-highlight),var(--surface);}
 .server-report summary{cursor:pointer;font-weight:600;font-size:13px}
 .server-report-help,.server-report-status{font-size:13px;line-height:1.5;margin:8px 0;overflow-wrap:anywhere}
 .server-report-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:8px}

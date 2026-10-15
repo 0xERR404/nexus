@@ -233,7 +233,7 @@ html body #cinemaList .cinema-card {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: var(--glass-edge);
+  box-shadow: var(--surface-shadow);
   text-align: center;
 }
 html body #cinemaList .cinema-cover {
