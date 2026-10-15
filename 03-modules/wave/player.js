@@ -189,6 +189,7 @@
     $('waveDuration').textContent = clock(duration);
     if (Date.now() - lastSave > 5000) {
       save();
+      frame.contentWindow?.postMessage({type: 'nexus:wave-state'}, location.origin);
       lastSave = Date.now();
     }
   }
@@ -657,7 +658,18 @@
     transfer: () => ({...transfer, ids: [...transfer.ids]}),
 
     refresh,
-    state: () => ({id: loaded, playing: intentPlaying || !audio.paused}),
+    state: () => ({id:loaded||track()?.id,title:track()?.title,artist:track()?.artist||'',cover:track()?.cover?'/modules/wave/cover/'+encodeURIComponent(track().id):null,playing: intentPlaying || !audio.paused,position:restoring||audio.currentTime||state.position||0,duration:Number.isFinite(audio.duration)?audio.duration:track()?.duration||0}),
+    async resume(id, at=0) {
+      const request = ++queueRequest;
+      if (!ready) await initialize;
+      if (!library.tracks.some(t=>t.id===id)) await refresh();
+      if (request !== queueRequest) return;
+      const t=library.tracks.find(t=>t.id===id);if(!t)throw Error('Трек больше недоступен');
+      if(loaded===id&&!audio.ended)return resumeFromControl();
+      if(!state.queue.includes(id)){state.queue=[id];state.order=[id];}
+      state.index=state.queue.indexOf(id);
+      await select(true,Math.max(0,Math.min(Number.isFinite(at)?at:0,Math.max(0,(t.duration||0)-1))));
+    },
     async playList(ids, id, {shuffle = false} = {}) {
       const request = ++queueRequest;
       if (!ready) await initialize;

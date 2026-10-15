@@ -250,7 +250,9 @@ export class MetricsHistory {
     const disks=Array.isArray(data.disks)?data.disks:[];
     const disk=disks.find(d=>d.mount==='/')??disks[0];
     this.points=this.points.filter(p=>p.time>=time-7*86400000&&p.time<time);
-    this.points.push({time,cpu:percent(data.cpu?.percent),memory:percent(data.memory?.percent),disk:percent(disk?.percent),uptime:Number.isFinite(data.uptime_seconds)?data.uptime_seconds:null});
+    const rates=(data.network||[]).map(n=>n.rx_per_second).filter(n=>Number.isFinite(n)&&n>=0);
+    const network=rates.length?rates.reduce((a,b)=>a+b,0):null;
+    this.points.push({time,network,cpu:percent(data.cpu?.percent),memory:percent(data.memory?.percent),disk:percent(disk?.percent),uptime:Number.isFinite(data.uptime_seconds)?data.uptime_seconds:null});
     if(this.points.length>10081)this.points=this.points.slice(-10081);
     saveJSON(this.file,{schema:1,generated_at:time,interval:60000,points:this.points},0o644);return true;
   }

@@ -1,4 +1,5 @@
 import {groupFor,selectedGroup} from './groups.mjs';
+import {dayWindow} from './home-data.mjs';
 import {fail} from './input.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,7 +75,7 @@ export class Overview {
       db.close();
     }
   }
-  search(value) {
+  async search(value) {
     const q = String(value ?? '')
       .trim()
       .toLocaleLowerCase('ru');
@@ -132,6 +133,15 @@ export class Overview {
           url: '/modules/articles/?article=' + encodeURIComponent(a.id)
         });
     });
+    const fold = value => String(value || '').toLocaleLowerCase('ru');
+    for (const m of this.modules.values()) {
+      if (fold(m.title+' '+m.description).includes(q)) results.push({kind:m.id,module:m.title,title:m.title,snippet:m.description||'',url:'/modules/'+m.id+'/'});
+      if (['projects','kanban','articles'].includes(m.id)) continue;
+      try {
+        const rows = m.search ? await m.search(q) : m.uploads ? (await m.uploads()).filter(r=>fold([r.name,...(r.folders||[])].join(' ')).includes(q)).slice(0,20).map(r=>({title:r.name,detail:(r.folders||[]).join(' / '),href:r.href})) : [];
+        for (const r of rows.slice(0,20)) if (typeof r.href==='string' && r.href.startsWith('/modules/'+m.id+'/')) results.push({kind:m.id,module:m.title,title:r.title,snippet:r.detail||'',url:r.href});
+      } catch { errors.push({id:m.id,title:m.title,message:'Источник поиска временно недоступен'}); }
+    }
     return {results, errors, limitPerModule: 20};
   }
   status(cache, version, now = Date.now()) {
@@ -222,10 +232,12 @@ export class Overview {
   async home(activity, groupId) {
     const group=selectedGroup(groupId);
     const visible = new Set(this.ordered(group.id!=='overview').filter(m=>group.id==='overview'||groupFor(m.id)===group.id).map(m => m.id)), result = {updatedAt: Date.now(), errors: []};
+    const context={now:Date.now(),today:group.id==='overview',day:dayWindow()};
+    try{context.activity=activity.snapshot(365).items;}catch{context.activity=[];}
     await Promise.all([...visible].filter(id=>this.modules.get(id)?.home).map(async id => {
       const provider = this.modules.get(id)?.home;
       if (!provider) return;
-      try { result[id] = await provider(); } catch { result.errors.push(id); }
+      try { result[id] = await provider(context); } catch { result.errors.push(id); }
     }));
     if (visible.has('statistics')) {
       try {
@@ -234,6 +246,7 @@ export class Overview {
         result.statistics = {zone:day.zone,measured:day.measured.filter(r => enabled.has(r.source)),pages:day.pages};
       } catch { result.errors.push('statistics'); }
     }
+    result.resume = ['reader','cinema','wave'].flatMap(id => result[id]?.resume?.slice(0,1) || []);
     return result;
   }
   close() {

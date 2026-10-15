@@ -157,8 +157,7 @@
     transfer(data.transfer);
     history = (await Nexus.request('/api/activity?source=cinema')).items;
   }
-  $('cinemaPlay').onclick = () =>
-    void action(async () => {
+  async function startPlayback() {
       if (!current || !$('cinemaFiles').value) throw Error('Сначала выбери раздачу и файл');
       if ($('cinemaPlay').dataset.stopped) {
         await openItem(current);
@@ -193,7 +192,8 @@
             'Не удалось начать воспроизведение. Проверь статус загрузки и формат видео.';
       });
       $('cinemaStatus').textContent = '';
-    });
+  }
+  $('cinemaPlay').onclick=()=>void action(startPlayback);
   for (const [event, label] of [
     ['playing', 'Воспроизведение'],
     ['waiting', 'Буферизация — ожидаем данные'],
@@ -289,7 +289,15 @@
       if (id) {
         const item = items.find((x) => x.id === id);
         if (!item) throw Error('Фильм не найден. Вернись в каталог.');
-        return action(() => openItem(item));
+        return action(async()=>{await openItem(item);
+          if(new URLSearchParams(location.search).get('resume')==='1'){
+            const requested=new URLSearchParams(location.search).get('file');
+            if(!requested||$('cinemaFiles').value!==requested)throw Error('Сохранённый видеофайл больше недоступен. Выбери файл вручную.');
+            if(/\.mkv/i.test($('cinemaFiles').selectedOptions[0]?.textContent||'')){
+              const saved=history.find(h=>h.item===item.id+':'+requested);$('cinemaPlayback').textContent='Сохранено '+Math.floor((saved?.position||0)/60)+' мин. Для потокового MKV автоматический переход недоступен; кнопка «Смотреть» запустит фильм сначала.';
+            }else await startPlayback();
+          }
+        });
       }
     })
     .catch((e) => (Nexus.problem($('cinemaStatus'), 'cinema', e)));

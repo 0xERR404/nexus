@@ -1,7 +1,7 @@
 (() => {
   const root=document.querySelector('#vpn');if(!root)return;
   const header=document.querySelector('.vpn-header-controls'),headerActions=document.getElementById('vpnHeaderActions');
-  const view=root.querySelector('#vpnView'),status=root.querySelector('#vpnStatus'),dialog=root.querySelector('#vpnDialog'),form=root.querySelector('#vpnForm'),fields=root.querySelector('#vpnFields');let state,tab='users',save,acting=false;
+  const view=root.querySelector('#vpnView'),status=root.querySelector('#vpnStatus'),dialog=root.querySelector('#vpnDialog'),form=root.querySelector('#vpnForm'),fields=root.querySelector('#vpnFields');let state,tab=['users','nodes','routing','diagnostics'].includes(new URLSearchParams(location.search).get('tab'))?new URLSearchParams(location.search).get('tab'):'users',save,acting=false;
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bytes=n=>n>=1073741824?(n/1073741824).toFixed(2)+' ГиБ':n>=1048576?(n/1048576).toFixed(1)+' МиБ':n+' Б';
   const date=n=>n?new Date(n).toLocaleString('ru-RU'):'—';

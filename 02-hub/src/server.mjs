@@ -42,7 +42,7 @@ const assets = [
   'overview.css',
   'workspace.css',
   'workspace.js',
-  'appearance.js',
+  'appearance.js','profile.js',
   'pulse-history.js',
   'install.js',
   'home.js',
@@ -733,7 +733,7 @@ export function createApp({
         return json(overview.save(value));
       }
       if (url.pathname === '/api/search' && request.method === 'GET')
-        return json(overview.search(url.searchParams.get('q')));
+        return json(await overview.search(url.searchParams.get('q')));
       if (url.pathname === '/api/status' && request.method === 'GET')
         return json(overview.status(JSON.parse(dashboardCache.read()), hubVersion));
       if (url.pathname === '/api/modules' && request.method === 'GET')

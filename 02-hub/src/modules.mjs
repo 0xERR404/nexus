@@ -76,7 +76,7 @@ export async function loadModules(directory, {start: initialize = false, only} =
         fs.existsSync(path.join(directory, entry.name, 'steam-auth.mjs'))
       )
         throw new Error('Legacy QR module must be updated before loading');
-      const {agentExchange, handle, summary, settings, start, close, publicHandle, uploads, removeUpload, recent, statistics, home} =
+      const {agentExchange, handle, summary, settings, start, close, publicHandle, uploads, removeUpload, recent, statistics, home, search} =
         await import(pathToFileURL(path.join(directory, entry.name, 'index.mjs')).href);
       if (typeof handle !== 'function') throw new Error('Missing handler');
       if (initialize && typeof start === 'function') {
@@ -91,6 +91,7 @@ export async function loadModules(directory, {start: initialize = false, only} =
         handle,
         agentExchange: typeof agentExchange === 'function' ? agentExchange : undefined,
         home: typeof home === 'function' ? home : undefined,
+        search: typeof search === 'function' ? search : undefined,
         recent: typeof recent === 'function' ? recent : undefined,
         statistics: typeof statistics === 'function' ? statistics : undefined,
         uploads: typeof uploads === 'function' ? uploads : undefined,

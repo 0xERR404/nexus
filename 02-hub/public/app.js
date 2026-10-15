@@ -36,7 +36,7 @@ if (window.parent !== window) {
         event.altKey
       )
         return;
-      if (a.matches('[data-trophy-provider],[data-wave-nav]')) return;
+      if (a.matches('[data-trophy-provider],[data-wave-nav],[data-wave-resume]')) return;
       const url = new URL(a.href, location.href);
       if (
         url.origin === location.origin &&

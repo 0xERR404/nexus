@@ -1,3 +1,4 @@
+import {mediaRows,safeSearch} from '#hub/home-data.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Readable} from 'node:stream';
@@ -69,7 +70,8 @@ export function createModule(
     },
     store,
     close: () => store.close(),
-    home: () => {const rows=store.list();return {total:rows.length,items:rows.slice(0,6).map(t=>({title:t.title,cover:t.coverVersion?'/modules/cinema/cover/'+encodeURIComponent(t.id)+'?v='+t.coverVersion:null,detail:t.kind==='anime'?'Аниме':'Кино',href:'/modules/cinema/?id='+encodeURIComponent(t.id)})),note:'Последние добавленные фильмы'};},
+    search: q=>safeSearch(store.list().map(t=>({id:t.id,title:t.title,cover:t.coverVersion?'/modules/cinema/cover/'+encodeURIComponent(t.id)+'?v='+t.coverVersion:null,detail:t.kind==='anime'?'Аниме':'Кино',href:'/modules/cinema/?id='+encodeURIComponent(t.id)})),q),
+    home: ({activity=[]}={}) => {const all=store.list().map(t=>({id:t.id,title:t.title,cover:t.coverVersion?'/modules/cinema/cover/'+encodeURIComponent(t.id)+'?v='+t.coverVersion:null,detail:t.kind==='anime'?'Аниме':'Кино',href:'/modules/cinema/?id='+encodeURIComponent(t.id)}));return {total:all.length,items:all.slice(0,6),resume:mediaRows('cinema',all,activity)};},
     summary: () => ({
       state: 'ok',
       items: [
@@ -274,4 +276,4 @@ export function createModule(
   };
 }
 const instance = createModule();
-export const {handle, summary, close, uploads, removeUpload, home} = instance;
+export const {handle, summary, close, uploads, removeUpload, home, search} = instance;

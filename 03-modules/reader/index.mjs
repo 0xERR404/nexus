@@ -1,3 +1,4 @@
+import {safeSearch} from '#hub/home-data.mjs';
 import {readBytes, readJSON} from '#hub/input.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,11 +35,11 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
           href: '/modules/reader/?book=' + b.id
         })),
     removeUpload: (id) => store.remove(id),
+    search: q=>safeSearch(store.library().map(b=>({title:b.title,detail:b.author||'',href:'/modules/reader/?book='+encodeURIComponent(b.id)})),q),
     home() {
-      const all=store.library(),reading=all.filter(b => b.progress > 0 && b.progress < 100);
-      return {total:all.length,reading:reading.length,recent:all.slice().sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,1).map(b=>({id:b.id,title:b.title,author:b.author,progress:b.progress,cover:!!b.cover})),items:reading
-        .sort((a,b) => (b.readAt || b.created || 0) - (a.readAt || a.created || 0))
-        .slice(0,6).map(b => ({id:b.id,title:b.title,author:b.author,progress:b.progress,cover:!!b.cover}))};
+      const all=store.library(),reading=all.filter(b=>b.progress>0&&b.progress<100).sort((a,b)=>(b.readAt||0)-(a.readAt||0));
+      const items=reading.slice(0,6).map(b=>({id:b.id,title:b.title,author:b.author,progress:b.progress,cover:!!b.cover}));
+      return {total:all.length,reading:reading.length,items,resume:reading.slice(0,6).map(b=>({id:b.id,title:b.title,detail:'Книга · '+(b.author||'Александрия'),kind:'reader',progress:b.progress,cover:b.cover?'/modules/reader/cover/'+encodeURIComponent(b.id):null,href:'/modules/reader/?book='+encodeURIComponent(b.id),updatedAt:b.readAt}))};
     },
     async summary() {
       const books = store.library();
@@ -144,4 +145,4 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
     }
   };
 }
-export const {handle, summary, uploads, removeUpload, home} = createModule();
+export const {handle, summary, uploads, removeUpload, home, search} = createModule();

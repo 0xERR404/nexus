@@ -1,15 +1,15 @@
 const CACHE = 'nexus404-shell-__ASSET_HASH__';
 const ASSETS = [
   '/card-layout.css',
-  '/mobile.css?v=0.35.237',
-  '/orbit.css?v=0.35.237',
+  '/mobile.css?v=0.35.238',
+  '/orbit.css?v=0.35.238',
   '/settings.css',
   '/settings.js',
 
   '/servers.css', '/servers.js', '/app.css',
   '/workspace.css',
   '/workspace.js',
-  '/appearance.js',
+  '/appearance.js','/profile.js',
   '/pulse-history.js',
   '/home.js',
   '/install.js',

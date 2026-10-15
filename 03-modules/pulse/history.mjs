@@ -14,8 +14,8 @@ export async function readHistory(file,hours=24,now=Date.now()) {
     for(const p of input){const key=Math.floor((p.time-from)/width);if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(p);}
     const points=[];
     for(const [bucket,rows] of buckets){
-      const avg=key=>{const values=rows.map(r=>number(r[key])).filter(v=>v!==null);return values.length?values.reduce((a,b)=>a+b,0)/values.length:null;};
-      const last=rows.at(-1);points.push({time:last.time,bucket,cpu:avg('cpu'),memory:avg('memory'),disk:avg('disk'),uptime:Number.isFinite(last.uptime)?last.uptime:null});
+      const avg=key=>{const values=rows.map(r=>key==='network'?(Number.isFinite(r[key])&&r[key]>=0?r[key]:null):number(r[key])).filter(v=>v!==null);return values.length?values.reduce((a,b)=>a+b,0)/values.length:null;};
+      const last=rows.at(-1);points.push({time:last.time,bucket,cpu:avg('cpu'),memory:avg('memory'),disk:avg('disk'),network:avg('network'),uptime:Number.isFinite(last.uptime)?last.uptime:null});
     }
     return {available:true,from,to:now,hours:range,interval:width,first:input[0]?.time??null,last:input.at(-1)?.time??null,samples:input.length,points,stale:!input.length||now-input.at(-1).time>180000};
   }catch{return {available:false,from,to:now,hours:range,interval:60000,points:[],samples:0,stale:true};}

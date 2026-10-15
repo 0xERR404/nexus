@@ -1,3 +1,4 @@
+import {mediaRows,safeSearch} from '#hub/home-data.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {modulePage} from '#hub/views.mjs';
@@ -65,7 +66,8 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
       id.startsWith('photo:')
         ? store().removeArtistPhoto(id.slice(6))
         : store().change({action: 'delete', id}),
-    home: () => { const tracks=store().snapshot().tracks;return {total:tracks.length,items:[...tracks].sort((a,b)=>(b.added||0)-(a.added||0)).slice(0,6).map(t=>({title:t.title,cover:t.cover?'/modules/wave/cover/'+encodeURIComponent(t.id):null,duration:t.duration,detail:[t.artist,t.album].filter(Boolean).join(' · '),href:'/modules/wave/?view=tracks&track='+encodeURIComponent(t.id)})),note:'Последние добавленные треки'}; },
+    search: q => safeSearch(store().snapshot().tracks.map(t=>({id:t.id,title:t.title,favorite:!!t.favorite,cover:t.cover?'/modules/wave/cover/'+encodeURIComponent(t.id):null,duration:t.duration,detail:[t.artist,t.album].filter(Boolean).join(' · '),href:'/modules/wave/?view=tracks&track='+encodeURIComponent(t.id)})),q),
+    home: ({activity=[]}={}) => { const tracks=store().snapshot().tracks,all=tracks.map(t=>({id:t.id,title:t.title,favorite:!!t.favorite,cover:t.cover?'/modules/wave/cover/'+encodeURIComponent(t.id):null,duration:t.duration,detail:[t.artist,t.album].filter(Boolean).join(' · '),href:'/modules/wave/?view=tracks&track='+encodeURIComponent(t.id)}));return {total:tracks.length,items:[...tracks].sort((a,b)=>(b.added||0)-(a.added||0)).slice(0,6).map(t=>all.find(r=>r.id===t.id)),resume:mediaRows('wave',all,activity)}; },
     summary: () => {
       const data = store().snapshot();
       return {
@@ -144,6 +146,7 @@ const instance = createModule();
 export const handle = instance.handle;
 export const summary = instance.summary;
 export const home = instance.home;
+export const search = instance.search;
 
 export const {uploads, removeUpload} = instance;
 

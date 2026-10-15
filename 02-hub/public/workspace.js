@@ -4,6 +4,7 @@
   const groups=Object.fromEntries(links.map(a=>[a.dataset.workspaceGroup,(a.dataset.workspaceModules||'').split(',')]));
   let current;
   const nav=url=>window.NexusWave?.navigate(url);
+  document.querySelector('.workspace-search')?.addEventListener('submit',e=>{e.preventDefault();const q=new FormData(e.currentTarget).get('q');nav('/search'+(q?'?q='+encodeURIComponent(q):''));});
   document.addEventListener('click',e=>{const a=e.target.closest('a[data-workspace-link]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();nav(a.href);});
   function selected(){
     try{current=new URL(frame.contentWindow.location.href);}catch{return;}

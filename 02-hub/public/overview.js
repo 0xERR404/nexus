@@ -37,7 +37,7 @@
           const item = el('article');
           item.className = 'hub-search-result';
           item.append(
-            el('small', {projects: 'Дедал', kanban: 'Афина', articles: 'Клио'}[r.kind]),
+            el('small', r.module || {projects: 'Дедал', kanban: 'Афина', articles: 'Клио'}[r.kind]),
             link(r.title, r.url),
             el('p', r.snippet)
           );
@@ -48,7 +48,7 @@
           (data.errors.length
             ? ' Некоторые источники недоступны: ' +
               data.errors
-                .map((e) => ({projects: 'Дедал', kanban: 'Афина', articles: 'Клио'})[e.id])
+                .map((e) => e.title || ({projects: 'Дедал', kanban: 'Афина', articles: 'Клио'})[e.id] || e.id)
                 .join(', ')
             : '');
       } catch (e) {
