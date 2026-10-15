@@ -64,7 +64,10 @@
     failureCheck = -1,
     resumeOnReturn = false,
     stablePosition = 0,
-    favoritePending = false;
+    favoritePending = false,
+    playbackSync = null,
+    applyingRemote = false,
+    leaving = false;
   try {
     const saved = JSON.parse(localStorage.getItem(key));
     if (saved && Array.isArray(saved.queue)) {
@@ -124,6 +127,7 @@
     } catch {
       note('Не удалось сохранить очередь на этом устройстве.');
     }
+    if (!applyingRemote && !leaving) playbackSync?.save();
   }
   function paint() {
     const t = track();
@@ -384,7 +388,7 @@
       note('Файл удалён, недоступен или его формат не поддерживается. Выбери другой трек.');
     }
   }
-  async function select(play = true, position = 0, retry = false) {
+  async function select(play = true, position = 0, retry = false, continuation = false) {
     const request = ++playRequest,
       t = track();
     clearTimeout(recoveryTimer);
@@ -411,10 +415,19 @@
       audio.src = audioCache.get(t.id) || '/modules/wave/audio/' + t.id;
       stablePosition = position;
       $('waveSeek').disabled = true;
-    } else if (position || audio.ended)
+    } else
       audio.currentTime = Math.min(position, audio.duration || position);
     audio.loop = state.repeat === 'one';
     try {
+      if (play && !playbackSync.owned) {
+        const claimed = await playbackSync.claim(continuation);
+        if (request !== playRequest) { playbackSync.save(); return; }
+        if (!claimed) {
+          intentPlaying = switching = false;
+          audio.pause(); paint();
+          return;
+        }
+      }
       if (play) startTimer = setTimeout(() => {
         if (request !== playRequest || !intentPlaying) return;
         note('Запуск задержался. Восстанавливаем воспроизведение…');
@@ -451,14 +464,18 @@
       }
     }
   }
-  function resumeFromControl() {
+  async function resumeFromControl() {
+    const command = ++queueRequest;
+    if (!ready) await initialize;
+    await playbackSync.pull();
+    if (command !== queueRequest || signingOut) return;
     const position = restoring || audio.currentTime || state.position;
     if (!library.tracks.length && state.queue.length) {
       return refresh()
-        .then(() => select(true, position, Boolean(audio.error)))
+        .then(() => select(true, position, Boolean(audio.error), true))
         .catch((error) => note(error.message));
     }
-    return select(true, position, Boolean(audio.error));
+    return select(true, position, Boolean(audio.error), true);
   }
   async function next(direction = 1, automatic = false) {
     if (!state.queue.length) return;
@@ -945,6 +962,8 @@
     if (intentPlaying && (audio.error || audio.paused || audio.readyState < 3)) recoverPlayback(0);
   });
   function resumePlayback() {
+    leaving = false;
+    if (!document.hidden && ready && !signingOut) void playbackSync.pull();
     if (document.hidden || signingOut || state.closed) return;
     save();
     metadata();
@@ -957,13 +976,16 @@
   }
   document.addEventListener('visibilitychange', () => {
     save();
+    if (document.hidden) playbackSync.save(true);
     resumePlayback();
   });
   addEventListener('pageshow', resumePlayback);
-  document.addEventListener('freeze', save);
+  document.addEventListener('freeze', () => { save(); playbackSync.save(true); });
   document.addEventListener('resume', resumePlayback);
   addEventListener('pagehide', () => {
     save();
+    playbackSync.save(true, true);
+    leaving = true;
     closePlayback();
   });
   if (navigator.mediaSession) {
@@ -989,10 +1011,41 @@
         navigator.mediaSession.setActionHandler(name, fn);
       } catch {}
   }
+  playbackSync = window.NexusPlaybackSync({
+    enabled: () => !signingOut,
+    status: note,
+    snapshot: () => ({
+      queue: [...state.queue], order: [...state.order], index: state.index,
+      position: restoring || (loaded && audio.readyState >= 1 ? audio.currentTime : state.position) || 0,
+      repeat: state.repeat, shuffle: state.shuffle,
+      playing: intentPlaying || !audio.paused
+    }),
+    apply: async (remote, takenOver, current) => {
+      applyingRemote = true;
+      try {
+        // Losing ownership cancels recovery too: the old device must not start itself again.
+        pausePlayback();
+        if (!remote) { closePlayback(); return; }
+        const id = remote.queue[remote.index];
+        if (!library.tracks.some(t => t.id === id)) await refresh();
+        if (!current()) return;
+        if (!library.tracks.some(t => t.id === id)) return;
+        Object.assign(state, remote, {closed: false, shuffleVersion: 1});
+        await select(false, remote.position);
+        if (takenOver) note('Воспроизведение продолжено на другом устройстве.');
+      } finally { applyingRemote = false; }
+    }
+  });
+  setInterval(() => {
+    if (!ready || signingOut || leaving) return;
+    if (!document.hidden || intentPlaying) void playbackSync.pull();
+    if (playbackSync.owned) playbackSync.save();
+  }, 5000);
+  addEventListener('online', () => { if (ready) void playbackSync.pull(); });
   const initialize = (async () => {
-    const savedPosition = state.position;
     await refresh();
-    if (!state.closed) await select(false, savedPosition);
+    await playbackSync.pull();
+    if (!state.closed) await select(false, state.position);
     ready = true;
   })().catch((e) => note(e.message));
   function safeURL(value) {

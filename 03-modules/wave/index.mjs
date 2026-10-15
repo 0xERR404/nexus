@@ -4,10 +4,11 @@ import path from 'node:path';
 import {modulePage} from '#hub/views.mjs';
 import {body} from '#hub/server.mjs';
 import {WaveStore} from './store.mjs';
+import {PlaybackStore} from './playback.mjs';
 import {MusicPhones} from './phone.mjs';
 import {nameKey} from './catalog.mjs';
 const assets = new Map(
-  ['wave.js', 'player.js', 'wave.css', 'catalog.mjs'].map((n) => [
+  ['wave.js', 'player.js', 'playback-sync.js', 'wave.css', 'catalog.mjs'].map((n) => [
     '/' + n,
     fs.readFileSync(new URL(n, import.meta.url))
   ])
@@ -21,6 +22,7 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
   let instance;
   const store = () => (instance ??= new WaveStore(directory));
   const phones = new MusicPhones(directory, store);
+  const playback = new PlaybackStore(directory, () => store().snapshot().tracks);
   return {
     publicHandle: async ({request, path}) => {
       try {
@@ -92,6 +94,7 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
             return new Response(modulePage({embedded: user.embedded, username: user.username, title: 'Орфей', content}), {
               headers: {'Content-Type': 'text/html'}
             });
+          if (route === '/playback') return Response.json(playback.get(user.username, searchParams.get('since')), {headers: {'Cache-Control': 'no-store'}});
           if (route === '/phone') return Response.json(phones.list());
           if (route === '/library') return Response.json(store().snapshot());
           const photo = /^\/artist-photo\/([a-f0-9-]+)$/.exec(route);
@@ -118,9 +121,13 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
             );
           if (!request.headers['content-type']?.startsWith('application/json'))
             return Response.json({error: 'Нужен JSON.'}, {status: 415});
-          const data = JSON.parse(await body(request, 512 * 1024));
+          const data = JSON.parse(await body(request, route === '/playback' ? 1024 * 1024 : 512 * 1024));
           if (!authorized() || signal?.aborted)
             return Response.json({error: 'Сессия завершена'}, {status: 401});
+          if (route === '/playback') {
+            const result = playback.update(user.username, data);
+            return Response.json(result.data, {status: result.status, headers: {'Cache-Control': 'no-store'}});
+          }
           if (route === '/phone/create') return Response.json(phones.create(data.name));
           if (route === '/phone/revoke') {
             phones.revoke(data.id);

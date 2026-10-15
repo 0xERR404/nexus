@@ -444,6 +444,8 @@ export const projectFiles = [
   '03-modules/wave/manifest.json',
   '03-modules/wave/phone.mjs',
   '03-modules/wave/player.js',
+  '03-modules/wave/playback.mjs',
+  '03-modules/wave/playback-sync.js',
   '03-modules/wave/store.mjs',
   '03-modules/wave/wave.css',
   '03-modules/wave/wave.js',
