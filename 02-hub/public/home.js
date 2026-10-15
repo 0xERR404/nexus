@@ -28,13 +28,12 @@
     });
     draw('homeMedia',[data.reader,data.cinema,data.wave],(box,[reader,cinema,wave])=>{
       box.replaceChildren();const books=Array.isArray(reader)?reader:reader?.items;
-      const rows=(books||[]).slice(0,1).map(b=>({title:b.title,detail:'Книга · '+(b.author||'Продолжить чтение'),href:'/modules/reader/?book='+encodeURIComponent(b.id),cover:b.cover?'/modules/reader/cover/'+encodeURIComponent(b.id):null,progress:b.progress,kind:'reader'}));
-      if(cinema?.items?.length)rows.push({...cinema.items[0],kind:'cinema'});
-      if(wave?.items?.length)rows.push({...wave.items[0],detail:'Музыка · '+wave.items[0].detail,kind:'wave'});
-      for(const b of (books||[]).slice(1,3))if(rows.length<3)rows.push({title:b.title,detail:'Книга · '+(b.author||''),href:'/modules/reader/?book='+encodeURIComponent(b.id),cover:b.cover?'/modules/reader/cover/'+encodeURIComponent(b.id):null,progress:b.progress,kind:'reader'});
-      for(const t of (wave?.items||[]).slice(1,3))if(rows.length<3)rows.push({...t,detail:'Музыка · '+t.detail,kind:'wave'});
+      const book=books?.[0]||reader?.recent?.[0],rows=[];
+      if(reader!==undefined)rows.push(book?{title:book.title,detail:'Книга · '+(book.author||'Александрия'),href:'/modules/reader/?book='+encodeURIComponent(book.id),cover:book.cover?'/modules/reader/cover/'+encodeURIComponent(book.id):null,progress:book.progress,kind:'reader'}:{title:'Твоя следующая книга',detail:'Открыть Александрию →',href:'/modules/reader/',kind:'reader',empty:true});
+      if(cinema!==undefined)rows.push(cinema?.items?.length?{...cinema.items[0],kind:'cinema'}:{title:'Кино для вечера',detail:'Открыть Дионис →',href:'/modules/cinema/',kind:'cinema',empty:true});
+      if(wave!==undefined)rows.push(wave?.items?.length?{...wave.items[0],detail:'Музыка · '+wave.items[0].detail,kind:'wave'}:{title:'Музыка твоего дня',detail:'Открыть Орфей →',href:'/modules/wave/',kind:'wave',empty:true});
       if(!rows.length){box.append(node('p','Добавь книгу, фильм или музыку — они появятся здесь.','home-empty'));return;}
-      for(const r of rows){const a=link('',r.href);a.className='home-media-item';a.append(artwork(r.cover,r.kind),node('strong',r.title),node('small',r.detail));if(Number.isFinite(r.progress)){const p=node('progress');p.max=100;p.value=r.progress;p.setAttribute('aria-label','Прочитано '+Math.round(r.progress)+'%');a.append(p);}box.append(a);}
+      for(const r of rows){const a=link('',r.href);a.className='home-media-item';a.title=r.title+' · '+r.detail;a.dataset.kind=r.kind;if(r.empty)a.classList.add('home-media-placeholder');a.append(artwork(r.cover,r.kind),node('strong',r.title),node('small',r.detail));if(Number.isFinite(r.progress)){const wrap=node('div','','home-media-progress'),bar=node('progress');bar.max=100;bar.value=r.progress;bar.setAttribute('aria-label','Прочитано '+Math.round(r.progress)+'%');wrap.append(bar,node('span',Math.round(r.progress)+'%'));a.append(wrap);}box.append(a);}
     });
     draw('homeMusic',data.wave,(box,w)=>{box.replaceChildren();if(!w?.items?.length){box.append(node('p',w?'Пока нет треков':'Музыка временно недоступна','home-empty'));return;}for(const t of w.items.slice(0,3)){const a=link('',t.href);a.className='home-track';const text=node('div');text.append(node('strong',t.title),node('small',t.detail));a.append(artwork(t.cover,'wave'),text);if(Number.isFinite(t.duration))a.append(node('span',Math.floor(t.duration/60)+':'+String(Math.floor(t.duration%60)).padStart(2,'0')));box.append(a);}});
     draw('homeVPN',data.vpn,(box,v)=>{box.replaceChildren();if(!v?.items?.length){box.append(node('p',v?'Нет включённых подключений':'Сводка VPN временно недоступна','home-empty'));return;}for(const c of v.items){const a=link('',c.href);a.className='home-vpn-row';const text=node('div');text.append(node('strong',c.title),node('small',c.cloud?'Через Cloudflare':'Напрямую'));a.append(node('span',c.cloud?'☁':'⇄','home-vpn-symbol'),text,node('span','Включено'));box.append(a);}box.append(node('p','Показаны настройки подключений. Проверка доступности — в диагностике Арго.','home-vpn-note'));});
@@ -46,7 +45,8 @@
     });
     draw('homeTasks',data.kanban,(box,k)=>{
       box.replaceChildren();if(!k){box.append(node('p','—','home-empty'));return;}
-      if(!k.items.length)box.append(node('p',k.total ? 'Все задачи завершены' : 'Пока нет задач','home-empty'));
+      box.closest('.home-card').classList.toggle('is-empty',!k.items.length);
+      if(!k.items.length){const empty=node('div','','home-task-empty');empty.append(symbol('kanban'),node('strong',k.total?'Всё сделано':'Пока без задач'),node('p','Здесь будет твой план на день.'),link('Открыть задачи →','/modules/kanban/'));box.append(empty);}
       for(const task of k.items.slice(0,3)){
         const row=node('div','','home-task'),check=node('input');check.type='checkbox';check.checked=!!task.done;check.setAttribute('aria-label','Завершено: '+task.title);
         check.onchange=async()=>{const done=check.checked;check.disabled=true;try{await Nexus.request('/modules/kanban/api/done',{id:task.id,version:task.version,done});snapshots.delete('homeTasks');await refresh();}catch(e){check.checked=!!task.done;Nexus.notice?.('kanban','task');}finally{check.disabled=false;}};

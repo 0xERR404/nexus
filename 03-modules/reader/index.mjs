@@ -36,7 +36,7 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
     removeUpload: (id) => store.remove(id),
     home() {
       const all=store.library(),reading=all.filter(b => b.progress > 0 && b.progress < 100);
-      return {total:all.length,reading:reading.length,items:reading
+      return {total:all.length,reading:reading.length,recent:all.slice().sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,1).map(b=>({id:b.id,title:b.title,author:b.author,progress:b.progress,cover:!!b.cover})),items:reading
         .sort((a,b) => (b.readAt || b.created || 0) - (a.readAt || a.created || 0))
         .slice(0,6).map(b => ({id:b.id,title:b.title,author:b.author,progress:b.progress,cover:!!b.cover}))};
     },

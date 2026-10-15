@@ -13,11 +13,11 @@
 /* Quiet Orbit — a single opaque material system shared by every module. */
 :root {
  color-scheme:dark; --control-height:32px; --page-max-width:1440px; --page-gutter:12px;
- --bg:#0c1011; --surface:#13191a; --surface-solid:#171e1f; --control-bg:#0f1516;
+ --bg:#0e1112; --surface:#141819; --surface-solid:#171e1f; --control-bg:#0f1516;
  --dialog-bg:var(--surface-solid); --dialog-glass:var(--surface-solid); --surface-raised:#1b2425;
  --theme-surface:var(--surface); --theme-solid:var(--surface-solid); --theme-control:var(--control-bg); --theme-settings-surface:var(--surface);
  --surface-highlight:linear-gradient(transparent,transparent); --surface-shadow:none;
- --line:#2b3536; --line-strong:#506260; --line-soft:#222c2d; --text:#e5eae7; --muted:#9aa9a6;
+ --line:#343e3e; --line-strong:#506260; --line-soft:#222c2d; --text:#edf0ed; --muted:#a8b1af;
  --theme-secondary:var(--accent); --accent:#a4c9aa; --accent-rgb:164,201,170; --accent-soft:#a4c9aa17; --accent-glow:transparent;
  --button-bg:#182021; --button-hover:#222d2d; --button-active:#a4c9aa24; --button-radius:8px;
  --amber:#dec18b; --green:#a4c9aa; --red:#f0989f; --track:#2c3937; --backdrop:#050908b8;
