@@ -60,27 +60,27 @@
         row.append(menu('Действия с треком '+t.title,[actionButton('Добавить в очередь',()=>player().enqueue(t.id)),actionButton(t.favorite?'Убрать из избранного':'В избранное',async()=>{await Nexus.request('/modules/wave/change',{action:'favorite',id:t.id,favorite:!t.favorite});await player().refresh();snapshots.delete('homeMusic');await refresh();}),link('Открыть в Орфее',t.href)]));box.append(row);
       }
     });
-    draw('homeVPN',[data.vpn,diagnosticHistory(),window.NexusQuickPing?.active,window.NexusQuickPing?.last],(box,[v,history,measuring,last])=>{
+    draw('homeVPN',[data.vpn,diagnosticHistory(),window.NexusQuickPing?.active,window.NexusQuickPing?.results],(box,[v,history,measuring,results])=>{
       box.replaceChildren();if(!v?.items?.length){box.append(node('p',v?'Нет включённых подключений':'Сводка VPN временно недоступна','home-empty'));return;}
       const labels={applied:'Нода работает',pending:'Ожидает настройки',rejected:'Настройки отклонены',expired:'Разрешение истекло',stopped:'Ядро остановлено',offline:'Нет свежих данных',revoked:'Доступ отозван'};
       for(const c of v.items){
-        const row=node('div','','home-vpn-row'),a=link('',c.href);a.className='home-vpn-info';a.append(node('strong',c.title),node('small',c.cloud?'Через Cloudflare':'Напрямую'));
-        const status=node('div','','home-vpn-state'),label=node('span',labels[c.state]||'Статус неизвестен');label.dataset.state=c.state;status.append(label);
-        if(c.seen)label.title='Отчёт ноды: '+new Date(c.seen).toLocaleString('ru-RU');
-        const run=last?.connection===c.id?last:history.find(r=>r.connection===c.id);if(run){const samples=run.samples.filter(p=>p?.phase==='idle'&&p.ok&&Number.isFinite(p.ms)&&p.ms>=0).map(p=>p.ms).sort((a,b)=>a-b),i=Math.floor(samples.length/2);const ms=samples.length?(samples.length%2?samples[i]:(samples[i-1]+samples[i])/2):null;
-          const result=link(ms===null?'Проверка без результата':Math.round(ms)+' мс · HTTP',c.diagnostics);result.title='Браузер → хаб · '+new Date(run.started).toLocaleString('ru-RU')+' · '+run.status;status.append(result,node('small',new Date(run.started).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})));
-        const good=run.samples.filter(p=>p?.phase==='idle'&&p.ok),failed=run.samples.filter(p=>p?.phase==='idle'&&!p.ok).length;
-          const path=good.length&&good.every(p=>p.path==='matched')?'Выход ноды совпал':'Маршрут не подтверждён';
-          const detail=node('small',failed?`Сбои: ${failed}/${run.samples.length}`:path);detail.title=run.status+' · '+path;status.append(detail);
-          if(run.mode==='ping'&&run.status!=='Завершено')status.append(node('small',run.status,'home-ping-warning'));
-        }else status.append(node('small','Задержка не измерена'));
-        const ping=node('button',measuring?.connection===c.id?(measuring.progress?'Стоп · '+measuring.progress+'/5':'Остановить'):'Измерить','home-ping-button');
-        ping.type='button';ping.disabled=!!measuring&&measuring.connection!==c.id;ping.setAttribute('aria-label',measuring?.connection===c.id?'Остановить замер '+c.title:'Измерить задержку '+c.title);ping.title='5 HTTP-проб: этот браузер → хаб. Для проверки VPN включи профиль в Happ.';
-        ping.onclick=e=>{e.stopPropagation();if(window.NexusQuickPing.active){window.NexusQuickPing.stop();return;}void window.NexusQuickPing.run(c).then(r=>{const message=$('homeActionStatus');if(message)message.textContent=r.storageError||(['Завершено','Замер остановлен'].includes(r.status)?'':r.status);}).catch(e=>{const message=$('homeActionStatus');if(message)message.textContent=e.message;});};status.append(ping);
-        const routeIcon=node('span','','home-vpn-symbol');routeIcon.append(symbol(c.cloud?'cloud':'direct'));row.append(routeIcon,a,status,menu('Действия с подключением '+c.title,[link('Проверить канал',c.diagnostics),link('Открыть серверы',c.href),actionButton('Обновить статус',async()=>{snapshots.delete('homeVPN');await refresh();})]));box.append(row);
+        const row=node('div','','home-vpn-row'),a=link('',c.href),title=node('strong','','home-vpn-name');a.className='home-vpn-info';
+        if(/^[A-Z]{2}$/.test(c.country||'')){const flag=node('img','','home-vpn-flag');flag.src='/modules/vpn/flags/'+c.country.toLowerCase()+'.svg';flag.alt=c.countryName||c.country;flag.width=20;flag.height=15;title.append(flag);}
+        title.append(node('span',c.title));a.append(title,node('small',c.cloud?'Через Cloudflare':'Напрямую'));
+        const status=node('div','','home-vpn-state'),health=node('span','','home-vpn-health');health.dataset.state=c.state;health.setAttribute('role','img');health.setAttribute('aria-label',labels[c.state]||'Статус неизвестен');health.title=labels[c.state]||'Статус неизвестен';status.append(health);
+        const run=[results?.[c.id],history.find(r=>r.connection===c.id)].filter(Boolean).sort((a,b)=>b.started-a.started)[0];
+        const samples=(run?.samples||[]).filter(p=>p?.phase==='idle'&&p.ok&&Number.isFinite(p.ms)&&p.ms>=0).map(p=>p.ms).sort((a,b)=>a-b),i=Math.floor(samples.length/2);
+        const ms=samples.length?(samples.length%2?samples[i]:(samples[i-1]+samples[i])/2):null;
+        const fresh=run&&Date.now()-run.started<120000;
+        const text=measuring?.connection===c.id?'Замер…':ms!==null&&fresh?Math.round(ms)+' мс · HTTP':run?'Нет замера':'—';
+        const result=link(text,c.diagnostics);result.className='home-vpn-latency';
+        result.title='HTTP-задержка: этот браузер → хаб'+(run?' · '+new Date(run.started).toLocaleString('ru-RU')+' · '+run.status:'');
+        result.setAttribute('aria-label',text+'. '+result.title);status.append(result);
+        const routeIcon=node('span','','home-vpn-symbol');routeIcon.append(symbol(c.cloud?'cloud':'direct'));
+        row.append(routeIcon,a,status,menu('Действия с подключением '+c.title,[link('Диагностика',c.diagnostics),link('Открыть серверы',c.href)]));box.append(row);
       }
-      box.append(node('p','HTTP: браузер → хаб. Для проверки VPN включи профиль в Happ.','home-vpn-note'));
     });
+    if($('homeVPN'))window.NexusAutoPing?.watch(data.vpn?.items||[]);
     draw('homeTime',data.statistics,(box,s)=>{
       box.replaceChildren();if(!s){box.append(node('p','—','home-empty'));return;}
       const seconds=s.measured.reduce((n,r)=>n+r.seconds,0);

@@ -9,10 +9,10 @@ html body :is(.home-card,.module-card,.vpn-card,.server-manager,.settings-card,.
 html body :is(.content-toolbar,.anime-toolbar,.trophy-toolbar,.reader-toolbar,.storage-toolbar,.kb-tools,.projects-toolbar,.rt-toolbar) { background:var(--surface); border-color:var(--line); }
 html body :is(.module-card,.home-card,.project-card,.storage-row,.article-card):hover { transform:none; }
 html body .section-line { margin-bottom:20px; padding:0; border:0; }
-html body .section-line h1 { font-size:24px; font-weight:600; letter-spacing:-.5px; }
+html body .section-line h1 { font-family:var(--display); font-size:23px; font-weight:500; letter-spacing:-.7px; line-height:1.35; overflow-wrap:anywhere; }
 html body :is(.page-foot,.muted,small) { color:var(--muted); }
 html body :is(dialog,.nexus-select-menu,.storage-menu[open],#wavePlayer,#waveTransfer,#waveRestore) { background:var(--surface-solid); box-shadow:0 16px 48px #0005;   }
-html body dialog::backdrop { background:#050908b8;   }
+html body dialog::backdrop { background:#040a06c7;   }
 html body :is(button,input,select,textarea) { border-color:var(--line); }
 html body :is(.reader-book,.cinema-card,.gallery-card,.anime-card,.trophy-card) { border-color:var(--line); box-shadow:none;   }
 html body :is(.reader-book,.cinema-card) { background-color:var(--surface); }
@@ -27,7 +27,7 @@ html body #settingsContent .settings-appearance .settings-card { padding:24px; }
 .orbit-accents legend { margin-bottom:10px; font-weight:500; }
 html body #settingsContent label.orbit-accent { position:relative; display:flex; flex-direction:column; align-items:center; gap:8px; margin:0; padding:14px 8px; border:1px solid var(--line); border-radius:10px; cursor:pointer; }
 .orbit-accent input { position:absolute; opacity:0; width:1px; height:1px; }
-.orbit-accent > span { width:24px; height:24px; border-radius:50%; background:#a4c9aa; }
+.orbit-accent > span { width:24px; height:24px; border-radius:50%; background:#c5eda9; }
 .orbit-accent[data-accent=blue] > span { background:#9ac2e0; }
 .orbit-accent[data-accent=violet] > span { background:#c0aee2; }
 .orbit-accent[data-accent=amber] > span { background:#dec18b; }
@@ -38,8 +38,8 @@ html[data-orbit-reduced=true] *,html[data-orbit-reduced=true] *::before,html[dat
 html body.wave-shell { display:grid; grid-template-columns:232px minmax(0,1fr); grid-template-rows:64px minmax(0,1fr); padding:0; height:calc(100dvh - 32px); width:calc(100% - 32px); max-width:1480px; margin:16px auto; position:relative; border:1px solid var(--line-strong); border-radius:12px; min-height:0; overflow:hidden; }
 .workspace-sidebar { grid-column:1; grid-row:1/-1; display:flex; flex-direction:column; min-height:0; padding:28px 16px 18px; border-right:1px solid var(--line); background:var(--orbit-grain),linear-gradient(125deg,#ffffff03,transparent 65%),var(--surface); }
 .workspace-sidebar > .brand { gap:10px; padding:0 6px 24px; flex:none; }
-.workspace-sidebar .brand-name { font-size:14px; font-weight:600; letter-spacing:3.5px; }
-.workspace-sidebar .brand-mark { width:38px; height:42px; }
+.workspace-sidebar .brand-name { font-size:12px; font-weight:600; letter-spacing:1.1px; }
+.workspace-sidebar .brand-mark { width:44px; height:44px; }
 .workspace-sidebar > nav { flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin; padding-right:3px; }
 .workspace-sidebar nav a { display:flex; align-items:center; gap:10px; min-height:34px; padding:7px 10px; text-decoration:none; color:var(--muted); border-radius:6px; font-size:14px; }
 .workspace-sidebar a span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -65,7 +65,7 @@ body.wave-shell:is(.reader-focus,.dialog-focus,.wave-focus) > :is(.workspace-sid
 html body.wave-shell:is(.reader-focus,.dialog-focus,.wave-focus) > .workspace-body { grid-column:1; grid-row:1; }
 /* A compact desk built from real library data. */
 html body #homeDashboard .home-heading { position:relative; width:auto; height:auto; overflow:visible; clip-path:none; white-space:normal; display:flex; align-items:center; justify-content:space-between; margin:0 0 18px; }
-.home-heading h1 { margin:4px 0 8px; font-size:32px; font-weight:650; letter-spacing:-.7px; line-height:1.2; }
+.home-heading h1 { margin:4px 0 8px; font-family:var(--display); font-size:30px; font-weight:500; letter-spacing:-1.1px; line-height:1.3; }
 .home-heading #homeDate { color:var(--muted); font-size:14px; letter-spacing:.4px; }
 .home-eyebrow { font-size:9px; letter-spacing:2px; color:var(--muted); }
 .orbit-emblem { position:relative; flex:none; width:150px; height:90px; opacity:.8; background:radial-gradient(circle at 65% 26%,var(--accent) 0 2px,transparent 3px); }
@@ -98,7 +98,13 @@ html body #homeDashboard .home-task a { font-size:14px; }
 html body #homeDashboard .home-task input { border-color:var(--muted); background:var(--control-bg); }
 html body #homeDashboard .home-task input:checked { background:var(--accent); }
 html body #homeDashboard .home-empty { margin:8px 0; padding:12px 0; color:var(--muted); font-size:12px; }
-#homeMedia { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+/* Equal-height covers retain their media format; narrow rows scroll without shrinking artwork. */
+#homeMedia { --resume-cover-height:200px; display:flex; align-items:flex-start; gap:14px; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x proximity; scrollbar-width:thin; padding:0 0 4px; }
+#homeMedia .home-media-item { flex:0 0 auto; width:calc(var(--resume-cover-height) * 2 / 3); scroll-snap-align:start; }
+#homeMedia .home-media-item[data-kind=wave] { width:var(--resume-cover-height); }
+#homeMedia .home-media-art { height:var(--resume-cover-height); max-height:none; aspect-ratio:auto; background:var(--control-bg); }
+#homeMedia .home-media-art img { object-fit:contain; object-position:center; }
+#homeMedia:has(.home-resume-empty) { display:block; }
 .home-media-item { display:flex; flex-direction:column; min-width:0; gap:4px; text-decoration:none; color:var(--text); }
 .home-media-art { display:grid; grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); place-items:center; width:100%; aspect-ratio:1; max-height:200px; border:1px solid var(--line); border-radius:8px; background:linear-gradient(145deg,var(--accent-soft),var(--control-bg)); overflow:hidden; }
 .home-media-art img { grid-area:1/1; min-width:0; min-height:0; display:block; width:100%; height:100%; object-fit:cover; }
@@ -117,7 +123,6 @@ html body #homeDashboard .home-empty { margin:8px 0; padding:12px 0; color:var(-
 .home-track > span { flex:none; font-size:11px; color:var(--muted); }
 .home-vpn-symbol { width:30px; flex:none; font-size:25px; color:var(--accent); text-align:center; }
 .home-vpn-row > span:last-child { color:var(--muted); font-size:11px; }
-.home-vpn-note { color:var(--muted); font-size:11px; margin-top:12px; line-height:1.5; }
 html body #homeDashboard .module-stats { display:flex; flex-wrap:wrap; gap:20px; }
 html body #homeDashboard .module-stat { display:flex; flex-direction:column; gap:6px; }
 html body #homeDashboard .module-stat strong { font-size:22px; }
@@ -171,7 +176,7 @@ html body #wavePlayer.expanded #waveToggle { border-radius:50%; box-shadow:none;
 }
 
 /* Bounded composition, quiet material and an integrated overview header. */
-html { background:#080b0c; }
+html { background:#060b08; }
 html body.dashboard-page .page { max-width:1160px; }
 html body #homeDashboard .home-grid > .home-card { background:var(--orbit-grain),linear-gradient(125deg,#ffffff03,transparent 65%),var(--surface); }
 html body #homeDashboard .home-card-title > a:first-child .ui-icon { display:none; }
@@ -224,8 +229,9 @@ html body #homeDashboard .home-grid > :is([data-home-card=wave],[data-home-card=
 .home-actions-popover :is(button,a) { display:block; width:100%; padding:8px; text-align:left; font-size:12px; text-decoration:none; border:0; background:none; color:var(--text); }
 .home-actions-popover :is(button,a):hover { background:var(--accent-soft); }
 .home-vpn-state { flex:none!important; text-align:right; max-width:145px; font-size:11px; }
-.home-vpn-state > * { display:block; }
-.home-vpn-state > span::before { content:'●'; margin-right:5px; color:var(--muted); }
+.home-vpn-state { display:flex; align-items:center; gap:6px; }
+.home-vpn-state > * { display:inline-block; }
+.home-vpn-state > span::before { content:'●'; color:var(--muted); }
 .home-vpn-state > [data-state=applied]::before { color:var(--green); }
 .home-vpn-state > :is([data-state=rejected],[data-state=stopped],[data-state=expired])::before { color:var(--red); }
 .home-vpn-state small { font-size:10px; }
@@ -309,13 +315,11 @@ html body .workspace-user { position:relative; padding:0; overflow:hidden; curso
  html body #homeDashboard .home-card-title { margin:0 0 8px; min-height:22px; gap:8px; }
  html body #homeDashboard .home-card-title h2 { font-size:16px; line-height:22px; font-weight:600; }
  html body #homeDashboard .home-card-title .home-all { font-size:10px; }
- #homeMedia { display:grid; grid-auto-flow:column; grid-template-columns:none; grid-auto-columns:46%; gap:10px; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x proximity; scrollbar-width:none; padding:0 0 2px; }
+ #homeMedia { --resume-cover-height:144px; gap:10px; scrollbar-width:none; padding:0 0 2px; }
  #homeMedia::-webkit-scrollbar { display:none; }
  #homeMedia > * { scroll-snap-align:start; min-width:0; }
- #homeMedia:has(.home-resume-empty) { display:block; }
  #homeMedia .home-media-item { gap:3px; }
- #homeMedia .home-media-art { height:100px; aspect-ratio:auto; max-height:none; border-radius:6px; background:var(--control-bg); }
- #homeMedia .home-media-art img { object-fit:contain; object-position:center; }
+ #homeMedia .home-media-art { border-radius:6px; }
  #homeMedia .home-media-art .ui-icon { width:32px; height:32px; }
  #homeMedia .home-media-item strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; white-space:normal; font-size:12px; line-height:16px; height:32px; overflow:hidden; }
  #homeMedia .home-media-item small { font-size:10px; line-height:14px; }
@@ -341,7 +345,6 @@ html body .workspace-user { position:relative; padding:0; overflow:hidden; curso
  .home-vpn-state { max-width:100px; font-size:10px; }
  .home-vpn-state small { font-size:9px; }
  .home-vpn-row small { font-size:10px; margin-top:2px; }
- .home-vpn-note { font-size:10px; line-height:14px; margin:6px 0 0; }
  .home-actions-menu summary { width:28px; height:32px; }
  html body #homeDashboard #homeFiles { grid-template-columns:1fr; gap:0; }
  html body.wave-shell #wavePlayer:not(.expanded) { width:100%; margin:0; border:0; border-top:1px solid var(--line); border-radius:0; padding:7px 14px; background:var(--surface); box-shadow:none; }
@@ -355,39 +358,56 @@ html body .workspace-user { position:relative; padding:0; overflow:hidden; curso
  html body.wave-shell #wavePlayer:not(.expanded) #waveFavorite { width:32px!important; min-width:32px!important; }
 }
 @media(min-width:540px) and (max-width:800px) {
- #homeMedia { grid-auto-columns:calc((100% - 20px)/3); }
- #homeMedia .home-media-art { height:140px; }
+ #homeMedia { --resume-cover-height:180px; }
 }
 .workspace-sidebar nav a.workspace-group-title[aria-current=page] { color:var(--accent); background:none; }
 
 /* Shared finishing details; spacing and module-specific reading fonts stay intact. */
-.home-vpn-state .home-ping-button { align-self:flex-end; justify-self:end; margin-top:4px; padding:4px 9px; min-height:28px; font:500 11px/18px var(--sans); color:var(--accent); border:1px solid var(--line); border-radius:6px; background:var(--control-bg); white-space:nowrap; }
 .home-vpn-state > a { font-size:13px; font-weight:650; text-decoration:none; color:var(--accent); }
 .home-vpn-state > a:hover { text-decoration:underline; }
-.home-vpn-state .home-ping-button:disabled { opacity:.5; cursor:wait; }
-.home-vpn-state .home-ping-warning { color:var(--amber); }
-@media(max-width:800px) { html body #homeDashboard .home-ping-button { min-height:28px!important; height:auto!important; padding:4px 8px!important; font-size:10px!important; } }
 html body { font-optical-sizing:auto; }
 .brand-mark { filter:drop-shadow(0 2px 5px #0003); }
-html body .brand-name { font-family:var(--sans); font-weight:600; }
+html body .brand-name { font-family:var(--display); font-weight:600; letter-spacing:1.1px; }
 html body .home-heading h1 { text-wrap:balance; }
+html body .brand-name > span { color:var(--accent); }
+html body .login-brand .brand-name { font-size:20px; letter-spacing:2px; }
+html body .login-brand .brand-mark { width:112px; height:112px; }
+html body :is(.home-card-title,.settings-card h2) { letter-spacing:-.25px; }
+html body .workspace-sidebar nav a:not(.workspace-group-title) { font-weight:450; }
 html body :is(.home-metric strong,.module-stat strong,.home-value) { font-variant-numeric:tabular-nums; }
 .home-vpn-symbol { display:flex; align-items:center; justify-content:center; }
 .home-vpn-symbol .ui-icon { width:28px; height:28px; stroke-width:1.5; color:var(--muted); }
 .home-actions-menu > summary .ui-icon { width:19px; height:19px; }
 html body .workspace-user:not(:has(img:not([hidden]))) { background:radial-gradient(circle at 32% 20%,rgba(var(--accent-rgb),.23),transparent 70%),var(--surface); }
 html body .workspace-header .workspace-search { border-color:var(--line); box-shadow:inset 0 1px 2px #0002; }
-html body #homeDashboard .home-media-progress progress::-webkit-progress-value { background:linear-gradient(90deg,var(--accent),#c8dbc0); }
+html body #homeDashboard .home-media-progress progress::-webkit-progress-value { background:linear-gradient(90deg,var(--accent),#def5c7); }
 html body #homeDashboard .home-media-progress progress::-moz-progress-bar { background:var(--accent); }
 @media(max-width:800px) {
- html body.wave-shell .workspace-header .brand-name { font-size:12px; letter-spacing:2.6px; font-weight:600; }
- html body.wave-shell .workspace-header .brand-mark { width:29px; height:31px; }
+ html body.wave-shell .workspace-header .brand-name { font-size:10px; letter-spacing:.8px; font-weight:600; }
+ html body.wave-shell .workspace-header .brand-mark { width:32px; height:32px; }
  .home-vpn-symbol .ui-icon { width:23px; height:23px; }
  html body .workspace-mobile .ui-icon { stroke-width:1.5; }
  html body .workspace-mobile span { font-size:9px; letter-spacing:.1px; }
 }
 
 @media(max-width:380px) {
- html body.wave-shell .workspace-header .brand-name { font-size:11px; letter-spacing:1.4px; }
+ html body.wave-shell .workspace-header .brand-name { font-size:9px; letter-spacing:.45px; }
  html body.wave-shell .workspace-header > .brand { gap:5px; }
+}
+
+.home-vpn-row .home-vpn-name { display:flex; align-items:center; gap:7px; min-width:0; }
+.home-vpn-name > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.home-vpn-flag { width:20px; height:15px; object-fit:cover; border-radius:3px; flex:none; }
+.home-vpn-health { flex:none; font-size:9px; }
+.home-vpn-state > .home-vpn-latency { white-space:nowrap; font-size:12px; }
+@media(max-width:600px) { .home-vpn-state { gap:4px; } .home-vpn-state > .home-vpn-latency { font-size:10px; } }
+
+/* Display typography remains compact on handheld screens. */
+@media(max-width:800px) {
+ html body .home-heading h1 { font-size:21px; letter-spacing:-.6px; line-height:1.4; }
+ html body .section-line h1 { font-size:20px; letter-spacing:-.5px; }
+}
+@media(max-width:380px) {
+ html body .home-heading h1 { font-size:19px; }
+ html body .section-line h1 { font-size:18px; }
 }

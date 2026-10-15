@@ -1,8 +1,9 @@
 const CACHE = 'nexus404-shell-__ASSET_HASH__';
+const VERSION = '0.35.251';
 const ASSETS = [
   '/card-layout.css',
-  '/mobile.css?v=0.35.244',
-  '/orbit.css?v=0.35.244','/sections.css?v=0.35.244',
+  '/mobile.css?v=0.35.251',
+  '/orbit.css?v=0.35.251','/sections.css?v=0.35.251',
   '/settings.css',
   '/settings.js',
 
@@ -11,7 +12,7 @@ const ASSETS = [
   '/workspace.js',
   '/appearance.js','/profile.js',
   '/pulse-history.js',
-  '/quick-ping.js', '/home.js',
+  '/quick-ping.js', '/auto-ping.js', '/home.js',
   '/install.js',
   '/overview.css',
   '/overview.js',
@@ -27,13 +28,17 @@ const ASSETS = [
   '/apple-touch-icon.png',
   '/offline.html',
   '/fonts/jetbrains-mono.woff2',
-  '/fonts/manrope-cyrillic-ext.woff2',
-  '/fonts/manrope-cyrillic.woff2',
-  '/fonts/manrope-greek.woff2',
-  '/fonts/manrope-vietnamese.woff2',
-  '/fonts/manrope-latin-ext.woff2',
-  '/fonts/manrope-latin.woff2'
-];
+  '/fonts/onest-cyrillic-ext.woff2',
+  '/fonts/onest-cyrillic.woff2',
+  '/fonts/onest-vietnamese.woff2',
+  '/fonts/onest-latin-ext.woff2',
+  '/fonts/onest-latin.woff2',
+  '/fonts/unbounded-cyrillic-ext.woff2',
+  '/fonts/unbounded-cyrillic.woff2',
+  '/fonts/unbounded-vietnamese.woff2',
+  '/fonts/unbounded-latin-ext.woff2',
+  '/fonts/unbounded-latin.woff2',
+].map(asset => /\.(?:css|js)(?:\?|$)/.test(asset) ? asset.split('?')[0] + '?v=' + VERSION : asset);
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
@@ -59,7 +64,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || event.request.method !== 'GET') return;
-  if (ASSETS.includes(url.pathname) && !url.search) {
+  if (ASSETS.includes(url.pathname + url.search)) {
     event.respondWith(
       caches
         .open(CACHE)

@@ -1,11 +1,11 @@
 (() => {
-  const key='nexus-orbit-appearance-v1', root=document.documentElement;
+  const key='nexus-orbit-appearance-v2', previousKey='nexus-orbit-appearance-v1', root=document.documentElement;
   const defaults={accent:'jade',ambient:true,reduceMotion:false};
-  const colors={jade:'164,201,170',blue:'154,194,224',violet:'192,174,226',amber:'222,193,139'};
+  const colors={jade:'197,237,169',blue:'154,194,224',violet:'192,174,226',amber:'222,193,139'};
   const clean=v=>({accent:Object.hasOwn(colors,v?.accent)?v.accent:'jade',ambient:v?.ambient!==false,reduceMotion:v?.reduceMotion===true});
   const read=()=>{try{return clean(JSON.parse(localStorage.getItem(key)));}catch{return {...defaults};}};
-  // Persist the new design before retiring obsolete scenes, transparency and welcome preferences.
-  try {if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(defaults));for(const old of ['nexus-carbon-appearance-v1','nexus-intro-enabled','nexus-intro-sound'])localStorage.removeItem(old);sessionStorage.removeItem('nexus-intro-pending');}catch{}
+  // Apply the forest palette once; preserve ambient and accessibility preferences. Subsequent color choices remain local.
+  try {if(!localStorage.getItem(key)){let previous;try{previous=JSON.parse(localStorage.getItem(previousKey));}catch{}localStorage.setItem(key,JSON.stringify({...clean(previous),accent:defaults.accent}));}for(const old of ['nexus-carbon-appearance-v1','nexus-intro-enabled','nexus-intro-sound'])localStorage.removeItem(old);sessionStorage.removeItem('nexus-intro-pending');}catch{}
   let prefs=read();const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   function apply(value){prefs=clean(value);const rgb=colors[prefs.accent];root.dataset.orbitAccent=prefs.accent;root.dataset.orbitAmbient=String(prefs.ambient);root.dataset.orbitReduced=String(prefs.reduceMotion||reduced.matches);for(const [k,v]of Object.entries({'--accent':`rgb(${rgb})`,'--accent-rgb':rgb,'--accent-soft':`rgba(${rgb},.09)`,'--button-active':`rgba(${rgb},.14)`}))root.style.setProperty(k,v);}
   function sync(){const f=document.getElementById('appearanceForm');if(f){f.elements.accent.value=prefs.accent;f.elements.ambient.checked=prefs.ambient;f.elements.reduceMotion.checked=prefs.reduceMotion;}}

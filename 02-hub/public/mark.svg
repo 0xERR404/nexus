@@ -1,12 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<defs>
- <linearGradient id="nexus-stem" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c3d5b7"/><stop offset=".55" stop-color="#839d7a"/><stop offset="1" stop-color="#526b51"/></linearGradient>
- <linearGradient id="nexus-ribbon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0f3e8"/><stop offset=".46" stop-color="#c5d7bc"/><stop offset="1" stop-color="#8baa7d"/></linearGradient>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
+ <linearGradient id="nexus-light" x1="18" y1="18" x2="79" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#edffdf"/><stop offset=".55" stop-color="#c5eda9"/><stop offset="1" stop-color="#83b66b"/></linearGradient>
 </defs>
-<path fill="url(#nexus-stem)" d="M70 20 88 10v72L70 65Z"/>
-<path fill="url(#nexus-stem)" d="m12 18 18 17v55L12 80Z"/>
-<path fill="url(#nexus-ribbon)" d="m12 10 18 8 58 64-18 8L12 26Z"/>
-<path fill="#eff5e9" opacity=".6" d="m12 10 18 8 58 64-3-1L28 20l-16-8Z"/>
-<path fill="#354b39" opacity=".65" d="m30 46 7 8-7 36Z"/>
-<path fill="#e3edda" opacity=".5" d="m70 20 18-10v3L72 23v41l-2-2Z"/>
+<path d="M13 61A39 39 0 0 1 62 13M87 39A39 39 0 0 1 38 87" fill="none" stroke="#87b56e" stroke-width="2.5" stroke-linecap="square"/>
+<path d="M24 74V26H36L64 55V26H77V74H65L37 45V74Z" fill="url(#nexus-light)"/>
+<path d="m40 30 5 5M57 61l5 5" fill="none" stroke="#f2ffe7" stroke-width="1.5" stroke-linecap="square" opacity=".6"/>
+<path d="m76 9 6 6-6 6-6-6Z" fill="#ddfac8"/>
+<path d="m19 81 5 5-5 5-5-5Z" fill="#729f5c"/>
 </svg>

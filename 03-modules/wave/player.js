@@ -1065,7 +1065,6 @@
   let navigationTimer,
     revealTimer,
     navigationId = 0;
-  const reducedNavigation = matchMedia('(prefers-reduced-motion: reduce)');
   function showFrame() {
     clearTimeout(revealTimer);
     frame.classList.remove('hub-navigating');
@@ -1073,6 +1072,7 @@
   }
   function revealPage() {
     try {
+      if (frame.contentDocument?.readyState === 'loading') return;
       if (safeURL(frame.contentWindow.location.href)?.href !== safeURL(location.href)?.href) return;
     } catch {
       return;
@@ -1106,7 +1106,7 @@
         frame.contentWindow.location.replace(u.href);
         revealTimer = setTimeout(showFrame, 8000);
       },
-      reducedNavigation.matches ? 0 : 120
+      0
     );
   }
   function syncChatLayout() {

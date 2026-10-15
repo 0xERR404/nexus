@@ -58,12 +58,12 @@
     }catch(e){r.status=signal.aborted?job.reason:e.message||'Не удалось выполнить замер';}
     finally{
       r.duration=performance.now()-started;save(r);await release(job);active=null;
-      window.NexusQuickPing.last=r;changed();
+      window.NexusQuickPing.last=r;window.NexusQuickPing.results[r.connection]=r;changed();
     }
     return r;
   }
   function stop(reason='Замер остановлен'){if(active){active.reason=reason;active.controller.abort();void release(active);}}
   document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('Замер прерван: вкладка скрыта');});
   addEventListener('pagehide',()=>stop('Замер прерван: страница закрыта'));
-  window.NexusQuickPing={run,stop,last:null,get active(){return active?{connection:active.connection,progress:active.progress}:null;}};
+  window.NexusQuickPing={run,stop,last:null,results:Object.create(null),get active(){return active?{connection:active.connection,progress:active.progress}:null;}};
 })();

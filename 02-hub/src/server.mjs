@@ -46,7 +46,7 @@ const assets = [
   'pulse-history.js',
   'install.js',
   'home.js',
-  'quick-ping.js',
+  'quick-ping.js', 'auto-ping.js',
   'overview.js',
   'activity.js',
   'activity-views.js',
@@ -71,12 +71,16 @@ const assets = [
   'icon-512.png',
   'apple-touch-icon.png',
   'fonts/jetbrains-mono.woff2',
-  'fonts/manrope-cyrillic-ext.woff2',
-  'fonts/manrope-cyrillic.woff2',
-  'fonts/manrope-greek.woff2',
-  'fonts/manrope-vietnamese.woff2',
-  'fonts/manrope-latin-ext.woff2',
-  'fonts/manrope-latin.woff2'
+  'fonts/onest-cyrillic-ext.woff2',
+  'fonts/onest-cyrillic.woff2',
+  'fonts/onest-vietnamese.woff2',
+  'fonts/onest-latin-ext.woff2',
+  'fonts/onest-latin.woff2',
+  'fonts/unbounded-cyrillic-ext.woff2',
+  'fonts/unbounded-cyrillic.woff2',
+  'fonts/unbounded-vietnamese.woff2',
+  'fonts/unbounded-latin-ext.woff2',
+  'fonts/unbounded-latin.woff2',
 ];
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";

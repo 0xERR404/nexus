@@ -189,3 +189,79 @@
     min-height: 88px;
   }
 }
+
+/* One aligned release row, independent of the wrapping toolbars elsewhere. */
+html body #releaseUpload {
+  display:grid;
+  grid-template-columns:minmax(68px,110px) minmax(0,1fr) max-content;
+  align-items:end;
+  gap:8px;
+}
+html body #releaseUpload > label { width:auto; min-width:0; margin:0; gap:5px; }
+html body #releaseUpload :is(#releaseVersion,#releaseNotes,.projects-upload) {
+  box-sizing:border-box;
+  width:100%;
+  height:36px;
+  min-height:36px;
+  margin:0;
+  padding:6px 8px;
+  font-size:12px;
+  line-height:22px;
+}
+html body #releaseUpload #releaseNotes { resize:none; overflow:auto; white-space:pre; scrollbar-width:none; }
+html body #releaseUpload #releaseNotes::-webkit-scrollbar { display:none; }
+html body #releaseUpload .projects-upload { display:flex; align-items:center; justify-content:center; white-space:nowrap; cursor:pointer; }
+@media(max-width:600px) {
+  html body #releaseUpload { grid-template-columns:72px minmax(0,1fr) max-content; gap:6px; }
+}
+
+/* Align the installation switch with the version selector, not its caption. */
+html body #releaseDelivery {
+  display:grid;
+  grid-template-columns:minmax(0,240px) max-content;
+  align-items:end;
+  gap:16px;
+}
+html body #releaseDelivery > label { width:auto; min-width:0; margin:0; font-size:12px; line-height:16px; }
+html body #releaseDelivery #selectedRelease { width:100%; min-width:0; height:36px; min-height:36px; margin:0; }
+html body #releaseDelivery .projects-toggle {
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr);
+  align-items:center;
+  align-self:end;
+  min-height:36px;
+  gap:8px;
+  cursor:pointer;
+}
+html body #releaseDelivery #installEnabled {
+  appearance:none;
+  display:block;
+  position:relative;
+  width:34px;
+  height:20px;
+  min-height:20px;
+  padding:0;
+  margin:0;
+  border:1px solid var(--line-strong);
+  border-radius:20px;
+  background:var(--track);
+  cursor:pointer;
+}
+html body #releaseDelivery #installEnabled::before {
+  content:'';
+  position:absolute;
+  top:3px;
+  left:3px;
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  background:var(--text);
+}
+html body #releaseDelivery #installEnabled:checked { border-color:var(--accent); background:var(--accent); }
+html body #releaseDelivery #installEnabled:checked::before { transform:translateX(14px); background:var(--bg); }
+html body #releaseDelivery #installEnabled:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+html body #releaseDelivery #installEnabled:disabled { opacity:.5; cursor:wait; }
+@media(max-width:600px) {
+  html body #releaseDelivery { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; }
+  html body #releaseDelivery .projects-toggle { gap:6px; }
+}
