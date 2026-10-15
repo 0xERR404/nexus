@@ -1,83 +1,90 @@
-/* Shared phone/tablet layout. Loaded after module styles so compact desktop
-   rules cannot silently shrink touch controls. Desktop styles stay in modules. */
+/* Shared compact phone/tablet layout, loaded after module styles.
+   Explicit control sizes override older fixed heights; desktop stays in modules. */
 @media (max-width:800px) {
   :root {
-    --control-height:40px;
-    --ui-font-size:13px;
+    --control-height:32px;
+    --ui-font-size:12px;
     --ui-small-size:12px;
     --ui-meta-size:12px;
     --page-gutter:8px;
-    --card-gap:8px;
-    --card-padding:10px;
+    --card-gap:6px;
+    --card-padding:8px;
   }
   html { scrollbar-gutter:auto; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
-  html body { font-size:13px; line-height:1.5; }
+  html body { font-size:12px; line-height:1.5; }
   html.embedded-page:not(.chat-widget) body:not(:has(#chatPage)) {
     padding:8px max(8px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));
   }
   html body :is(.page,main,section,fieldset,form,.settings-content,.settings-panels) { min-width:0; }
   html body :is(h1,h2,h3,legend,.vpn-note,.server-detail,.project-row,.storage-name) { overflow-wrap:anywhere; }
   html body .section-line { gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-  html body .section-line h1 { font-size:18px; line-height:1.3; }
+  html body .section-line h1 { font-size:17px; line-height:1.3; }
   html body :is(.page-foot,.muted,small) { overflow-wrap:anywhere; }
   html body pre { max-width:100%; overflow:auto; }
   html body :is(button,[role=button],.storage-upload,.projects-upload,.reader-upload,.content-upload) {
-    min-height:40px !important; min-width:40px; max-width:100%;
+    min-height:32px !important; min-width:32px; max-width:100%;
     touch-action:manipulation; white-space:normal; overflow-wrap:anywhere;
   }
   html body button:not(.dialog-close):not([aria-label^='Закрыть']):not([title^='Закрыть']) {
-    font-size:13px !important; line-height:1.35;
+    font-size:12px !important; line-height:1.35;
   }
-  html body :is(#cinemaAdd,#waveCreate,#waveUploadButton) { font-size:24px !important; }
+  html body button:where(:not(.reader-book-open,.article-card,.project-card,.trophy-card,.wave-player-art,.wave-player-info,.wave-track-start,.wave-track-title,.kb-card-title,.storage-folder-open)) {
+    height:auto !important; padding:4px 8px !important;
+  }
+  html body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select) {
+    height:36px !important; padding:5px 8px !important; line-height:1.25;
+  }
+  html body select { white-space:nowrap !important; text-overflow:ellipsis; }
+  html body :is(#cinemaAdd,#waveCreate,#waveUploadButton) { font-size:20px !important; }
   html body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea) {
-    min-width:0; max-width:100%; min-height:40px !important; font-size:16px !important;
+    min-width:0; max-width:100%; min-height:36px !important; font-size:16px !important;
   }
   html body textarea { min-height:96px !important; }
-  html body input[type=range] { min-height:40px; touch-action:pan-y; }
+  html body input[type=range] { min-height:32px; touch-action:pan-y; }
   html body :is(input[type=checkbox],input[type=radio]) { width:20px; height:20px; flex:0 0 20px; }
-  html body label:has(> input:is([type=checkbox],[type=radio])) { min-height:40px; align-content:center; }
-  html body summary { min-height:40px; padding-block:10px; overflow-wrap:anywhere; }
+  html body label:has(> input:is([type=checkbox],[type=radio])) { min-height:32px; align-content:center; }
+  html body summary { min-height:32px !important; padding-block:5px !important; overflow-wrap:anywhere; }
   html body :is(button,a) > :is(svg.ui-icon,svg:not([viewBox])) { flex-shrink:0; }
   html body :is(.kb-icon,.vpn-icon-button,.reader-card-edit,.storage-menu > summary,.audio-play,.audio-download) {
-    width:40px !important; height:40px !important; flex:0 0 40px; padding:0;
+    width:32px !important; height:32px !important; flex:0 0 32px; padding:0;
     display:inline-grid; place-items:center;
   }
   html body :is(.kb-icon,.vpn-icon-button,.reader-card-edit,.storage-menu > summary,.audio-play,.audio-download) svg {
     width:18px; height:18px; flex:none; pointer-events:none;
   }
   html body :is(.workspace-header > a:not(.brand),.workspace-logout,.chat-mobile-nav a) {
-    width:40px; height:40px; min-width:40px; min-height:40px; flex:none;
+    width:32px; height:32px; min-width:32px; min-height:32px; flex:none;
   }
-  html body .workspace-header { min-height:52px; height:52px; padding-inline:12px; gap:8px; }
+  html body .workspace-header { min-height:44px; height:44px; padding-inline:12px; gap:6px; }
   html body .workspace-header .brand { min-width:0; }
   html body .workspace-mobile { padding:4px max(6px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left)); }
-  html body .workspace-mobile > a { min-height:46px; gap:2px; padding:4px 2px; }
+  html body .workspace-mobile > a { min-height:40px; gap:2px; padding:4px 2px; }
   html body .workspace-mobile span { font-size:11px; line-height:1.25; }
   html body .workspace-mobile .ui-icon { width:22px; height:22px; flex:none; }
 
   /* Action rows can wrap; icon actions never collapse into narrow rectangles. */
   html body :is(.vpn-actions,.server-actions,.server-tools,.kb-tools,.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.cinema-toolbar,.anime-toolbar,.trophy-toolbar,.balance-toolbar,.balance-actions,.chat-actions,.signal-actions,.security-actions,.rt-toolbar,.hub-tools,.activity-toolbar) {
-    min-width:0; gap:8px; flex-wrap:wrap;
+    min-width:0; gap:6px; flex-wrap:wrap;
   }
   html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.anime-toolbar,.trophy-toolbar,.kb-tools) > input[type=search] {
     width:100%; min-width:0; flex:1 1 100%;
   }
-  html body :is(.vpn-card,.server-manager,.settings-card,.article-card,.project-card,.activity-card,.pulse-panel,.pulse-stat,.rt-panel,.balance-panel,.signal-panel,.security-panel) { padding:10px; }
-  html body :is(.vpn-meta,.vpn-status,.vpn-note,.vpn-help,.server-details,.rt-meta,.storage-row small,.settings-card p) { font-size:13px; line-height:1.5; }
-  html body .settings-section-heading { flex-wrap:wrap; gap:8px; }
-  html body .settings-section-heading > a { min-height:40px; display:inline-flex; align-items:center; }
-  html body #settingsContent[data-settings-section] :is(button,.install-btn):not(.dialog-close) { font-size:13px; padding:7px 10px; }
-  html body #settingsContent .balance-row { gap:8px; flex-wrap:wrap; padding-block:10px; }
-  html body #settingsContent .balance-row .balance-actions { flex-wrap:wrap; flex-shrink:1; gap:8px; }
-  html body #settingsContent :is(.signal-options > label,.signal-detail) { min-height:40px !important; }
+  html body :is(.vpn-card,.server-manager,.settings-card,.article-card,.project-card,.activity-card,.pulse-panel,.pulse-stat,.rt-panel,.balance-panel,.signal-panel,.security-panel) { padding:8px; }
+  html body :is(.vpn-meta,.vpn-status,.vpn-note,.vpn-help,.server-details,.rt-meta,.storage-row small,.settings-card p) { font-size:12px; line-height:1.5; }
+  html body .settings-section-heading { flex-wrap:wrap; gap:6px; }
+  html body .settings-section-heading > a { min-height:32px; display:inline-flex; align-items:center; }
+  html body #settingsContent[data-settings-section] :is(button,.install-btn):not(.dialog-close) { font-size:12px; padding:4px 8px; }
+  html body #settingsContent .balance-row { gap:6px; flex-wrap:wrap; padding-block:10px; }
+  html body #settingsContent .balance-row .balance-actions { flex-wrap:wrap; flex-shrink:1; gap:6px; }
+  html body #settingsContent :is(.signal-options > label,.signal-detail) { min-height:32px !important; }
 
   /* Short screens and the on-screen keyboard must leave dialogs scrollable. */
   html body dialog:not(#readerReading):not(#articleWorkspace):not(#articleReadingWorkspace)[open] {
-    width:min(640px,calc(100% - 24px)); min-width:0; max-width:calc(100% - 24px);
-    max-height:calc(100dvh - 24px); margin:auto; padding:10px; overflow:auto;
+    width:min(632px,calc(100% - 24px)); min-width:0; max-width:calc(100% - 24px);
+    max-height:calc(100dvh - 24px); margin:auto; padding:8px; overflow:auto;
     scroll-padding-block:12px; border-radius:14px;
   }
-  html body dialog[open] :is(.ui-dialog-actions,.dialog-actions,.vpn-actions) { gap:8px; flex-wrap:wrap; }
+  html body dialog[open] :is(.ui-dialog-actions,.dialog-actions,.vpn-actions) { gap:6px; flex-wrap:wrap; }
   html body #vpnDialog #vpnForm { max-height:none; }
   html body #vpnDialog #vpnFields { overflow:visible; padding:0; scrollbar-gutter:auto; }
   html body #vpnDialog #vpnForm > .vpn-actions { position:static; margin:14px 0 0; padding:12px 0 0; background:none; }
@@ -86,73 +93,73 @@
   html body dialog[open] legend { max-width:100%; }
 
   html body #homeDashboard[data-group] .home-card-title h2 { font-size:16px; }
-  html body #homeDashboard[data-group] .home-grid > .home-card > .home-card-title { min-height:40px; height:auto; flex-basis:auto; }
-  html body #homeDashboard[data-group] .home-grid { gap:8px; }
-  html body #homeDashboard[data-group] .home-grid > .home-card { padding:10px; }
+  html body #homeDashboard[data-group] .home-grid > .home-card > .home-card-title { min-height:32px; height:auto; flex-basis:auto; }
+  html body #homeDashboard[data-group] .home-grid { gap:6px; }
+  html body #homeDashboard[data-group] .home-grid > .home-card { padding:8px; }
   html body #homeDashboard .home-task { gap:10px; padding-block:8px; }
-  html body #homeDashboard .home-task a { font-size:13px; line-height:1.45; }
+  html body #homeDashboard .home-task a { font-size:12px; line-height:1.45; }
   html body :is(.home-metric-label,.home-metric small,.pulse-history-info,.pulse-history-legend button) { font-size:12px; }
   html body .pulse-history-legend { flex-wrap:wrap; gap:6px; }
   html body .pulse-history-info { margin-right:0; }
   html body :is(.server-tabs,.hub-table-scroll,#kbColumns) { max-width:100%; overscroll-behavior-x:contain; }
   html body #kbColumns { scroll-snap-type:x proximity; scroll-padding-inline:2px; }
-  html body .kb-column { flex-basis:min(310px,calc(100vw - 40px)); scroll-snap-align:start; padding:12px; }
-  html body #kanban .kb-column-actions { gap:8px; }
+  html body .kb-column { flex-basis:min(310px,calc(100vw - 32px)); scroll-snap-align:start; padding:12px; }
+  html body #kanban .kb-column-actions { gap:6px; }
   html body #kanban .kb-card-title { font-size:15px; }
-  html body .kb-grip { width:40px; min-height:40px; flex:none; }
+  html body .kb-grip { width:32px; min-height:32px; flex:none; }
 
-  html body .section-line:has(.vpn-header-controls) .vpn-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:8px; }
-  html body .section-line:has(.vpn-header-controls) .vpn-tabs > * { min-width:0; width:100%; margin:0; font-size:13px; padding:8px; }
-  html body #vpn .vpn-user-actions { gap:8px; }
-  html body #vpn .vpn-connection { gap:8px; padding-block:12px; }
+  html body .section-line:has(.vpn-header-controls) .vpn-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:6px; }
+  html body .section-line:has(.vpn-header-controls) .vpn-tabs > * { min-width:0; width:100%; margin:0; font-size:12px; padding:8px; }
+  html body #vpn .vpn-user-actions { gap:6px; }
+  html body #vpn .vpn-connection { gap:6px; padding-block:12px; }
   html body #vpn .vpn-connection > div { flex:1 1 180px; }
   html body #vpn .vpn-connection small { overflow-wrap:anywhere; }
   html body #vpn :is(.vpn-card-head h3,.vpn-connection strong) { font-size:14px; line-height:1.45; }
   html body #vpn .vpn-grid.vpn-user-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); }
 
-  html body #wavePage .wave-layout { display:flex; flex-direction:column; gap:16px; }
-  html body #wavePage .wave-sidebar #waveNav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; gap:8px; }
+  html body #wavePage .wave-layout { display:flex; flex-direction:column; gap:10px; }
+  html body #wavePage .wave-sidebar #waveNav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; gap:6px; }
   html body #wavePage #waveNav > * { min-width:0; }
-  html body #wavePage .wave-sidebar #waveNav a { min-height:40px; padding:7px 8px; font-size:13px; white-space:normal; }
+  html body #wavePage .wave-sidebar #waveNav a { min-height:32px; padding:7px 8px; font-size:12px; white-space:normal; }
   html body #wavePage #waveNav .wave-playlist-heading { grid-column:1/-1; justify-content:space-between; }
-  html body #wavePage #waveCreate { width:40px; height:40px; }
-  html body #wavePage #wavePlaylists:not([hidden]) { max-width:100%; flex-wrap:wrap; gap:8px; }
-  html body #wavePage #wavePlaylists a { max-width:100%; min-height:40px; white-space:normal; overflow-wrap:anywhere; }
-  html body #wavePage .wave-main > .wave-toolbar:first-child { gap:8px; }
+  html body #wavePage #waveCreate { width:32px; height:32px; }
+  html body #wavePage #wavePlaylists:not([hidden]) { max-width:100%; flex-wrap:wrap; gap:6px; }
+  html body #wavePage #wavePlaylists a { max-width:100%; min-height:32px; white-space:normal; overflow-wrap:anywhere; }
+  html body #wavePage .wave-main > .wave-toolbar:first-child { gap:6px; }
   html body #wavePage #waveSearch { flex:1 1 0; width:0; min-width:0; padding-inline:12px; }
-  html body #wavePage :is(.wave-card-grid,.wave-quick-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  html body #wavePage :is(.wave-card-grid,.wave-quick-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
   html body #wavePage :is(.wave-card,.wave-track,.wave-quick-item) { min-width:0; }
   html body #wavePage .wave-track { gap:6px; }
-  html body #wavePage :is(.wave-favorite,.wave-track-menu) { width:40px; min-width:40px; }
-  html body #wavePage .wave-track-title { min-height:40px !important; }
-  html body #wavePage .wave-hero { gap:8px; flex-wrap:wrap; }
+  html body #wavePage :is(.wave-favorite,.wave-track-menu) { width:32px; min-width:32px; }
+  html body #wavePage .wave-track-title { min-height:32px !important; }
+  html body #wavePage .wave-hero { gap:6px; flex-wrap:wrap; }
   html body #wavePage .wave-hero > .wave-art { width:100px; flex-basis:100px; }
-  html body #wavePage .wave-hero h2 { font-size:24px; overflow-wrap:anywhere; }
-  html body #wavePlayer:not(.expanded) .wave-player-row { display:grid; grid-template-columns:40px minmax(0,1fr) 40px 40px; gap:4px; }
-  html body #wavePlayer:not(.expanded) .wave-player-art { grid-column:1; width:40px; height:40px; min-width:40px; }
+  html body #wavePage .wave-hero h2 { font-size:21px; overflow-wrap:anywhere; }
+  html body #wavePlayer:not(.expanded) .wave-player-row { display:grid; grid-template-columns:32px minmax(0,1fr) 32px 32px; gap:4px; }
+  html body #wavePlayer:not(.expanded) .wave-player-art { grid-column:1; width:32px; height:32px; min-width:32px; }
   html body #wavePlayer:not(.expanded) .wave-player-info { grid-column:2; min-width:0; padding:0; text-align:left; }
   html body #wavePlayer:not(.expanded) .wave-transport { display:contents; }
-  html body #wavePlayer:not(.expanded) #waveToggle { grid-column:4; grid-row:1; width:40px; }
+  html body #wavePlayer:not(.expanded) #waveToggle { grid-column:4; grid-row:1; width:32px; }
   html body #wavePlayer:not(.expanded) :is(#wavePrev,#waveNext,#waveExpand,#waveClose,#waveMinimize) { display:none; }
-  html body #wavePlayer:not(.expanded) #waveFavorite { grid-column:3; grid-row:1; width:40px; }
+  html body #wavePlayer:not(.expanded) #waveFavorite { grid-column:3; grid-row:1; width:32px; }
   html body #wavePlayer.expanded { overflow-y:auto; }
   html body #wavePlayer.expanded .wave-player-info strong { font-size:22px; }
-  html body #wavePlayer.expanded #waveToggle { width:56px; height:56px; }
+  html body #wavePlayer.expanded #waveToggle { width:44px; height:44px; }
 
-  html body #articleEditor .article-editor-toolbar { flex-wrap:wrap; gap:8px; overflow:visible; }
-  html body #articleEditor :is(.article-format-bar,.article-action-bar) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); flex:1 1 100%; width:100%; max-width:100%; gap:8px; min-width:0; }
+  html body #articleEditor .article-editor-toolbar { flex-wrap:wrap; gap:6px; overflow:visible; }
+  html body #articleEditor :is(.article-format-bar,.article-action-bar) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); flex:1 1 100%; width:100%; max-width:100%; gap:6px; min-width:0; }
   html body #articleEditor .article-format-bar > :is(#formatStyle,.article-inline-tools) { grid-column:1/-1; }
   html body #articleEditor :is(.article-format-bar,.article-action-bar) > :is(button,select) { width:100%; max-width:100%; }
-  html body #articleEditor :is(.article-format-bar,.article-action-bar) :is(button,select) { height:40px; }
+  html body #articleEditor :is(.article-format-bar,.article-action-bar) :is(button,select) { height:32px; }
   html body #articleEditor .article-inline-tools { flex-wrap:wrap; gap:6px; }
-  html body #articleEditor .article-inline-tools button { width:40px; }
+  html body #articleEditor .article-inline-tools button { width:32px; height:32px !important; padding:0 !important; white-space:nowrap; }
   html body :is(.article-prose,.chat-answer) table { display:block; max-width:100%; overflow-x:auto; }
   html body #rtData { max-width:100%; overflow-x:auto; }
-  html body #readerControls { max-height:65dvh; overflow-y:auto; padding:10px max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left)); }
-  html body #readerControls .reader-toolbar { gap:8px; }
-  html body #readerControls .reader-toolbar:first-child { display:grid; grid-template-columns:40px minmax(0,1fr) 40px; }
+  html body #readerControls { max-height:65dvh; overflow-y:auto; padding:8px max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left)); }
+  html body #readerControls .reader-toolbar { gap:6px; }
+  html body #readerControls .reader-toolbar:first-child { display:grid; grid-template-columns:32px minmax(0,1fr) 32px; }
   html body #readerControls #readerBookTitle { min-width:0; font-size:16px; }
-  html body #readerControls .reader-toolbar:nth-child(2) { display:grid; grid-template-columns:40px minmax(0,1fr) minmax(0,1fr) 40px; grid-template-areas:'prev chapter chapter next' 'size size mode mode' 'mark mark marks marks'; }
+  html body #readerControls .reader-toolbar:nth-child(2) { display:grid; grid-template-columns:32px minmax(0,1fr) minmax(0,1fr) 32px; grid-template-areas:'prev chapter chapter next' 'size size mode mode' 'mark mark marks marks'; }
   html body #readerControls #readerChapter { grid-area:chapter; min-width:0; max-width:100%; width:100%; }
   html body #readerControls #readerPrev { grid-area:prev; }
   html body #readerControls #readerNext { grid-area:next; }
@@ -160,15 +167,51 @@
   html body #readerControls #readerMode { grid-area:mode; width:100%; max-width:none; }
   html body #readerControls #readerAddMark { grid-area:mark; }
   html body #readerControls #readerMarks { grid-area:marks; }
-  html body #readerControls :is(#readerEdit,#readerPrev,#readerNext) { font-size:22px !important; }
-  html body #readerHUD { flex-wrap:wrap; gap:8px; }
-  html body #chatPage .chat-mobile-nav { min-height:40px; }
-  html body #chatPage :is(.chat-actions,.chat-toolbar) { gap:8px; flex-wrap:wrap; }
+  html body #readerControls :is(#readerEdit,#readerPrev,#readerNext) { font-size:19px !important; }
+  html body #readerHUD { flex-wrap:wrap; gap:6px; }
+  html body #chatPage .chat-mobile-nav { min-height:32px; }
+  html body #chatPage :is(.chat-actions,.chat-toolbar) { gap:6px; flex-wrap:wrap; }
   html body #chatPage #chatInput { font-size:16px; }
-  html body #chatPage .chat-audio { min-width:0; grid-template-columns:40px minmax(0,1fr) auto; }
-  html body .storage-folder-open { padding-right:60px !important; }
+  html body #chatPage .chat-audio { min-width:0; grid-template-columns:32px minmax(0,1fr) auto; }
+  html body .storage-folder-open { padding:7px 44px 7px 8px !important; }
   html body .storage-menu > summary { margin-left:auto; }
   html body .storage-file-type { max-width:calc(100% - 48px); }
+  html body :is(.kb-icon,.vpn-icon-button,.reader-card-edit,.storage-menu > summary,.audio-play,.audio-download,.chat-icon,.dialog-close,.home-open,.home-add,.wave-favorite,.wave-track-menu,#waveCreate,#waveUploadButton,#waveEditRelease,#waveMix,#cinemaAdd,#readerBack,#readerEdit,#readerPrev,#readerNext) {
+    box-sizing:border-box; width:32px !important; min-width:32px !important; max-width:32px !important;
+    height:32px !important; min-height:32px !important; flex:0 0 32px !important; padding:0 !important;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  html body :is(.dialog-close,button[aria-label^='Закрыть']) { font-size:22px !important; }
+  html body :is(.dialog-close,button[aria-label^='Закрыть']),html body #wavePlayer :is(#waveClose,#waveExpand) {
+    width:32px !important; min-width:32px !important; height:32px !important; min-height:32px !important; padding:0 !important; line-height:1 !important;
+  }
+  html body .workspace-header > a:not(.brand):not(.workspace-section),html body .workspace-logout {
+    width:32px !important; min-width:32px !important; height:32px !important; min-height:32px !important; padding:0 !important;
+  }
+  html body :is(.content-toolbar,.reader-toolbar,.storage-toolbar,.projects-toolbar,.anime-toolbar,.trophy-toolbar,.kb-tools,.rt-toolbar) { padding:8px; }
+  html body #wavePage .wave-sidebar { padding:8px; }
+  html body #wavePage .wave-sidebar #waveNav a { min-height:32px !important; padding:4px 8px; }
+  html body #wavePage .wave-hero { margin:14px 0 10px; }
+  html body #wavePage .wave-section { margin-top:18px; }
+  html body #wavePage .wave-section-head h3 { font-size:18px; }
+  html body #wavePage .wave-track { padding-block:4px; }
+  html body #wavePage .wave-track-start { width:36px; height:36px; flex:0 0 36px; }
+  html body #wavePage .wave-secondary { grid-template-columns:40px 32px minmax(0,1fr) auto; gap:6px; }
+  html body #wavePage #wavePlay { width:40px !important; height:40px !important; min-width:40px; padding:0 !important; }
+  html body #wavePlayer:not(.expanded) :is(.wave-player-art,.wave-player-info,#waveFavorite,#waveToggle) { min-height:32px !important; height:32px !important; padding:0 !important; }
+  html body #wavePlayer:not(.expanded) :is(.wave-player-art,#waveFavorite,#waveToggle) { width:32px !important; min-width:32px !important; }
+  html body #wavePlayer.expanded #waveToggle { width:44px !important; height:44px !important; padding:0 !important; }
+  html body #wavePlayer.expanded :is(#waveFavorite,#wavePrev,#waveNext,#waveShuffle,#waveRepeat) { width:32px; min-width:32px; height:32px !important; padding:4px !important; }
+  html body #vpn .vpn-card { padding:8px; }
+  html body #vpn .vpn-card-head { flex-direction:row; align-items:baseline; flex-wrap:wrap; gap:4px 8px; margin-bottom:4px; }
+  html body #vpn .vpn-card-head h3 { flex:1; }
+  html body #vpn .vpn-card p { margin:6px 0; font-size:12px; line-height:1.35; }
+  html body #vpn .vpn-user-actions { margin-top:8px; }
+  html body #vpnDialog label { margin:7px 0; gap:4px; }
+  html body #settingsContent .balance-row { padding-block:6px; }
+  html body #homeDashboard .home-card-title { margin-bottom:6px; }
+  html body #homeDashboard :is(.home-task,.home-file) { min-height:32px; padding-block:4px; }
+
 }
 @media (max-width:800px) and (orientation:portrait) {
   html body #wavePlayer.expanded .wave-player-art { width:min(100%,32dvh,280px); }
@@ -183,19 +226,19 @@
   html body #settingsContent .balance-row .balance-actions button { width:100%; }
   html body .projects-toolbar > label:not(.projects-upload) { width:100%; }
   html body :is(#projectList,#storageFiles,#storageTrash,.storage-folder-grid,.anime-grid,.trophy-grid) { grid-template-columns:minmax(0,1fr); }
-  html body :is(#readerBooks,.cinema-grid,.gallery-grid) { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+  html body :is(#readerBooks,.cinema-grid,.gallery-grid) { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:6px; }
   html body #vpnDialog :is(.vpn-fields,.vpn-checks,.vpn-subscription) { grid-template-columns:minmax(0,1fr); }
   html body #vpnDialog .vpn-fields.vpn-endpoint { grid-template-columns:minmax(0,1fr); }
   html body #vpnDialog .vpn-qr { max-width:100%; width:160px; }
   html body #articleEditor .article-meta-row { grid-template-columns:minmax(0,1fr); }
 }
 @media (max-width:360px) {
-  html body .workspace-header .brand-name { font-size:13px; letter-spacing:.5px; }
+  html body .workspace-header .brand-name { font-size:12px; letter-spacing:.5px; }
   html body .workspace-mobile span { font-size:10px; }
   html body #homeDashboard .home-metric strong { font-size:20px; }
   html body #homeDashboard .home-metrics { column-gap:10px; row-gap:14px; }
   html body #vpn .vpn-user-actions { gap:6px; }
-  html body #articleReadingWorkspace .content-heading { grid-template-columns:minmax(0,1fr) 40px; }
+  html body #articleReadingWorkspace .content-heading { grid-template-columns:minmax(0,1fr) 32px; }
   html body #articleReadingWorkspace #articleEdit { grid-column:1; grid-row:2; justify-self:start; }
   html body #articleReadingWorkspace .dialog-close { grid-column:2; grid-row:1; }
 }
