@@ -1473,3 +1473,14 @@ html body #wavePage .wave-toolbar #waveUploadButton { font-size:25px; font-weigh
   html body #wavePlayer.expanded #waveExpand { left:14px; right:auto; top:16px; }
   html body #wavePlayer.expanded #waveClose { right:14px; left:auto; top:16px; }
 }
+
+/* Favorite belongs to the current track in both player layouts. */
+html body #wavePlayer #waveFavorite { flex:none; width:40px; height:40px; min-width:40px; padding:8px; display:inline-flex; align-items:center; justify-content:center; border:0; background:transparent; }
+html body #wavePlayer #waveFavorite[aria-pressed='true'] { color:var(--accent); }
+html body #wavePlayer #waveFavorite[aria-pressed='true'] .wave-control-icon { fill:currentColor; }
+html body #wavePlayer.expanded .wave-player-info { grid-column:1/5; grid-row:3; }
+html body #wavePlayer.expanded #waveFavorite { grid-column:5; grid-row:3; justify-self:end; }
+@media (max-height:540px) and (min-width:500px) and (max-width:800px) {
+  html body #wavePlayer.expanded .wave-player-info { grid-column:1/4; grid-row:1; }
+  html body #wavePlayer.expanded #waveFavorite { grid-column:4; grid-row:1; }
+}

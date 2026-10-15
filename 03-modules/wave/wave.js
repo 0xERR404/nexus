@@ -911,6 +911,8 @@ if (typeof document !== 'undefined')
       render();
     });
     addEventListener('message', (e) => {
+      if (e.origin === location.origin && e.source === window.parent && e.data?.type === 'nexus:wave-library')
+        load().catch((error) => Nexus.problem($('waveStatus'), 'wave', error));
       if (
         e.origin === location.origin &&
         e.source === window.parent &&

@@ -19,6 +19,7 @@
       '<path d="M3 6h3c5 0 7 12 12 12h3m-4-4 4 4-4 4M3 18h3c2 0 4-2 5-5m2-3c1-2 3-4 5-4h3m-4-4 4 4-4 4"/>',
     repeat:
       '<path d="m16 2 4 4-4 4M4 11V9a3 3 0 0 1 3-3h13M8 22l-4-4 4-4m12-1v2a3 3 0 0 1-3 3H4"/>',
+    heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
     up: '<path d="m6 15 6-6 6 6"/>',
     down: '<path d="m6 9 6 6 6-6"/>',
     music: '<path d="M9 18V5l11-2v13M9 8l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>',
@@ -62,7 +63,8 @@
     startTimer,
     failureCheck = -1,
     resumeOnReturn = false,
-    stablePosition = 0;
+    stablePosition = 0,
+    favoritePending = false;
   try {
     const saved = JSON.parse(localStorage.getItem(key));
     if (saved && Array.isArray(saved.queue)) {
@@ -132,6 +134,12 @@
     $('waveRestore').setAttribute('aria-label', $('waveRestore').title);
     $('waveTrackTitle').textContent = t?.title || 'Орфей';
     $('waveTrackArtist').textContent = t?.artist || '';
+    $('waveFavorite').innerHTML = symbol('heart');
+    $('waveFavorite').setAttribute('aria-pressed', String(Boolean(t?.favorite)));
+    $('waveFavorite').setAttribute('aria-label', t?.favorite ? 'Убрать из избранного' : 'Добавить в избранное');
+    $('waveFavorite').title = $('waveFavorite').getAttribute('aria-label');
+    $('waveFavorite').disabled = !t || favoritePending;
+    $('waveFavorite').setAttribute('aria-busy', String(favoritePending));
     $('waveToggle').innerHTML = symbol(intentPlaying || !audio.paused ? 'pause' : 'play');
     $('waveToggle').setAttribute(
       'aria-label',
@@ -695,6 +703,35 @@
     $('waveMinimize').focus();
   };
   $('waveClose').onclick = closePlayback;
+  $('waveFavorite').onclick = async () => {
+    const current = track();
+    if (!current || favoritePending || signingOut) return;
+    const id = current.id, favorite = !current.favorite;
+    favoritePending = true;
+    paint();
+    try {
+      const response = await fetch('/modules/wave/change', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'favorite', id, favorite}),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (response.status === 401 || response.redirected) throw Error('Войди в хаб заново.');
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'Не удалось изменить избранное.');
+      const saved = result.tracks?.find((item) => item.id === id);
+      if (!saved) throw Error('Трек больше недоступен.');
+      const local = library.tracks.find((item) => item.id === id);
+      if (local) local.favorite = Boolean(saved.favorite);
+      frame.contentWindow?.postMessage({type: 'nexus:wave-library'}, location.origin);
+      note(saved.favorite ? 'Добавлено в избранное.' : 'Убрано из избранного.');
+    } catch (error) {
+      note(error.name === 'TimeoutError' ? 'Сервер не ответил. Проверь избранное после восстановления связи.' : error.message || 'Не удалось изменить избранное.');
+    } finally {
+      favoritePending = false;
+      paint();
+    }
+  };
   $('waveToggle').onclick = () =>
     intentPlaying || !audio.paused ? pausePlayback() : resumeFromControl();
   $('waveNext').onclick = () => next();
