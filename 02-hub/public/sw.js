@@ -1,8 +1,8 @@
 const CACHE = 'nexus404-shell-__ASSET_HASH__';
 const ASSETS = [
   '/card-layout.css',
-  '/mobile.css?v=0.35.238',
-  '/orbit.css?v=0.35.238',
+  '/mobile.css?v=0.35.243',
+  '/orbit.css?v=0.35.243','/sections.css?v=0.35.243',
   '/settings.css',
   '/settings.js',
 
@@ -11,7 +11,7 @@ const ASSETS = [
   '/workspace.js',
   '/appearance.js','/profile.js',
   '/pulse-history.js',
-  '/home.js',
+  '/quick-ping.js', '/home.js',
   '/install.js',
   '/overview.css',
   '/overview.js',
@@ -27,7 +27,12 @@ const ASSETS = [
   '/apple-touch-icon.png',
   '/offline.html',
   '/fonts/jetbrains-mono.woff2',
-  '/fonts/space-grotesk.woff2'
+  '/fonts/manrope-cyrillic-ext.woff2',
+  '/fonts/manrope-cyrillic.woff2',
+  '/fonts/manrope-greek.woff2',
+  '/fonts/manrope-vietnamese.woff2',
+  '/fonts/manrope-latin-ext.woff2',
+  '/fonts/manrope-latin.woff2'
 ];
 self.addEventListener('install', (event) => {
   event.waitUntil(

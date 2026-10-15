@@ -34,7 +34,7 @@ const assets = [
   'servers.css',
   'card-layout.css',
   'mobile.css',
-  'orbit.css',
+  'orbit.css','sections.css',
   'settings.css',
   'settings.js',
 
@@ -46,6 +46,7 @@ const assets = [
   'pulse-history.js',
   'install.js',
   'home.js',
+  'quick-ping.js',
   'overview.js',
   'activity.js',
   'activity-views.js',
@@ -70,7 +71,12 @@ const assets = [
   'icon-512.png',
   'apple-touch-icon.png',
   'fonts/jetbrains-mono.woff2',
-  'fonts/space-grotesk.woff2'
+  'fonts/manrope-cyrillic-ext.woff2',
+  'fonts/manrope-cyrillic.woff2',
+  'fonts/manrope-greek.woff2',
+  'fonts/manrope-vietnamese.woff2',
+  'fonts/manrope-latin-ext.woff2',
+  'fonts/manrope-latin.woff2'
 ];
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";

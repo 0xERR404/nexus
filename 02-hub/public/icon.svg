@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#0b1110"/><g transform="translate(14 14) scale(.72)"><path fill="#edf2e9" d="M8,8L28,8L92,72L92,92L72,92L8,28Z"/><path fill="#edf2e9" d="M8,33L30,55L30,92L8,92Z"/><path fill="#edf2e9" d="M70,23L92,8L92,67L70,45Z"/><path fill="#bddf69" d="M70,23L92,8L92,20L70,35Z"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#111813"/><g transform="translate(16 16) scale(.68)">
+<defs>
+ <linearGradient id="nexus-stem" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c3d5b7"/><stop offset=".55" stop-color="#839d7a"/><stop offset="1" stop-color="#526b51"/></linearGradient>
+ <linearGradient id="nexus-ribbon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0f3e8"/><stop offset=".46" stop-color="#c5d7bc"/><stop offset="1" stop-color="#8baa7d"/></linearGradient>
+</defs>
+<path fill="url(#nexus-stem)" d="M70 20 88 10v72L70 65Z"/>
+<path fill="url(#nexus-stem)" d="m12 18 18 17v55L12 80Z"/>
+<path fill="url(#nexus-ribbon)" d="m12 10 18 8 58 64-18 8L12 26Z"/>
+<path fill="#eff5e9" opacity=".6" d="m12 10 18 8 58 64-3-1L28 20l-16-8Z"/>
+<path fill="#354b39" opacity=".65" d="m30 46 7 8-7 36Z"/>
+<path fill="#e3edda" opacity=".5" d="m70 20 18-10v3L72 23v41l-2-2Z"/>
+</g></svg>

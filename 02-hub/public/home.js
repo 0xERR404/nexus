@@ -13,7 +13,7 @@
   const clock=n=>Number.isFinite(n)?Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0'):'—';
   async function perform(fn){const status=$('homeActionStatus');try{if(status)status.textContent='';await fn();if(latest)render(latest);}catch(e){if(status)status.textContent=e.message||'Действие не выполнено';}}
   function actionButton(label,fn,text=label){const b=node('button',text);b.type='button';b.setAttribute('aria-label',label);b.title=label;b.onclick=e=>{e.stopPropagation();b.closest('details')?.removeAttribute('open');b.disabled=true;void perform(fn).finally(()=>b.disabled=false);};return b;}
-  function menu(label,items){const d=node('details','','home-actions-menu'),summary=node('summary','⋯');summary.setAttribute('aria-label',label);summary.title=label;const body=node('div','','home-actions-popover');body.append(...items);d.append(summary,body);d.addEventListener('toggle',()=>{if(d.open)document.querySelectorAll('.home-actions-menu[open]').forEach(other=>{if(other!==d)other.open=false;});});return d;}
+  function menu(label,items){const d=node('details','','home-actions-menu'),summary=node('summary');summary.append(symbol('more'));summary.setAttribute('aria-label',label);summary.title=label;const body=node('div','','home-actions-popover');body.append(...items);d.append(summary,body);d.addEventListener('toggle',()=>{if(d.open)document.querySelectorAll('.home-actions-menu[open]').forEach(other=>{if(other!==d)other.open=false;});});return d;}
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){const d=document.querySelector('.home-actions-menu[open]');if(d){e.preventDefault();d.open=false;d.querySelector('summary').focus();}}});
   document.addEventListener('click',e=>{if(!e.target.closest('.home-actions-menu'))document.querySelectorAll('.home-actions-menu[open]').forEach(d=>d.open=false);});
   function diagnosticHistory(){try{const v=JSON.parse(localStorage.getItem('nexus-vpn-diagnostics-v1'));return Array.isArray(v)?v.filter(r=>r?.v===1&&Array.isArray(r.samples)&&Number.isFinite(r.started)).sort((a,b)=>b.started-a.started).slice(0,30):[];}catch{return [];}}
@@ -60,19 +60,26 @@
         row.append(menu('Действия с треком '+t.title,[actionButton('Добавить в очередь',()=>player().enqueue(t.id)),actionButton(t.favorite?'Убрать из избранного':'В избранное',async()=>{await Nexus.request('/modules/wave/change',{action:'favorite',id:t.id,favorite:!t.favorite});await player().refresh();snapshots.delete('homeMusic');await refresh();}),link('Открыть в Орфее',t.href)]));box.append(row);
       }
     });
-    draw('homeVPN',[data.vpn,diagnosticHistory()],(box,[v,history])=>{
+    draw('homeVPN',[data.vpn,diagnosticHistory(),window.NexusQuickPing?.active,window.NexusQuickPing?.last],(box,[v,history,measuring,last])=>{
       box.replaceChildren();if(!v?.items?.length){box.append(node('p',v?'Нет включённых подключений':'Сводка VPN временно недоступна','home-empty'));return;}
       const labels={applied:'Нода работает',pending:'Ожидает настройки',rejected:'Настройки отклонены',expired:'Разрешение истекло',stopped:'Ядро остановлено',offline:'Нет свежих данных',revoked:'Доступ отозван'};
       for(const c of v.items){
         const row=node('div','','home-vpn-row'),a=link('',c.href);a.className='home-vpn-info';a.append(node('strong',c.title),node('small',c.cloud?'Через Cloudflare':'Напрямую'));
         const status=node('div','','home-vpn-state'),label=node('span',labels[c.state]||'Статус неизвестен');label.dataset.state=c.state;status.append(label);
         if(c.seen)label.title='Отчёт ноды: '+new Date(c.seen).toLocaleString('ru-RU');
-        const run=history.find(r=>r.connection===c.id);if(run){const samples=run.samples.filter(p=>p?.phase==='idle'&&p.ok&&Number.isFinite(p.ms)&&p.ms>=0).map(p=>p.ms).sort((a,b)=>a-b),i=Math.floor(samples.length/2);const ms=samples.length?(samples.length%2?samples[i]:(samples[i-1]+samples[i])/2):null;
+        const run=last?.connection===c.id?last:history.find(r=>r.connection===c.id);if(run){const samples=run.samples.filter(p=>p?.phase==='idle'&&p.ok&&Number.isFinite(p.ms)&&p.ms>=0).map(p=>p.ms).sort((a,b)=>a-b),i=Math.floor(samples.length/2);const ms=samples.length?(samples.length%2?samples[i]:(samples[i-1]+samples[i])/2):null;
           const result=link(ms===null?'Проверка без результата':Math.round(ms)+' мс · HTTP',c.diagnostics);result.title='Браузер → хаб · '+new Date(run.started).toLocaleString('ru-RU')+' · '+run.status;status.append(result,node('small',new Date(run.started).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})));
+        const good=run.samples.filter(p=>p?.phase==='idle'&&p.ok),failed=run.samples.filter(p=>p?.phase==='idle'&&!p.ok).length;
+          const path=good.length&&good.every(p=>p.path==='matched')?'Выход ноды совпал':'Маршрут не подтверждён';
+          const detail=node('small',failed?`Сбои: ${failed}/${run.samples.length}`:path);detail.title=run.status+' · '+path;status.append(detail);
+          if(run.mode==='ping'&&run.status!=='Завершено')status.append(node('small',run.status,'home-ping-warning'));
         }else status.append(node('small','Задержка не измерена'));
-        row.append(node('span',c.cloud?'☁':'⇄','home-vpn-symbol'),a,status,menu('Действия с подключением '+c.title,[link('Проверить канал',c.diagnostics),link('Открыть серверы',c.href),actionButton('Обновить статус',async()=>{snapshots.delete('homeVPN');await refresh();})]));box.append(row);
+        const ping=node('button',measuring?.connection===c.id?(measuring.progress?'Стоп · '+measuring.progress+'/5':'Остановить'):'Измерить','home-ping-button');
+        ping.type='button';ping.disabled=!!measuring&&measuring.connection!==c.id;ping.setAttribute('aria-label',measuring?.connection===c.id?'Остановить замер '+c.title:'Измерить задержку '+c.title);ping.title='5 HTTP-проб: этот браузер → хаб. Для проверки VPN включи профиль в Happ.';
+        ping.onclick=e=>{e.stopPropagation();if(window.NexusQuickPing.active){window.NexusQuickPing.stop();return;}void window.NexusQuickPing.run(c).then(r=>{const message=$('homeActionStatus');if(message)message.textContent=r.storageError||(['Завершено','Замер остановлен'].includes(r.status)?'':r.status);}).catch(e=>{const message=$('homeActionStatus');if(message)message.textContent=e.message;});};status.append(ping);
+        const routeIcon=node('span','','home-vpn-symbol');routeIcon.append(symbol(c.cloud?'cloud':'direct'));row.append(routeIcon,a,status,menu('Действия с подключением '+c.title,[link('Проверить канал',c.diagnostics),link('Открыть серверы',c.href),actionButton('Обновить статус',async()=>{snapshots.delete('homeVPN');await refresh();})]));box.append(row);
       }
-      box.append(node('p','Статус — по отчёту ноды. Замер HTTP — из этого браузера до хаба. Подключение Happ автоматически не определяется.','home-vpn-note'));
+      box.append(node('p','HTTP: браузер → хаб. Для проверки VPN включи профиль в Happ.','home-vpn-note'));
     });
     draw('homeTime',data.statistics,(box,s)=>{
       box.replaceChildren();if(!s){box.append(node('p','—','home-empty'));return;}
@@ -115,6 +122,7 @@
     });
 
   }
+  addEventListener('nexus:ping-change',()=>{if(latest)render(latest);});
   let timer,controller,busy=false,stopped=false;
   async function refresh(){
     clearTimeout(timer);if(busy||stopped||document.hidden||navigator.onLine===false)return;

@@ -1,0 +1,84 @@
+/* Category pages are compact directories, not the overview's dashboard grid. */
+.section-description { margin:8px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
+html body #homeDashboard .section-directory { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:12px; background:linear-gradient(110deg,#ffffff02,transparent 55%),var(--surface); }
+html body #homeDashboard .section-directory > .section-module { display:grid; grid-template-columns:230px minmax(0,1fr) 84px; align-items:center; gap:24px; min-height:104px; margin:0; padding:20px 22px; border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; background:none; overflow:visible; }
+html body #homeDashboard .section-directory > .section-module:last-child { border-bottom:0; }
+html body #homeDashboard .section-module:hover { background:var(--accent-soft); transform:none; }
+html body #homeDashboard .section-module:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+html body #homeDashboard .section-module .home-card-title { display:flex; margin:0; min-height:0; padding:0; border:0; background:none; }
+html body #homeDashboard .section-module .home-card-title > a:first-child { gap:14px; align-items:center; }
+html body #homeDashboard .section-module .home-card-title > a:first-child .ui-icon { display:block; width:26px; height:26px; flex:none; color:var(--accent); }
+html body #homeDashboard .section-module .home-card-title h2 { font-size:16px; line-height:24px; font-weight:650; }
+.section-module-purpose { display:block; color:var(--muted); font-size:11px; line-height:17px; margin-top:2px; }
+.section-module-content { min-width:0; }
+.section-module-open { display:flex; gap:10px; align-items:center; justify-content:flex-end; color:var(--muted); font-size:11px; text-decoration:none; min-height:36px; }
+.section-module-open > span:last-child { color:var(--accent); font-size:20px; }
+.section-module-open:hover { color:var(--text); }
+html body #homeDashboard .section-module .home-empty { margin:0; padding:4px 0; color:var(--muted); font-size:12px; }
+.section-directory .module-summary { min-height:0; padding:0; margin:0; }
+html body #homeDashboard .section-directory .module-stats { gap:24px; align-items:center; }
+html body #homeDashboard .section-directory .module-stat { gap:4px; }
+html body #homeDashboard .section-directory .module-stat strong { font-size:20px; }
+html body #homeDashboard .section-directory .module-stat span { font-size:11px; }
+.section-directory .module-covers { margin:0 0 8px; }
+.section-directory .home-task-motto { display:none; }
+.section-directory .home-task-empty { min-height:0; align-items:flex-start; text-align:left; gap:5px; padding:0; }
+.section-directory .home-task-empty > :is(svg,a) { display:none; }
+.section-directory .home-task-empty strong { font-size:12px; font-weight:400; color:var(--muted); }
+.section-directory .home-task-empty p { font-size:11px; margin:0; }
+.section-directory #homeTasksCount { margin:6px 0 0; font-size:10px; }
+.section-directory #homeTasksCount:empty { display:none; }
+html body #homeDashboard .section-directory .home-task { min-height:34px; padding:6px 0; }
+html body #homeDashboard .section-directory .home-task a { font-size:12px; }
+.section-directory .home-task:last-child { border-bottom:0; }
+.section-directory .home-track { min-height:44px; padding:5px 0; gap:10px; }
+.section-directory .home-track .home-media-art { width:34px; height:34px; }
+.section-directory .home-track-play { min-width:34px; }
+.section-directory .home-track strong { font-size:12px; }
+.section-directory .home-track small { margin-top:2px; font-size:10px; }
+.section-directory .home-track:last-child { border:0; }
+html body #homeDashboard .section-directory #homeFiles { display:flex; flex-direction:column; gap:6px; }
+.section-directory #homeVPN { border:0; }
+.section-directory .home-vpn-row { padding:0; min-height:44px; border:0; }
+.section-directory .home-vpn-note { margin:8px 0 0; font-size:10px; }
+.section-directory .home-subtitle { margin:0 0 6px; font-size:11px; }
+.section-directory .home-value { font-size:22px; }
+.section-directory .home-recent { margin:0; }
+.section-directory .home-recent img { width:38px; height:54px; object-fit:contain; }
+.section-directory [data-home-card=pulse] .section-module-content { grid-column:2/4; }
+.section-directory [data-home-card=pulse] > .section-module-open { display:none; }
+html body #homeDashboard .section-directory .home-metric:nth-child(n) { padding:0 14px; }
+html body #homeDashboard .section-directory .home-metric strong { font-size:20px; }
+html body #homeDashboard .section-directory .home-metric:first-child { padding-left:0; }
+@media(max-width:1100px) {
+ html body #homeDashboard .section-directory > .section-module { grid-template-columns:190px minmax(0,1fr) 28px; gap:18px; padding:18px; }
+ .section-module-open > span:first-child { display:none; }
+ .section-directory [data-home-card=pulse] .section-module-content { grid-column:1/-1; }
+}
+@media(max-width:800px) {
+ .section-description { margin:4px 0 0; font-size:12px; }
+ html body #homeDashboard .section-directory { border:0; background:none; border-radius:0; }
+ html body #homeDashboard .section-directory > .section-module { grid-template-columns:minmax(0,1fr) 32px; align-items:start; gap:10px 12px; padding:16px 0; min-height:0; }
+ html body #homeDashboard .section-directory > .section-module:first-child { padding-top:10px; }
+ html body #homeDashboard .section-module:hover { background:none; }
+ html body #homeDashboard .section-module .home-card-title { grid-column:1; grid-row:1; }
+ html body #homeDashboard .section-module .home-card-title h2 { font-size:15px; line-height:21px; }
+ html body #homeDashboard .section-module .home-card-title > a:first-child { gap:12px; }
+ html body #homeDashboard .section-module .home-card-title > a:first-child .ui-icon { width:24px; height:24px; }
+ .section-module-purpose { font-size:10px; line-height:16px; margin:0; }
+ .section-module-open { grid-column:2; grid-row:1; justify-content:center; height:36px; }
+ .section-module-content { grid-column:1/-1; padding-left:36px; }
+ html body #homeDashboard .section-module .home-empty { font-size:11px; padding:0; }
+ .section-directory [data-home-card=pulse] .section-module-content { grid-column:1/-1; padding:0; }
+ .section-directory [data-home-card=pulse] > .section-module-open { display:flex; }
+ html body #homeDashboard .section-directory .home-metric:nth-child(n) { padding:10px 12px; }
+ html body #homeDashboard .section-directory .home-metrics { border:1px solid var(--line); border-radius:8px; }
+ .section-directory [data-home-card=wave] .section-module-content,.section-directory [data-home-card=vpn] .section-module-content { padding-left:0; }
+ .section-directory .home-track .home-media-art { width:34px; height:34px; }
+ html body .section-directory .home-track-play { padding:0!important; }
+ .section-directory .home-vpn-state { max-width:105px; }
+ .section-directory .home-vpn-note { line-height:15px; }
+ .section-directory .home-task-empty p { font-size:11px; }
+ html body #homeDashboard .section-directory .home-task { grid-template-columns:18px minmax(0,1fr) auto; gap:8px; min-height:34px; }
+ .section-directory .home-task.is-overdue small { font-size:9px; }
+}

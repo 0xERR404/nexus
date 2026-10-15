@@ -4,12 +4,11 @@ body::before,body::after { content:none; }
 
 .module-card:hover { transform:none; border-color:var(--line-strong); }
 .brand-mark { width:27px; height:27px; }
-.brand-mark .brand-accent { fill:var(--accent); }
 .brand-name { font-size:16px; letter-spacing:1.5px; font-weight:600; white-space:nowrap; }
 .brand-name > span { color:var(--text); }
 .login-brand .brand-mark { width:76px; height:76px; }
 .login-brand .brand-name { letter-spacing:3px; }
-.ui-icon .icon-accent { color:var(--accent); }
+.ui-icon .icon-accent { color:inherit; }
 .module-heading { padding-bottom:9px; border-bottom:1px solid var(--line-soft); }
 .module-heading .ui-icon { color:var(--text); }
 .module-stat span,.card-chevron { color:var(--muted); }

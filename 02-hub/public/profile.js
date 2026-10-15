@@ -8,7 +8,6 @@
   trigger.onclick=()=>{status.textContent='';dialog.showModal();};
   document.getElementById('profileClose').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>trigger.focus());
-  dialog.addEventListener('click',e=>{if(e.target.closest('a'))dialog.close();});
   document.getElementById('profileRemove').onclick=()=>{try{localStorage.removeItem(key);paint();status.textContent='Фотография удалена с этого устройства.';}catch{status.textContent='Не удалось изменить хранилище браузера.';}};
   input.onchange=async()=>{
     const file=input.files[0];if(!file)return;input.disabled=true;
