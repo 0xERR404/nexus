@@ -1,1 +1,7 @@
 .hub-updates{max-width:760px}.hub-updates p{line-height:1.55;overflow-wrap:anywhere}.hub-updates select{display:block;width:100%;margin:8px 0 12px}.hub-update-consent{display:flex;align-items:flex-start;gap:10px;margin:18px 0}.hub-update-consent input{flex:0 0 auto;margin-top:4px}.hub-update-actions{display:flex;flex-wrap:wrap;gap:10px}.hub-updates details{margin-top:24px}.hub-updates button:disabled{opacity:.5}
+.hub-update-journal,#hubRollbackSection{margin-top:24px;padding-top:18px;border-top:1px solid var(--line)}
+#hubUpdateLog{list-style:none;padding:0;max-height:280px;overflow:auto;margin:12px 0;border-radius:8px;background:var(--control-bg)}
+#hubUpdateLog li{display:grid;grid-template-columns:145px minmax(0,1fr);gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+#hubUpdateLog time{color:var(--muted);font-variant-numeric:tabular-nums}
+#hubUpdateLog [data-level=error]{border-left:3px solid #f0a49b}
+@media(max-width:600px){#hubUpdateLog li{grid-template-columns:minmax(0,1fr);gap:3px}}

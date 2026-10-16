@@ -9,7 +9,6 @@
   function selected(){
     try{current=new URL(frame.contentWindow.location.href);}catch{return;}
     const id=current.pathname==='/'?'home':current.pathname.startsWith('/modules/')?current.pathname.split('/')[2]:current.pathname.split('/')[1];
-    document.body.classList.toggle('workspace-home',id==='home');
     const group=id==='home'?current.searchParams.get('group')||'overview':Object.keys(groups).find(g=>groups[g].includes(id));
     document.querySelectorAll('[data-workspace-category]').forEach(a=>{if(id==='home'&&a.dataset.workspaceCategory===group)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
     links.forEach(a=>{if(a.dataset.workspaceGroup===group)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});

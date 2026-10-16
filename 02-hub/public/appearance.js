@@ -1,7 +1,7 @@
 (() => {
   const key='nexus-orbit-appearance-v2', previousKey='nexus-orbit-appearance-v1', root=document.documentElement;
   const defaults={accent:'jade',ambient:true,reduceMotion:false};
-  const colors={jade:'197,237,169',blue:'154,194,224',violet:'192,174,226',amber:'222,193,139'};
+  const colors={"jade":"197,237,169","emerald":"117,218,161","mint":"164,233,203","teal":"120,215,207","cyan":"133,221,240","blue":"154,194,224","indigo":"164,178,245","violet":"192,174,226","pink":"238,170,206","coral":"245,169,153","amber":"222,193,139","silver":"211,217,226"};
   const clean=v=>({accent:Object.hasOwn(colors,v?.accent)?v.accent:'jade',ambient:v?.ambient!==false,reduceMotion:v?.reduceMotion===true});
   const read=()=>{try{return clean(JSON.parse(localStorage.getItem(key)));}catch{return {...defaults};}};
   // Apply the forest palette once; preserve ambient and accessibility preferences. Subsequent color choices remain local.

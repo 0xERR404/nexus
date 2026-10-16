@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<path d="M39 12H24L12 24V42M61 88H76L88 76V58" fill="none" stroke="#89b374" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
-<path d="M30 72V28L70 72V28" fill="none" stroke="#d5f4bc" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="bevel"/>
-<path d="M65 12H76L88 24V35" fill="none" stroke="#89b374" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
-<path d="M12 65V76L24 88H35" fill="none" stroke="#89b374" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
-<path d="M85 12H91V18H85Z" fill="#d5f4bc"/>
+<path d="M39 12H24L12 24V42M61 88H76L88 76V58" fill="none" stroke="var(--accent, #89b374)" stroke-opacity=".65" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M30 72V28L70 72V28" fill="none" stroke="var(--accent, #d5f4bc)" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M65 12H76L88 24V35" fill="none" stroke="var(--accent, #89b374)" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M12 65V76L24 88H35" fill="none" stroke="var(--accent, #89b374)" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M85 12H91V18H85Z" fill="var(--accent, #d5f4bc)"/>
 </svg>

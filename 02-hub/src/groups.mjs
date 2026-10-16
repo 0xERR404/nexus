@@ -1,5 +1,5 @@
 export const groups = [
-  {id:'overview',title:'Обзор',icon:'home',modules:[]},
+  {id:'overview',title:'Главная',icon:'home',modules:[]},
   {id:'media',title:'Медиа',icon:'navMedia',modules:['wave','anime','cinema','trophies','reader','gallery']},
   {id:'work',title:'Работа',icon:'navWork',modules:['kanban','articles','storage','chat']},
   {id:'personal',title:'Личное',icon:'navPersonal',modules:['rhythm','balance','statistics']},

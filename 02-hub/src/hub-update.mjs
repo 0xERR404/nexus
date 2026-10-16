@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 const ID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 export const updateError=(text,status=409)=>Object.assign(new Error(text),{status});
 export function versionParts(value) {
-  if(typeof value!=='string'||!/^v?\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(value))throw updateError('Версия выпуска должна иметь вид 0.35.258');
+  if(typeof value!=='string'||!/^v?\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(value))throw updateError('Версия выпуска должна иметь вид 0.35.262');
   return value.replace(/^v/,'').split('.').map(Number);
 }
 export function newerVersion(next,current){
@@ -21,6 +21,12 @@ export function updateRequest(value,now=Date.now()) {
     throw updateError('Неверный или устаревший запрос обновления');
   if(!newerVersion(value.version,value.expectedVersion))throw updateError('Можно устанавливать только более новый выпуск');
   return value;
+}
+export function rollbackRequest(value,now=Date.now()){
+  if(!value||Object.keys(value).sort().join()!=='action,backupId,created,expectedVersion,id'||value.action!=='rollback'||
+    ![value.id,value.backupId].every(v=>typeof v==='string'&&ID.test(v))||!Number.isSafeInteger(value.created)||value.created>now+60000||now-value.created>900000)
+    throw updateError('Неверный или устаревший запрос возврата');
+  versionParts(value.expectedVersion);return value;
 }
 export function updateCatalog(directory) {
   const file=path.join(directory,'projects','projects.sqlite');
@@ -56,8 +62,9 @@ export class HubUpdates {
     return state;
   }
   list(){
-    const catalog=this.data?updateCatalog(this.data):{project:null,releases:[]};
-    return {...catalog,current:this.current,status:this.status(),releases:catalog.releases.map(r=>{
+    let catalog={project:null,releases:[]},catalogError;
+    try{if(this.data)catalog=updateCatalog(this.data);}catch{catalogError='Не удалось прочитать выпуски Дедала. Проверь доступность модуля и единственность проекта NEXUS404.';}
+    return {...catalog,catalogError,current:this.current,status:this.status(),releases:catalog.releases.map(r=>{
       let compatible=false;try{compatible=newerVersion(r.version,this.current);}catch{}
       return {...r,compatible};
     })};
@@ -67,8 +74,15 @@ export class HubUpdates {
     const state=this.status();
     if(!state.available)throw updateError('Сначала обнови сервер этим выпуском через установщик: служба обновления недоступна',503);
     if(state.pending||['preparing','building','backup','installing','checking','rolling-back'].includes(state.phase))throw updateError('Обновление уже выполняется');
-    const request=updateRequest({id:randomUUID(),created:Date.now(),project:value.project,release:value.release,version:value.version,sha256:value.sha256,expectedVersion:this.current});
-    selectUpdate(this.data,request);
+    let request;
+    if(value.action==='rollback'){
+      if(state.protocol!==2||!state.backup||state.backup.id!==value.backupId||state.backup.version===this.current)throw updateError('Проверенная копия для возврата недоступна');
+      request=rollbackRequest({action:'rollback',id:randomUUID(),created:Date.now(),backupId:value.backupId,expectedVersion:this.current});
+    }else{
+      if(value.action!==undefined)throw updateError('Неизвестная операция');
+      request=updateRequest({id:randomUUID(),created:Date.now(),project:value.project,release:value.release,version:value.version,sha256:value.sha256,expectedVersion:this.current});
+      selectUpdate(this.data,request);
+    }
     const target=path.join(this.directory,'requests/request.json'),tmp=target+'.'+request.id;
     try{fs.writeFileSync(tmp,JSON.stringify(request),{flag:'wx',mode:0o600});fs.renameSync(tmp,target);}finally{fs.rmSync(tmp,{force:true});}
     return {queued:true,id:request.id};
@@ -82,5 +96,7 @@ export const updateContent=`<script src="/updates.js" defer></script><link rel="
 <p>Обновятся хаб и установленные модули. Перед заменой сохраняется резервная копия. Во время запуска новой версии хаб и плеер будут недоступны.</p>
 <label class="hub-update-consent"><input id="hubUpdateConsent" type="checkbox" required>Подтверждаю установку выбранного архива из Дедала</label>
 <div class="hub-update-actions"><button id="hubUpdateSubmit" type="submit" disabled>Установить обновление</button><button id="hubUpdateRefresh" type="button">Обновить список</button></div></form>
+<section class="hub-update-journal" aria-labelledby="hubUpdateLogTitle"><h3 id="hubUpdateLogTitle">Журнал обновлений</h3><p id="hubUpdateLogHint" class="muted">Загрузка журнала…</p><ol id="hubUpdateLog" aria-label="Этапы и ошибки обновления"></ol></section>
+<section id="hubRollbackSection" hidden><h3>Вернуть предыдущую версию</h3><p id="hubRollbackInfo"></p><p>Вернутся также базы, настройки и файлы на момент копии. Текущее состояние сохранится отдельно на сервере. Во время возврата хаб будет недоступен.</p><label class="hub-update-consent"><input id="hubRollbackConsent" type="checkbox">Подтверждаю возврат версии и данных из резервной копии</label><button id="hubRollbackSubmit" type="button" disabled>Вернуть предыдущую версию</button></section>
 <p class="muted">Загружай только доверенные выпуски: архив содержит исполняемый код. Совпадение названия не подтверждает автора архива. ОС, установщик и удалённые VPN-ноды обновляются отдельно через меню сервера.</p>
 <details><summary>Удаление и восстановление</summary><p>В установщике: «Хаб и модули → Удалить хаб и модули · сохранить данные». Файлы, базы и настройки останутся на сервере. Для восстановления распакуй новый полный выпуск и выбери «Восстановить хаб и модули из сохранённых данных».</p><p>Сохранение на том же диске не заменяет внешнюю резервную копию.</p></details></section>`;
