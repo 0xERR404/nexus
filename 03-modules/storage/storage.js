@@ -11,7 +11,7 @@
     return n;
   };
   const size = (n) =>
-    n < 1048576 ? Math.ceil(n / 1024) + ' КБ' : (n / 1048576).toFixed(1) + ' МБ';
+    n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' ГиБ' : n < 1048576 ? Math.ceil(n / 1024) + ' КБ' : (n / 1048576).toFixed(1) + ' МБ';
   const fileType = (item) => {
     const extension = /\.([a-z0-9]{1,8})$/i.exec(item.name || '');
     return node('span', extension ? extension[1].toUpperCase() : 'ФАЙЛ', 'storage-file-type');
@@ -32,7 +32,8 @@
     place = [],
     limit = 60,
     busy = false,
-    sequence = 0;
+    sequence = 0,
+    backup = {phase:'loading'}, systemBackups = {items:[],loading:true}, backupTimer, backupClosed = false, backupSequence = 0;
   const view = !settings && Nexus.rememberView?.(['storageSearch'], () => ({place,limit}));
   let initialFileOpened = false;
   const button = (text, fn, cls) => {
@@ -50,6 +51,10 @@
   const pathOf = (f) => [f.source, ...(f.folders || [])];
   const inside = (f, path) => path.every((part, i) => pathOf(f)[i] === part);
   const own = () => place[0] === 'own';
+  const inBackups = () => place[0] === 'backups';
+  const backupTitles = {settings:'Настройки и записи',media:'Медиа и проекты',all:'Все данные'};
+  const backupReady = () => backup.phase === 'ready' && backup.expires > Date.now() && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(backup.snapshotId);
+  const backupName = () => 'nexus404-' + backup.mode + '-' + new Date(backup.created).toISOString().slice(0,10) + '.tar.gz';
   const currentFolder = () => (own() && place.length > 1 ? place.at(-1) : null);
   const ownPath = (id) => {
     const ids = [],
@@ -68,6 +73,7 @@
     limit = 60;
     $('storageSearch').value = '';
     draw();
+    if(inBackups())void refreshBackups();else clearTimeout(backupTimer);
   };
   const folderCard = (title, detail, open, actions = []) => {
     const card = node('article', undefined, 'storage-folder-card'),
@@ -297,11 +303,74 @@
     r.append(fileType(item), info, actions);
     return r;
   }
+  const backupLink = () => {
+    const link=node('a','Подготовить новую копию');link.href='/settings/?module=backups';return link;
+  };
+  function drawUserBackup(files,query) {
+    const intro=node('div',undefined,'storage-backup-intro');
+    intro.append(node('h3','Пользовательские данные'),node('p','Без кода хаба и модулей. После скачивания снимок удаляется; без скачивания хранится час.'),backupLink());files.append(intro);
+    if(!backupReady()) {
+      const messages={loading:'Проверка резервных копий…',preparing:'Готовится копия. Хаб скоро снова будет доступен.',failed:backup.error||'Не удалось подготовить копию. Открой настройки резервного копирования.',deleted:'Копия удалена с сервера.',expired:'Срок хранения копии истёк.',idle:'Готовых копий пока нет.','recovery-required':'Нужна проверка службы на сервере.'};
+      files.append(node('p',backup.fetchError||(!backup.available&&backup.phase!=='loading'?'Служба копирования недоступна. Проверь её в настройках.':backup.pending?'Запрос принят, ожидается сервер':messages[backup.phase]||'Готовых копий пока нет.'),'storage-empty'));return;
+    }
+    const title=backupTitles[backup.mode]||'Пользовательские данные',name=backupName();
+    if(query&&!(name+' '+title).toLocaleLowerCase('ru-RU').includes(query)){files.append(node('p','Копия с таким названием не найдена.','storage-empty'));return;}
+    const row=node('article',undefined,'storage-row storage-backup-row'),info=node('div',undefined,'storage-file-info');
+    info.append(node('strong',title),node('small',name),node('small',new Date(backup.created).toLocaleString('ru-RU')+' · '+size(backup.bytes)+' до сжатия · '+count(backup.files)),node('small','Доступно до '+new Date(backup.expires).toLocaleTimeString('ru-RU')));
+    const actions=node('div',undefined,'storage-actions'),form=node('form'),input=node('input'),download=node('button','Скачать');
+    form.method='post';form.action='/api/data-backup/download';input.type='hidden';input.name='id';input.value=backup.snapshotId;download.type='submit';download.disabled=!backup.available||!!backup.pending||!!backup.fetchError;
+    form.append(input,download);form.onsubmit=()=>say('Скачивание началось. Проверь загрузки браузера; при обрыве копию можно скачать повторно.');
+    const snapshotId=backup.snapshotId;
+    const remove=button('Удалить',async()=>{
+      if(!await Nexus.confirm('Удалить резервную копию «'+title+'» с сервера? Текущие файлы и настройки хаба сохранятся.'))return;
+      await Nexus.request('/api/data-backup',{action:'delete',snapshotId});await refreshBackups();
+    },'storage-danger');remove.disabled=download.disabled;
+    actions.append(form,remove);row.append(node('span','TAR.GZ','storage-file-type'),info,actions);files.append(row);
+    if(backup.pending||backup.fetchError||!backup.available)files.append(node('p',backup.fetchError||(backup.pending?'Запрос принят, ожидается сервер':'Служба временно недоступна'),'storage-empty'));
+  }
+  function drawBackups(files,query){
+    drawUserBackup(files,query);
+    const intro=node('div',undefined,'storage-backup-intro');intro.append(node('h3','Системные копии и старые обновления'),node('p','Здесь могут быть код и данные старой установки. Скачивание не удаляет эти копии. Ненужные копии можно удалить отдельно; последняя копия для восстановления защищена.'));files.append(intro);
+    const items=systemBackups.items.filter(item=>!query||(item.title+' '+(item.version||'')+' '+item.id).toLocaleLowerCase('ru-RU').includes(query));
+    for(const item of items){
+      const row=node('article',undefined,'storage-row storage-backup-row'),info=node('div',undefined,'storage-file-info'),actions=node('div',undefined,'storage-actions');
+      info.append(node('strong',item.title+(item.version?' · '+item.version:'')),node('small','Копия '+item.id.slice(-8)));
+      if(Number.isFinite(item.created)&&Number.isFinite(item.bytes))info.append(node('small',new Date(item.created).toLocaleString('ru-RU')+' · '+size(item.bytes)+' до сжатия · '+count(item.files)));
+      if(item.hasData)info.append(node('small','Содержит данные старой установки'));
+      if(item.reason)info.append(node('small',item.reason));
+      const form=node('form'),input=node('input'),download=node('button','Скачать');form.method='post';form.action='/api/backup-browser/download';input.type='hidden';input.name='id';input.value=item.id;download.type='submit';download.disabled=!!item.unavailable||!systemBackups.available;form.append(input,download);form.onsubmit=()=>say('Скачивание системной копии началось. Копия останется на сервере до отдельного удаления.');
+      const remove=button('Удалить',async()=>{
+        const warning=item.hasData?' В ней есть старые данные, которые могут отличаться от текущих.':'';
+        if(!await Nexus.confirm('Удалить «'+item.title+'» ('+item.id+') окончательно?'+warning+' Текущая установка не затрагивается. Сначала сохрани копию на своём устройстве, если она нужна.'))return;
+        await Nexus.request('/api/backup-browser',{action:'delete',id:item.id});await refreshBackups();
+      },'storage-danger');remove.disabled=!!item.protected||!systemBackups.available;
+      actions.append(form,remove);row.append(node('span','TAR.GZ','storage-file-type'),info,actions);files.append(row);
+    }
+    if(systemBackups.error)files.append(node('p',systemBackups.error,'storage-empty'));
+    else if(!items.length)files.append(node('p',systemBackups.loading?'Проверка системных копий…':query?'Системные копии с таким названием не найдены.':'Системных копий на сервере пока нет.','storage-empty'));
+  }
+  async function refreshBackups() {
+    clearTimeout(backupTimer);if(backupClosed||settings)return;
+    const revision=++backupSequence;
+    try {
+      const results=await Promise.allSettled([Nexus.request('/api/data-backup'),Nexus.request('/api/backup-browser')]);
+      if(revision!==backupSequence||backupClosed)return;
+      const [user,system]=results, next=user.status==='fulfilled'?user.value:{...backup,available:false,fetchError:'Не удалось обновить пользовательские копии. Проверка повторится автоматически.'};
+      const nextSystem=system.status==='fulfilled'?system.value:{...systemBackups,available:false,error:system.reason.message||'Служба системных копий недоступна'};
+      const changed=['phase','pending','available','snapshotId','mode','created','expires','files','bytes','error','fetchError'].some(k=>next[k]!==backup[k])||JSON.stringify(nextSystem)!==JSON.stringify(systemBackups);
+      backup=next;systemBackups=nextSystem;if(changed&&inBackups())draw();
+    }finally{if(revision===backupSequence&&!backupClosed&&inBackups())backupTimer=setTimeout(refreshBackups,15000);}
+  }
   function draw() {
     const query = $('storageSearch').value.trim().toLocaleLowerCase('ru-RU'),
       folders = $('storageFolders'),
       files = $('storageFiles'),
       crumbs = $('storageBreadcrumb');
+    $('storageFolder').closest('.storage-app').classList.toggle('storage-backup-view',inBackups());
+    $('storageFolder').hidden=inBackups();
+    $('storageInput').closest('label').hidden=inBackups();
+    $('storageTrash').parentElement.hidden=inBackups();
+    files.classList.toggle('storage-backups',inBackups());
     folders.replaceChildren();
     files.replaceChildren();
     crumbs.replaceChildren(button('Хранилище', () => navigate([])));
@@ -312,13 +381,15 @@
             ? 'Загрузки'
             : state.folders.find((f) => f.id === place[i])?.name || 'Папка'
           : i === 0
-            ? hub.find((f) => f.source === place[0])?.sourceTitle || place[i]
+            ? inBackups() ? 'Резервные копии' : hub.find((f) => f.source === place[0])?.sourceTitle || place[i]
             : place[i];
       crumbs.append(
         node('span', '/'),
         button(title, () => navigate(place.slice(0, i + 1)))
       );
     }
+    if(inBackups()){drawBackups(files,query);$('storageMore').hidden=true;return;}
+    if(!place.length&&(!query||'резервные копии бекапы бэкапы backups'.includes(query)))folders.append(folderCard('Резервные копии',backupReady()?'Есть готовая копия':'Данные и системные копии',()=>navigate(['backups'])));
     let visibleOwn = [],
       visibleHub = [];
     if (query) {
@@ -391,7 +462,8 @@
     const current = ++sequence;
     const values = await Promise.all([
       request('/api'),
-      settings ? Promise.resolve(null) : request('/api/modules')
+      settings ? Promise.resolve(null) : request('/api/modules'),
+      settings ? Promise.resolve(null) : Nexus.request('/api/data-backup').catch(()=>({available:false,phase:'unavailable'}))
     ]);
     if (current !== sequence) return;
     state = values[0];
@@ -399,12 +471,13 @@
       settings.textContent = `Загрузки: ${size(state.stats.used)} из ${size(state.stats.limit)} · ${count(state.stats.files)}. Объём включает корзину.`;
       return;
     }
-    hub = values[1].files;
+    hub = values[1].files;backup=values[2];
     if(view?.restore()) { place = view.value.place || []; limit = view.value.limit || 60; }
     if (own()) {
       while (place.length > 1 && !state.folders.some((f) => f.id === place.at(-1))) place.pop();
-    } else while (place.length && !hub.some((f) => inside(f, place))) place.pop();
+    } else if(!inBackups()) while (place.length && !hub.some((f) => inside(f, place))) place.pop();
     draw();
+    if(inBackups())void refreshBackups();
     if (values[1].errors.length) Nexus.problem($('storageStatus'),'storage'); else say('');
     if (!initialFileOpened) {
       initialFileOpened = true;
@@ -525,6 +598,8 @@
       if ($('storageTrash').parentElement.open) trash().catch((e) => Nexus.problem($('storageStatus'), 'storage', e));
     });
   }
+  addEventListener('pagehide',()=>{backupClosed=true;backupSequence++;clearTimeout(backupTimer);});
+  addEventListener('pageshow',()=>{backupClosed=false;if(inBackups())void refreshBackups();});
   Nexus.beforeLeave?.(() => !busy);
   refresh().catch((e) => Nexus.problem($('storageStatus'), 'storage', e));
 })();

@@ -1,3 +1,4 @@
+import {hubPath} from './common.mjs';
 import {readEvents} from './event-reader.mjs';
 export {readEvents} from './event-reader.mjs';
 import {rhythmEvents, kanbanEvents, hubNotices} from './module-events.mjs';
@@ -36,8 +37,8 @@ export function prepareSignal() {
   saveJSON(DIR + '/public/public.json', {publicKey: keys.publicKey}, 0o644);
 }
 export function readSettings(
-  file = HUB + '/data/signal.json',
-  authFile = HUB + '/config/auth.json'
+  file = hubPath(HUB,'data') + '/signal.json',
+  authFile = hubPath(HUB,'config') + '/auth.json'
 ) {
   const config = json(file, {}, 256 * 1024),
     auth = json(authFile, {});
@@ -131,7 +132,7 @@ export class Signal {
     settings = readSettings,
     sender = sendPush,
     now = Date.now,
-    dataDirectory = HUB + '/data'
+    dataDirectory = hubPath(HUB,'data')
   } = {}) {
     this.dir = directory;
     this.dataDirectory = dataDirectory;
@@ -336,7 +337,7 @@ export class Signal {
       for (const service of ['hub', 'caddy'])
         if (
           (service === 'hub'
-            ? fs.existsSync(HUB + '/config/auth.json')
+            ? fs.existsSync(hubPath(HUB,'config') + '/auth.json')
             : fs.existsSync(CADDY + '/domain')) &&
           !found.has(service)
         )
@@ -507,7 +508,7 @@ export class Signal {
       this.now()
     ))
       this.enqueue(event, settings);
-    for (const file of ['/opt/nexus404/hooks/events/events.jsonl', HUB + '/data/auth-events.jsonl'])
+    for (const file of ['/opt/nexus404/hooks/events/events.jsonl', hubPath(HUB,'data') + '/auth-events.jsonl'])
       for (const e of readEvents(file, (this.state.cursors[file] ??= {}))) this.rules.event(e);
     this.rules.flushGroups();
     if (this.now() - this.lastChecks > 30000) {

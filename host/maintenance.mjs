@@ -177,7 +177,7 @@ export function installLogging({managed=true,write=atomic,remove=fs.rmSync}={}) 
     remove(f, {force: true});
   write(
     '/etc/nexus404-logrotate.conf',
-    '/var/lib/nexus404-base/*.log /var/lib/nexus404-caddy/*.log /var/lib/nexus404-menu/*.log /var/lib/nexus404-shell/*.log /opt/nexus404/hooks/events/events.jsonl /opt/nexus404/hub-platform/data/auth-events.jsonl {\n daily\n maxsize 10M\n rotate 5\n compress\n missingok\n notifempty\n copytruncate\n su root root\n}\n',
+    '/var/lib/nexus404-base/*.log /var/lib/nexus404-caddy/*.log /var/lib/nexus404-menu/*.log /var/lib/nexus404-shell/*.log /opt/nexus404/hooks/events/events.jsonl /var/lib/nexus404-hub/data/auth-events.jsonl {\n daily\n maxsize 10M\n rotate 5\n compress\n missingok\n notifempty\n copytruncate\n su root root\n}\n',
     0o644
   );
   write(

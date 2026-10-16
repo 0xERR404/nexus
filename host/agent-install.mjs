@@ -1,3 +1,4 @@
+import {hubPath} from './common.mjs';
 import fs from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {connectionError} from './agent-http.mjs';
@@ -53,7 +54,7 @@ export async function registerFromInstaller(ui,{directory=AGENT_DATA,run=(...arg
 }
 export async function installAgent(ui) {
   supported();
-  if(fs.existsSync(HUB+'/config/auth.json'))throw Error('Этот VPS уже является хабом. Используй отдельный VPS для агента.');
+  if(fs.existsSync(hubPath(HUB,'config') + '/auth.json'))throw Error('Этот VPS уже является хабом. Используй отдельный VPS для агента.');
   ui.section('Агент · компоненты и регистрация');
   await agentDependencies(ui);
   fs.mkdirSync(BASE,{recursive:true,mode:0o700});

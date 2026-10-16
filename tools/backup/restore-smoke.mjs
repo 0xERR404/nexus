@@ -22,6 +22,8 @@ export async function loadRestoredModules(directory, source = path.join(root, '0
       if (manifest.enabled) expected.add(entry.name);
     }
   }
+  const saved=path.join(directory,restoredStorage(directory),'config/preserved-modules.json');
+  if(fs.existsSync(saved))for(const [id,manifest]of Object.entries(JSON.parse(fs.readFileSync(saved,'utf8')))){validateManifest(manifest);if(manifest.enabled)expected.add(id);}
   const modules = await load(source, {start: false, only: expected});
   const missing = [...expected].filter(id => !modules.has(id));
   if (missing.length) {
@@ -57,9 +59,11 @@ async function hiddenPassword() {
   });
 }
 
+function restoredStorage(directory){if(fs.existsSync(path.join(directory,'BACKUP.json')))return '.';return fs.existsSync(path.join(directory,'var/lib/nexus404-hub/data'))?'var/lib/nexus404-hub':'opt/nexus404/hub-platform';}
+
 async function serve(directory) {
-  const data = path.join(directory, 'opt/nexus404/hub-platform/data');
-  const auth = path.join(directory, 'opt/nexus404/hub-platform/config/auth.json');
+  const data = path.join(directory, restoredStorage(directory), 'data');
+  const auth = path.join(directory, restoredStorage(directory), 'config/auth.json');
   process.env.DATA_DIR = data;
   globalThis.fetch = async () => {
     throw new Error('Внешние запросы отключены при проверке восстановления');
@@ -91,7 +95,7 @@ async function smoke(archive, key) {
   try {
     await check(archive, key, directory);
     const auth = JSON.parse(
-      fs.readFileSync(path.join(directory, 'opt/nexus404/hub-platform/config/auth.json'))
+      fs.readFileSync(path.join(directory, restoredStorage(directory), 'config/auth.json'))
     );
     const password = await hiddenPassword();
     child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', directory], {

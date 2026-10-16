@@ -1,8 +1,10 @@
+import {BackupBrowser} from './backup-browser.mjs';
 import {Diagnostics} from './diagnostics.mjs';
 import {Agents} from './agents.mjs';
 import {Notices, noticeCodes} from './notices.mjs';
 import {HubUpdates} from './hub-update.mjs';
 import {Maintenance} from './maintenance.mjs';
+import {DataBackups} from './data-backup.mjs';
 import {Activity} from './activity.mjs';
 import {Profiles} from './profile.mjs';
 import {readJSON as parseJSON} from './input.mjs';
@@ -32,6 +34,7 @@ const types = {
   '.woff2': 'font/woff2'
 };
 const assets = [
+  'data-backup.js', 'data-backup.css',
   'servers.js',
   'servers.css',
   'card-layout.css',
@@ -130,6 +133,8 @@ export function createApp({
   publicDir = path.join(root, 'public'),
   auditFile,
   maintenance = new Maintenance(),
+  dataBackups = new DataBackups(),
+  backupBrowser = new BackupBrowser(),
   hubUpdates
 }) {
   validateAuth(config);
@@ -662,6 +667,31 @@ export function createApp({
         audit('system.hub.update.requested',address);
         return json(result,202);
       }
+      if(url.pathname==='/api/backup-browser'||url.pathname==='/api/backup-browser/download'){
+        if(url.pathname==='/api/backup-browser'&&request.method==='GET')return json(await backupBrowser.list());
+        if(request.method!=='POST')return json({error:'Метод не поддержан'},405);
+        if(url.pathname.endsWith('/download')){
+          if(!request.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))return json({error:'Неверный формат запроса'},415);
+          const fields=new URLSearchParams(await body(request,4096));if(!sessions.valid(token,security.state.epoch))return json({error:'Требуется вход'},401);
+          audit('system.backup.download',address);await backupBrowser.download(fields.get('id'),response,()=>sessions.valid(token,security.state.epoch));return;
+        }
+        const value=await readJSON();if(!sessions.valid(token,security.state.epoch))return json({error:'Требуется вход'},401);
+        if(value.action!=='delete')return json({error:'Неверное действие'},400);
+        const result=await backupBrowser.remove(value.id);audit('system.backup.deleted',address);return json(result);
+      }
+      if (url.pathname === '/api/data-backup' || url.pathname === '/api/data-backup/download') {
+        if(url.pathname==='/api/data-backup'&&request.method==='GET')return json(dataBackups.status());
+        if(request.method!=='POST')return json({error:'Метод не поддержан'},405);
+        if(url.pathname.endsWith('/download')){
+          if(!request.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))return json({error:'Неверный формат запроса'},415);
+          const fields=new URLSearchParams(await body(request,4096));
+          if(!sessions.valid(token,security.state.epoch))return json({error:'Требуется вход'},401);
+          audit('system.data.backup.download',address);
+          await dataBackups.download(fields.get('id'),response,()=>sessions.valid(token,security.state.epoch));return;
+        }
+        const value=await readJSON();if(!sessions.valid(token,security.state.epoch))return json({error:'Требуется вход'},401);
+        return json(dataBackups.queue(value),202);
+      }
       if (url.pathname === '/api/maintenance') {
         if (request.method === 'GET') return json(maintenance.status());
         if (request.method !== 'POST') return json({error:'Метод не поддержан'},405);
@@ -864,6 +894,8 @@ export function createApp({
       if (!response.headersSent) {
         if (error.status === 429) response.setHeader('Retry-After', '300');
         if (
+          request.url?.startsWith('/api/data-backup') ||
+          request.url?.startsWith('/api/backup-browser') ||
           request.url?.startsWith('/api/security') ||
           request.url?.startsWith('/api/auth/factor/') ||
           request.url?.startsWith('/api/auth/passkey/')

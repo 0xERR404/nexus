@@ -51,6 +51,12 @@ export function git(args) {
 const sameRemote = (a, b) =>
   a.replace(/\.git\/?$/, '').replace(/\/$/, '') === b.replace(/\.git\/?$/, '').replace(/\/$/, '');
 export const projectFiles = [
+  'host/data-backup.mjs',
+  'host/backup-browser.mjs',
+  '02-hub/src/data-backup.mjs',
+  '02-hub/src/backup-browser.mjs',
+  '02-hub/public/data-backup.js',
+  '02-hub/public/data-backup.css',
   'host/hub-lifecycle.mjs',
   'host/hub-update.mjs',
   '02-hub/src/hub-update.mjs',

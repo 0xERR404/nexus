@@ -8,6 +8,15 @@ export const NODE = '/usr/local/bin/nexus404-node';
 export const HOST = '/opt/nexus404/host';
 export const BASE = '/var/lib/nexus404-base';
 export const HUB = '/opt/nexus404/hub-platform';
+export const hubStorage = (hub = HUB) => path.resolve(hub) === HUB ? '/var/lib/nexus404-hub' : path.resolve(hub) + '.storage';
+export function hubPath(hub, name) {
+  if (!['data', 'config'].includes(name)) throw Error('Неизвестный каталог данных');
+  const legacy=path.join(hub,name),external=path.join(hubStorage(hub),name);
+  const has=file=>{try{const s=fs.lstatSync(file);if(!s.isDirectory()||s.isSymbolicLink())throw Error('Каталог данных должен быть обычным каталогом: '+file);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}};
+  const old=has(legacy),current=has(external);
+  if(old&&current)throw Error('Найдены два каталога '+name+'. Автоматическое объединение запрещено');
+  return current||!old?external:legacy;
+}
 export const CADDY = '/var/lib/nexus404-caddy';
 export const STATE = '/var/lib/nexus404-shell';
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,7 +196,7 @@ export function installHost(directory = '/opt/nexus404', {agent=false} = {}) {
   fs.mkdirSync(shared, {recursive: true, mode: 0o755});
   fs.chmodSync(path.dirname(shared), 0o755);
   fs.chmodSync(shared, 0o755);
-  for (const name of ['webpush.mjs', 'auth.mjs', 'modules.mjs', 'maintenance-schema.mjs', 'agent-protocol.mjs', 'hub-update.mjs', 'archive.mjs']) {
+  for (const name of ['webpush.mjs', 'auth.mjs', 'modules.mjs', 'maintenance-schema.mjs', 'agent-protocol.mjs', 'hub-update.mjs', 'archive.mjs', 'data-backup.mjs']) {
     const source = path.join(ROOT, '02-hub/src', name),
       target = path.join(shared, name);
     if (source !== path.resolve(target)) fs.copyFileSync(source, target);

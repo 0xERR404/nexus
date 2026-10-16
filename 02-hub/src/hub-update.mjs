@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 const ID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 export const updateError=(text,status=409)=>Object.assign(new Error(text),{status});
 export function versionParts(value) {
-  if(typeof value!=='string'||!/^v?\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(value))throw updateError('Версия выпуска должна иметь вид 0.35.262');
+  if(typeof value!=='string'||!/^v?\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(value))throw updateError('Версия выпуска должна иметь вид 0.35.266');
   return value.replace(/^v/,'').split('.').map(Number);
 }
 export function newerVersion(next,current){
@@ -59,6 +59,7 @@ export class HubUpdates {
     let pending;
     try{pending=JSON.parse(fs.readFileSync(path.join(this.directory,'requests/request.json'),'utf8'));}catch{}
     if(pending&&pending.id!==state.requestId&&Date.now()-pending.created<900000)state.pending=true;
+    state.serverTime=Date.now();
     return state;
   }
   list(){
@@ -76,7 +77,7 @@ export class HubUpdates {
     if(state.pending||['preparing','building','backup','installing','checking','rolling-back'].includes(state.phase))throw updateError('Обновление уже выполняется');
     let request;
     if(value.action==='rollback'){
-      if(state.protocol!==2||!state.backup||state.backup.id!==value.backupId||state.backup.version===this.current)throw updateError('Проверенная копия для возврата недоступна');
+      if(state.protocol!==2||!state.backup||state.backup.scope!=='system'||state.backup.id!==value.backupId||state.backup.version===this.current)throw updateError('Проверенная копия для возврата недоступна');
       request=rollbackRequest({action:'rollback',id:randomUUID(),created:Date.now(),backupId:value.backupId,expectedVersion:this.current});
     }else{
       if(value.action!==undefined)throw updateError('Неизвестная операция');
@@ -91,12 +92,16 @@ export class HubUpdates {
 export const updateContent=`<script src="/updates.js" defer></script><link rel="stylesheet" href="/updates.css">
 <section class="hub-updates"><p>Архивы только из проекта <strong>NEXUS404</strong> в Дедале. Имя должно совпадать полностью.</p>
 <p id="hubUpdateCurrent"></p><p id="hubUpdateStatus" role="status">Загрузка выпусков…</p>
+<section id="hubUpdateProgress" class="hub-update-progress" aria-label="Ход обновления" hidden>
+<div class="hub-update-progress-heading"><strong id="hubUpdateStep"></strong><span id="hubUpdateElapsed" class="muted"></span></div>
+<div id="hubUpdateMeter" class="hub-update-meter" role="progressbar" aria-label="Завершённые этапы обновления" aria-valuemin="0" aria-valuemax="5"><span></span><span></span><span></span><span></span><span></span></div>
+<p id="hubUpdateRemaining"></p><p id="hubUpdateProgressHint" class="muted"></p></section>
 <form id="hubUpdateForm"><label for="hubUpdateRelease">Новый выпуск</label><select id="hubUpdateRelease" required disabled><option value="">Выбери версию</option></select>
 <p id="hubUpdateNotes" class="muted"></p><p id="hubUpdateSize" class="muted"></p>
-<p>Обновятся хаб и установленные модули. Перед заменой сохраняется резервная копия. Во время запуска новой версии хаб и плеер будут недоступны.</p>
+<p>Обновятся хаб и установленные модули. Перед заменой сохраняется копия кода и образ для отката. Файлы, базы и настройки находятся в отдельном хранилище и не копируются. Во время запуска новой версии хаб и плеер будут недоступны.</p>
 <label class="hub-update-consent"><input id="hubUpdateConsent" type="checkbox" required>Подтверждаю установку выбранного архива из Дедала</label>
 <div class="hub-update-actions"><button id="hubUpdateSubmit" type="submit" disabled>Установить обновление</button><button id="hubUpdateRefresh" type="button">Обновить список</button></div></form>
 <section class="hub-update-journal" aria-labelledby="hubUpdateLogTitle"><h3 id="hubUpdateLogTitle">Журнал обновлений</h3><p id="hubUpdateLogHint" class="muted">Загрузка журнала…</p><ol id="hubUpdateLog" aria-label="Этапы и ошибки обновления"></ol></section>
-<section id="hubRollbackSection" hidden><h3>Вернуть предыдущую версию</h3><p id="hubRollbackInfo"></p><p>Вернутся также базы, настройки и файлы на момент копии. Текущее состояние сохранится отдельно на сервере. Во время возврата хаб будет недоступен.</p><label class="hub-update-consent"><input id="hubRollbackConsent" type="checkbox">Подтверждаю возврат версии и данных из резервной копии</label><button id="hubRollbackSubmit" type="button" disabled>Вернуть предыдущую версию</button></section>
+<section id="hubRollbackSection" hidden><h3>Вернуть предыдущую версию</h3><p id="hubRollbackInfo"></p><p>Вернётся только код хаба и модулей. Загруженные файлы, базы и настройки останутся текущими. Копия кода не заменяет резервное копирование данных. Во время возврата хаб будет недоступен.</p><label class="hub-update-consent"><input id="hubRollbackConsent" type="checkbox">Подтверждаю возврат кода из резервной копии</label><button id="hubRollbackSubmit" type="button" disabled>Вернуть предыдущую версию</button></section>
 <p class="muted">Загружай только доверенные выпуски: архив содержит исполняемый код. Совпадение названия не подтверждает автора архива. ОС, установщик и удалённые VPN-ноды обновляются отдельно через меню сервера.</p>
 <details><summary>Удаление и восстановление</summary><p>В установщике: «Хаб и модули → Удалить хаб и модули · сохранить данные». Файлы, базы и настройки останутся на сервере. Для восстановления распакуй новый полный выпуск и выбери «Восстановить хаб и модули из сохранённых данных».</p><p>Сохранение на том же диске не заменяет внешнюю резервную копию.</p></details></section>`;

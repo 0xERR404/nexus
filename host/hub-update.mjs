@@ -1,12 +1,28 @@
+import {hubPath} from './common.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {HUB,STATE,HOST,NODE,atomic,json,exec,query,lock,sleep,direct} from './common.mjs';
-import {UPDATE_CONTROL,inside,regularTree,savedModules,moduleIDs} from './hub-lifecycle.mjs';
+import {UPDATE_CONTROL,inside,regularTree,savedModules,moduleIDs,systemTree} from './hub-lifecycle.mjs';
 import {updateRequest,rollbackRequest,selectUpdate,versionParts} from '../02-hub/src/hub-update.mjs';
 import {validateZip} from '../02-hub/src/archive.mjs';
 const active=['preparing','building','backup','installing','checking','rolling-back'];
-const phaseText={preparing:'Проверка архива',building:'Сборка новой версии',backup:'Остановка хаба и резервное копирование',installing:'Копия проверена. Установка новой версии',checking:'Проверка устойчивого запуска хаба и модулей',completed:'Обновление установлено. Резервная копия сохранена',failed:'Операция не выполнена','rolling-back':'Возврат предыдущей версии и данных','rolled-back':'Предыдущая версия и данные восстановлены','recovery-required':'Автоматическое восстановление не завершено. Нужна проверка на сервере'};
+const updateSteps=['preparing','building','backup','installing','checking'];
+export function updateTiming(previous,next,now=Date.now()){
+  let timing=previous.timing;
+  const baseline=previous.baseline;
+  if(next.requestId!==previous.requestId||!timing||active.includes(next.phase)&&!active.includes(previous.phase)){
+    timing=active.includes(next.phase)?{started:now,phaseStarted:now,durations:{}}:null;
+  }else if(previous.phase!==next.phase){
+    timing={...timing,phaseStarted:now,durations:{...timing.durations}};
+    if(active.includes(previous.phase))timing.durations[previous.phase]=Math.max(0,now-previous.timing.phaseStarted);
+    if(!active.includes(next.phase))timing.finished=now;
+  }
+  // Learn only from a complete successful update; failures and rollbacks are not comparable.
+  const learned=next.phase==='completed'&&previous.phase==='checking'&&updateSteps.every(p=>Number.isFinite(timing?.durations[p]))?{...timing.durations}:baseline;
+  return {timing,baseline:learned};
+}
+const phaseText={preparing:'Проверка архива',building:'Сборка новой версии',backup:'Остановка хаба и резервное копирование',installing:'Копия проверена. Установка новой версии',checking:'Проверка устойчивого запуска хаба и модулей',completed:'Обновление установлено. Резервная копия сохранена',failed:'Операция не выполнена','rolling-back':'Возврат предыдущей версии кода','rolled-back':'Предыдущий код восстановлен; пользовательские данные сохранены','recovery-required':'Автоматическое восстановление не завершено. Нужна проверка на сервере'};
 export function publicFailure(error,phase){
   // Never publish command output, paths, uploaded names, credentials or raw exception messages.
   const codes={ENOSPC:'Недостаточно места на диске',EACCES:'Недостаточно прав на файлы',EPERM:'Операция запрещена системой',ENOENT:'Отсутствует необходимый файл или программа',ECANCELLED:'Операция прервана или превышено время ожидания',EBACKUP:'Резервная копия не прошла сверку',EHEALTH:'Хаб или включённые модули не прошли проверку запуска'};
@@ -31,6 +47,31 @@ export async function treeManifest(root){
 }
 export async function verifyBackup(root,expected){
   if(JSON.stringify(await treeManifest(root))!==JSON.stringify(expected))throw Object.assign(Error('Backup verification failed'),{code:'EBACKUP'});
+}
+export async function pruneSystemBackups({hub=HUB,control=UPDATE_CONTROL,keep,run=exec}={}){
+  const root=path.join(control,'private'),items=[];
+  for(const id of fs.readdirSync(root)){
+    if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id))continue;
+    const job=inside(root,id);if(!fs.lstatSync(job).isDirectory()||fs.lstatSync(job).isSymbolicLink())continue;
+    const record=json(path.join(job,'system-backup.json'));
+    if(record?.scope==='system'&&record.requestId===id&&Number.isFinite(record.backupCreated)&&record.oldTag==='nexus404-shell:rollback-'+id)items.push({id,job,record});
+  }
+  items.sort((a,b)=>b.record.backupCreated-a.record.backupCreated);
+  if(!items.some(item=>item.id===keep))return;
+  const protectedIDs=new Set([keep,...items.filter(i=>i.id!==keep).slice(0,1).map(i=>i.id)]);
+  for(const item of items){
+    if(protectedIDs.has(item.id))continue;
+    // Only our new code-only snapshots are eligible. Legacy full backups are never inferred disposable.
+    regularTree(item.job);
+    const failed=hub+'.failed-'+item.id;
+    for(const dir of [path.join(item.job,'backup'),...(fs.existsSync(failed)?[failed]:[])]){
+      for(const name of ['data','config'])if(fs.existsSync(path.join(dir,name)))throw Error('Очистка пропущена: копия содержит данные');
+      regularTree(dir);
+    }
+    await run('docker',['image','rm',item.record.oldTag]);
+    fs.rmSync(item.job,{recursive:true});
+    if(fs.existsSync(failed))fs.rmSync(failed,{recursive:true});
+  }
 }
 export function updateEvents(previous,next){
   const events=Array.isArray(previous.events)?previous.events.slice(-40):[];
@@ -70,8 +111,8 @@ export async function copyRelease(source,target,expected){
 }
 export function checkHubRelease(root,release){
   const project=json(path.join(root,'package.json')),hub=json(path.join(root,'02-hub/package.json'));
-  if(project?.name!=='nexus404-project'||hub?.name!=='nexus404-hub'||project.hubUpdateSchema!==1||project.version!==hub.version)
-    throw Error('Нужен полный совместимый выпуск NEXUS404 (hubUpdateSchema: 1), файлы должны лежать в корне ZIP');
+  if(project?.name!=='nexus404-project'||hub?.name!=='nexus404-hub'||project.hubUpdateSchema!==4||project.hubDataSchema!==1||hub.hubDataSchema!==1||project.version!==hub.version)
+    throw Error('Нужен полный совместимый выпуск NEXUS404 (hubUpdateSchema: 4, hubDataSchema: 1), файлы должны лежать в корне ZIP');
   if(versionParts(project.version).join('.')!==versionParts(release.version).join('.'))throw Error('Версия внутри архива не совпадает с версией в Дедале');
   for(const name of ['menu.sh','bootstrap.mjs','02-hub/Dockerfile','02-hub/package-lock.json','02-hub/src/server.mjs','02-hub/src/hub-update.mjs']){
     if(!fs.statSync(inside(root,name)).isFile())throw Error('Неполный выпуск NEXUS404');
@@ -90,13 +131,13 @@ export async function applyHubRelease(request,{hub=HUB,state=STATE,control=UPDAT
   fs.mkdirSync(job,{mode:0o700});
   const log=path.join(job,'update.log');
   const command=async(name,args)=>{try{return await run(name,args,{log,timeout:3600000});}catch(error){error.updateCommand=name;const code=/^\w+: код (\d+)$/.exec(error.message);if(code)error.exitCode=Number(code[1]);throw error;}};
-  let journal={job,requestId:request.id,phase:'preparing',version:request.version,expectedVersion:request.expectedVersion};
+  let journal={scope:'system',dataSchema:1,job,requestId:request.id,phase:'preparing',version:request.version,expectedVersion:request.expectedVersion};
   const mark=(phase,extra={})=>{journal={...journal,...extra,phase};report(journal);};
   const current=inspect('docker',compose('exec','-T','hub','node','-p',"require('/app/package.json').version"));
   if(!current.ok||current.text!==request.expectedVersion)throw Error('Установленная версия изменилась или хаб не запущен');
-  regularTree(hub);
-  const release=selectUpdate(path.join(hub,'data'),request);
-  await copyRelease(path.join(hub,'data/projects/releases',request.release),path.join(job,'release.zip'),release);
+  systemTree(hub);
+  const release=selectUpdate(hubPath(hub,'data'),request);
+  await copyRelease(path.join(hubPath(hub,'data'),'projects/releases',request.release),path.join(job,'release.zip'),release);
   await validateZip(path.join(job,'release.zip'),{extractTo:path.join(job,'source')});
   const version=checkHubRelease(path.join(job,'source'),release),manifests=savedModules(hub);
   const staged=path.join(job,'stage');fs.mkdirSync(staged);
@@ -115,15 +156,15 @@ export async function applyHubRelease(request,{hub=HUB,state=STATE,control=UPDAT
   await command('docker',['tag',image.text,oldTag]);
   mark('building',{oldTag,newTag,version});
   await command('docker',['build','--pull','-t',newTag,path.join(job,'source/02-hub')]);
-  const required=regularTree(hub),disk=fs.statfsSync(job),hubDisk=fs.statfsSync(hub),sameDisk=fs.statSync(hub).dev===fs.statSync(job).dev;
+  const required=systemTree(hub),disk=fs.statfsSync(job),hubDisk=fs.statfsSync(hub),sameDisk=fs.statSync(hub).dev===fs.statSync(job).dev;
   // Reserve room for both the snapshot and a rollback that keeps the failed run intact.
   if(Number(disk.bavail)*Number(disk.bsize)<required*(sameDisk?2:1)+512*1024*1024||Number(hubDisk.bavail)*Number(hubDisk.bsize)<required+512*1024*1024)
     throw Error('Недостаточно места для резервной копии и безопасного возврата данных');
-  selectUpdate(path.join(hub,'data'),request);
+  selectUpdate(hubPath(hub,'data'),request);
   mark('backup',{modules:Object.entries(manifests).filter(([,m])=>m.enabled).map(([id])=>id)});
   try{
     await command('docker',compose('stop','-t','30','hub'));
-    // The application is stopped: SQLite and uploaded files form one consistent snapshot.
+    // Persistent data/config are outside hub; only deployment code is snapshotted.
     const expected=await treeManifest(hub);
     await (snapshot??((from,to)=>command('cp',['-a','--reflink=auto','--',from,to])))(hub,path.join(job,'backup'));
     await command('sync',['-f',path.join(job,'backup')]);
@@ -131,6 +172,7 @@ export async function applyHubRelease(request,{hub=HUB,state=STATE,control=UPDAT
     atomic(path.join(job,'backup-manifest.json'),JSON.stringify(expected));
     await command('sync',['-f',job]);
     mark('installing',{backupReady:true,backupCreated:Date.now()});
+    atomic(path.join(job,'system-backup.json'),JSON.stringify({scope:'system',requestId:request.id,backupCreated:journal.backupCreated,oldTag}));
     await command('cp',['-a','--',path.join(staged,'modules'),path.join(hub,'.update-next-modules')]);
     if(fs.existsSync(path.join(hub,'modules')))fs.renameSync(path.join(hub,'modules'),path.join(hub,'.update-old-modules'));
     fs.renameSync(path.join(hub,'.update-next-modules'),path.join(hub,'modules'));
@@ -143,7 +185,7 @@ export async function applyHubRelease(request,{hub=HUB,state=STATE,control=UPDAT
     const cause=publicFailure(error,journal.phase);fs.appendFileSync(log,'\n'+String(error.stack||error)+'\n',{mode:0o600});
     if(journal.backupReady){
       mark('rolling-back',{error:cause});
-      try{await recoverHubUpdate(journal,{hub,run:command,inspect});mark('rolled-back',{error:'Новая версия не запустилась. Код и данные возвращены к состоянию перед обновлением'});}
+      try{await recoverHubUpdate(journal,{hub,run:command,inspect});mark('rolled-back',{error:'Новая версия не запустилась. Возвращён прежний код; пользовательские данные не заменялись'});}
       catch(recoveryError){fs.appendFileSync(log,'\n'+String(recoveryError.stack||recoveryError)+'\n');mark('recovery-required',{error:publicFailure(recoveryError,'rolling-back')});}
     }else{
       try{await command('docker',compose('up','-d','--no-build','hub'));await waitUpdatedHub(hub,request.expectedVersion,journal.modules,inspect);mark('failed',{error:cause+' Прежний хаб запущен.'});}
@@ -156,6 +198,7 @@ export async function applyHubRelease(request,{hub=HUB,state=STATE,control=UPDAT
     for(const name of ['source','stage','release.zip'])fs.rmSync(inside(job,name),{recursive:true,force:true});
     fs.rmSync(inside(hub,'.update-old-modules'),{recursive:true,force:true});
     await command('docker',['image','rm',newTag]);
+    await pruneSystemBackups({hub,control,keep:request.id,run:command});
   }catch{ /* A cleanup error must never turn a committed installation into a failed update. */ }
   return journal;
 }
@@ -174,15 +217,19 @@ export async function recoverHubUpdate(journal,{hub=HUB,run=exec,inspect=query}=
   const {composeArgs}=await import('./platform.mjs');
   const compose=(...args)=>composeArgs('nexus404-shell',hub,args);
   if(!journal.backupReady)throw Error('Нет полной резервной копии');
+  if(journal.scope!=='system'||journal.dataSchema!==1)throw Error('Старая полная копия не поддерживает возврат только кода. Данные не изменены');
+  systemTree(hub,{allowMissing:true});
   const backup=path.join(journal.job,'backup'),required=regularTree(backup),manifest=path.join(journal.job,'backup-manifest.json');
-  if(fs.existsSync(manifest))await verifyBackup(backup,JSON.parse(fs.readFileSync(manifest,'utf8')));
+  for(const name of ['data','config'])if(fs.existsSync(path.join(backup,name)))throw Error('В системной копии обнаружены пользовательские данные');
+  await verifyBackup(backup,JSON.parse(fs.readFileSync(manifest,'utf8')));
   const disk=fs.statfsSync(path.dirname(hub));
   if(Number(disk.bavail)*Number(disk.bsize)<required+512*1024*1024)throw Object.assign(Error('Недостаточно места для возврата'),{code:'ENOSPC'});
   if(!inspect('docker',['image','inspect',journal.oldTag]).ok)throw Error('Предыдущий образ недоступен');
-  await run('docker',compose('stop','-t','30','hub'));
-  // Preserve the failed run as well, including anything written during its health check.
+  const stopRoot=fs.existsSync(path.join(hub,'docker-compose.yml'))?hub:backup;
+  await run('docker',composeArgs('nexus404-shell',stopRoot,['stop','-t','30','hub']));
+  // Preserve failed code only. External files, databases and settings stay in place.
   const failed=hub+'.failed-'+journal.requestId;
-  if(!fs.existsSync(failed))fs.renameSync(hub,failed);
+  if(!fs.existsSync(failed)&&fs.existsSync(hub))fs.renameSync(hub,failed);
   else if(fs.existsSync(hub)){
     const partial=failed+'-partial-'+Date.now();fs.renameSync(hub,partial);
   }
@@ -199,11 +246,11 @@ export async function processHubUpdate({hub=HUB,state=STATE,control=UPDATE_CONTR
     let status=json(privateFile,{phase:'idle'});
     const publish=()=>{
       const saved=json(path.join(control,'private/last-backup.json'));
-      const backup=saved?.backupReady&&fs.existsSync(path.join(saved.job,'backup-manifest.json'))?{id:saved.requestId,version:saved.expectedVersion,created:saved.backupCreated}:null;
-      atomic(path.join(control,'status/status.json'),JSON.stringify({protocol:2,phase:status.phase,version:status.version,requestId:status.requestId,error:status.error,events:status.events??[],backup,updated:status.updated,heartbeat:Date.now()}),0o644);
+      const backup=saved?.scope==='system'&&saved?.dataSchema===1&&saved?.backupReady&&fs.existsSync(path.join(saved.job,'backup-manifest.json'))?{id:saved.requestId,version:saved.expectedVersion,created:saved.backupCreated,scope:'system'}:null;
+      atomic(path.join(control,'status/status.json'),JSON.stringify({protocol:2,phase:status.phase,version:status.version,requestId:status.requestId,error:status.error,events:status.events??[],backup,timing:status.timing,baseline:status.baseline,updated:status.updated,heartbeat:Date.now()}),0o644);
     };
     const report=value=>{
-      const next={...status,...value};next.events=updateEvents(status,next);status=next;atomic(privateFile,JSON.stringify(status));
+      const next={...status,...value};Object.assign(next,updateTiming(status,next));next.events=updateEvents(status,next);status=next;atomic(privateFile,JSON.stringify(status));
       if(status.phase==='installing'&&status.backupReady)atomic(path.join(control,'private/last-backup.json'),JSON.stringify(status));
       publish();
     };
@@ -229,7 +276,7 @@ export async function processHubUpdate({hub=HUB,state=STATE,control=UPDATE_CONTR
       if(request.action==='rollback'){
         rollbackRequest(request);
         const saved=json(path.join(control,'private/last-backup.json'));
-        if(saved?.requestId!==request.backupId||!saved.backupReady||!fs.existsSync(path.join(saved.job,'backup-manifest.json')))throw Error('Проверенная копия недоступна');
+        if(saved?.scope!=='system'||saved?.dataSchema!==1||saved?.requestId!==request.backupId||!saved.backupReady||!fs.existsSync(path.join(saved.job,'backup-manifest.json')))throw Error('Проверенная копия недоступна');
         const {composeArgs}=await import('./platform.mjs');
         const current=inspect('docker',composeArgs('nexus404-shell',hub,['exec','-T','hub','node','-p',"require('/app/package.json').version"]));
         if(!current.ok||current.text!==request.expectedVersion||current.text===saved.expectedVersion)throw Error('Установленная версия изменилась');
@@ -240,7 +287,7 @@ export async function processHubUpdate({hub=HUB,state=STATE,control=UPDATE_CONTR
       }
       updateRequest(request);
       // Each transaction has its own private journal; never inherit rollback flags from an older release.
-      const previous=status;status={events:previous.events};report({phase:'preparing',requestId:request.id});
+      const previous=status;status={events:previous.events,baseline:previous.baseline};report({phase:'preparing',requestId:request.id});
       await apply(request,{hub,state,control,report});
     }catch(error){fs.appendFileSync(path.join(control,'private/worker.log'),String(error.stack||error)+'\n',{mode:0o600});report({phase:'failed',requestId:typeof request.id==='string'?request.id.slice(0,36):null,error:publicFailure(error,status.phase)});}
   }finally{clearInterval(heartbeat);await unlock();}
@@ -248,14 +295,15 @@ export async function processHubUpdate({hub=HUB,state=STATE,control=UPDATE_CONTR
 export async function recoverHubFromBackup(ui,{hub=HUB,state=STATE,control=UPDATE_CONTROL,recover=recoverHubUpdate}={}){
   const file=path.join(control,'private/state.json'),current=json(file),journal=current?.backupReady?current:json(path.join(control,'private/last-backup.json'));
   if(!journal?.backupReady)throw Error('Полной резервной копии обновления нет. Данные остаются в data; используй восстановление из сохранённых данных');
-  ui.line('Будет возвращено состояние хаба и данных перед обновлением до '+journal.version+'.');
-  ui.line('Копия: '+path.join(journal.job,'backup')+'. Текущее состояние также останется рядом с каталогом хаба.');
+  if(journal.scope!=='system'||journal.dataSchema!==1)throw Error('Старая полная копия оставлена на диске. Возврат из неё не выполняется, чтобы не заменить текущие данные');
+  ui.line('Будет возвращён код хаба до обновления '+journal.version+'. Файлы, базы и настройки останутся текущими.');
+  ui.line('Копия: '+path.join(journal.job,'backup')+'. Текущий код также останется рядом с каталогом хаба.');
   if((await ui.prompt('Для возврата введи NEXUS404; Enter — отмена')).trim()!=='NEXUS404')return;
-  let progress={...journal,phase:current?.phase??journal.phase,requestId:current?.requestId??journal.requestId,events:current?.events??journal.events};
+  let progress={...journal,timing:current?.timing,baseline:current?.baseline,phase:current?.phase??journal.phase,requestId:current?.requestId??journal.requestId,events:current?.events??journal.events};
   const report=(phase,error=null)=>{
-    const next={...progress,phase,error,updated:Date.now()};next.events=updateEvents(progress,next);progress=next;
+    const next={...progress,phase,error,updated:Date.now()};Object.assign(next,updateTiming(progress,next));next.events=updateEvents(progress,next);progress=next;
     atomic(file,JSON.stringify(progress));
-    atomic(path.join(control,'status/status.json'),JSON.stringify({protocol:2,phase,requestId:progress.requestId,error,events:progress.events,heartbeat:Date.now()}),0o644);
+    atomic(path.join(control,'status/status.json'),JSON.stringify({protocol:2,phase,requestId:progress.requestId,error,events:progress.events,timing:progress.timing,baseline:progress.baseline,heartbeat:Date.now()}),0o644);
   };
   report('rolling-back');
   fs.rmSync(path.join(control,'requests/request.json'),{force:true});
@@ -264,6 +312,6 @@ export async function recoverHubFromBackup(ui,{hub=HUB,state=STATE,control=UPDAT
   fs.rmSync(path.join(control,'requests/request.json'),{force:true});
   report('rolled-back');
   await ui.run('Служба обновления хаба','systemctl',['enable','--now','nexus404-hub-update.timer']);
-  ui.line('[✓] Предыдущая версия и данные восстановлены');
+  ui.line('[✓] Предыдущий код восстановлен; пользовательские данные сохранены');
 }
 if(direct(import.meta.url))processHubUpdate().catch(()=>{console.error('Hub update worker failed; inspect private update log');process.exitCode=1;});

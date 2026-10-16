@@ -3,7 +3,7 @@ import {stabilityMode,applyTCPStability} from './vpn-transport.mjs';
 import {isIP} from 'node:net';
 import {createHash} from 'node:crypto';
 export const CORE_VERSION='26.9.30';
-export const NODE_VERSION='0.35.262';
+export const NODE_VERSION='0.35.266';
 export const PROFILES={
   'vless-raw':'VLESS · RAW/TCP · Reality',
   'vless-xhttp':'VLESS · XHTTP · Reality',

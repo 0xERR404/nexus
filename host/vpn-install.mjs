@@ -1,3 +1,4 @@
+import {hubPath} from './common.mjs';
 import fs from 'node:fs';
 import {prepareTCP} from './vpn-network.mjs';
 import {hoppingPlan,hopRanges} from '../02-hub/src/vpn-hysteria.mjs';
@@ -46,11 +47,11 @@ ReadWritePaths=${VPN_DIR}/private ${VPN_DIR}/status
 WantedBy=multi-user.target
 `;
 export async function installVPNPanel(ui){
-  supported();check(!fs.existsSync(BASE+'/agent-mode'),'Панель нельзя установить на VPS агента');check(fs.existsSync(HUB+'/config/auth.json'),'Сначала установи хаб: Хаб и модули → Установить / настроить хаб');
+  supported();check(!fs.existsSync(BASE+'/agent-mode'),'Панель нельзя установить на VPS агента');check(fs.existsSync(hubPath(HUB,'config') + '/auth.json'),'Сначала установи хаб: Хаб и модули → Установить / настроить хаб');
   await installModule(ui,'vpn');ui.line('[✓] Арго установлен в хаб. VPN-ядро здесь не устанавливается.');
 }
 export async function installVPNNode(ui,{update=false}={}){
-  supported();check(!fs.existsSync(HUB+'/config/auth.json'),'VPN-нода устанавливается только на отдельном VPS');
+  supported();check(!fs.existsSync(hubPath(HUB,'config') + '/auth.json'),'VPN-нода устанавливается только на отдельном VPS');
   if(update)check(fs.existsSync(BASE+'/vpn-mode'),'Сначала установи VPN-ноду через --vpn-node');
   if(!update)await installAgent(ui);
   ui.section('VPN-нода · ядро и TLS');

@@ -1,4 +1,5 @@
 import {removeHub, restoreHub} from './host/hub-lifecycle.mjs';
+import {hubPath} from './host/common.mjs';
 import {recoverHubFromBackup} from './host/hub-update.mjs';
 import {installRemote} from './host/remote-install.mjs';
 import {diagnoseVPN} from './host/vpn-diagnose.mjs';
@@ -141,7 +142,7 @@ async function applyUpdate(ui) {
   installHost();
   await migrate(ui);
   if (fs.existsSync(CADDY + '/upstream')) await installCaddy(ui, true);
-  if (fs.existsSync(HUB + '/config/auth.json')) await installHub(ui, true, false);
+  if (fs.existsSync(hubPath(HUB,'config') + '/auth.json')) await installHub(ui, true, false);
   for (const {id} of modules)
     if (fs.existsSync(STATE + '/' + id + '-installed')) await installModule(ui, id, false);
   ui.line('[*] Базовая настройка запускается отдельно: Подготовка сервера → Базовая настройка.');
@@ -191,7 +192,7 @@ export function installerSections(role = 'new') {
 function serverRole() {
   if (fs.existsSync('/var/lib/nexus404-base/vpn-mode')) return 'vpn';
   if (fs.existsSync('/var/lib/nexus404-base/agent-mode')) return 'agent';
-  if (fs.existsSync(HUB + '/config/auth.json')) return 'hub';
+  if (fs.existsSync(hubPath(HUB,'config') + '/auth.json')) return 'hub';
   return 'new';
 }
 async function menuAction(id, ui) {

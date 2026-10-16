@@ -5,3 +5,14 @@
 #hubUpdateLog time{color:var(--muted);font-variant-numeric:tabular-nums}
 #hubUpdateLog [data-level=error]{border-left:3px solid #f0a49b}
 @media(max-width:600px){#hubUpdateLog li{grid-template-columns:minmax(0,1fr);gap:3px}}
+.hub-update-progress{margin:18px 0 24px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--control-bg)}
+.hub-update-progress[hidden]{display:none}
+.hub-update-progress-heading{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px}
+#hubUpdateElapsed{font-variant-numeric:tabular-nums;white-space:nowrap}
+.hub-update-meter{display:flex;gap:5px;margin:14px 0}
+.hub-update-meter span{flex:1;height:5px;border-radius:4px;background:var(--line)}
+.hub-update-meter [data-state=done]{background:var(--accent)}
+.hub-update-meter [data-state=active]{background:var(--accent);opacity:.45}
+.hub-update-progress p{margin:8px 0 0}
+#hubUpdateRemaining{font-size:14px;font-weight:600}
+#hubUpdateProgressHint{font-size:12px}

@@ -1,3 +1,5 @@
+import {initializeBackupBrowser} from './backup-browser.mjs';
+import {hubPath} from './common.mjs';
 import fs from 'node:fs';
 import {isIP} from 'node:net';
 import {
@@ -19,7 +21,9 @@ import {
 } from './common.mjs';
 import {passwordHash, validateAuth} from '../02-hub/src/auth.mjs';
 import {validateManifest, currentManifest} from '../02-hub/src/modules.mjs';
+import {initializeDataBackups} from './data-backup.mjs';
 import {initializeHubUpdates} from './hub-update.mjs';
+import {migrateHubStorage} from './hub-lifecycle.mjs';
 import {newerVersion} from '../02-hub/src/hub-update.mjs';
 import {initializeControl} from './maintenance-control.mjs';
 import {migrate} from './maintenance.mjs';
@@ -304,12 +308,12 @@ async function password(ui) {
 }
 export async function installHub(ui, update = false, maintenance = true) {
   supported();
-  const preserved=json(HUB+'/config/preserved-installation.json');
+  const preserved=json(hubPath(HUB,'config') + '/preserved-installation.json');
   if(preserved?.version && newerVersion(preserved.version,json(ROOT+'/02-hub/package.json').version))
     throw Error('Сохранённые данные относятся к более новому выпуску. Используй ту же или более новую версию проекта');
   const domain = read(CADDY + '/domain');
   if (!validDomain(domain)) throw new Error('Сначала настрой Caddy: Подготовка сервера → Docker и Caddy');
-  if (update && !fs.existsSync(HUB + '/config/auth.json')) throw new Error('Хаб ещё не установлен');
+  if (update && !fs.existsSync(hubPath(HUB,'config') + '/auth.json')) throw new Error('Хаб ещё не установлен');
   if (fs.existsSync(HUB + '/modules/trophies/steam-auth.mjs')) {
     ui.line(
       '[!] Старая Ника с QR-входом остановлена до замены модуля. При ошибке сборки хаб останется остановленным.'
@@ -323,9 +327,14 @@ export async function installHub(ui, update = false, maintenance = true) {
   installHost();
   initializeControl();
   initializeHubUpdates();
+  initializeDataBackups();
+  initializeBackupBrowser();
   await ui.run('Служба настроек обслуживания', 'systemctl', ['daemon-reload']);
   await ui.run('Настройки обслуживания из хаба', 'systemctl', ['enable', '--now', 'nexus404-maintenance-control.timer']);
   await ui.run('Служба обновления хаба', 'systemctl', ['enable', '--now', 'nexus404-hub-update.timer']);
+  await ui.run('Доступ к системным копиям', 'systemctl', ['enable', '--now', 'nexus404-backup-browser.service']);
+  await ui.run('Обновление службы системных копий', 'systemctl', ['restart', 'nexus404-backup-browser.service']);
+  await ui.run('Служба резервных копий данных', 'systemctl', ['enable', '--now', 'nexus404-data-backup.timer']);
   ui.section('01 / 04 · Образ хаба');
   await ui.run('Сборка хаба', 'docker', [
     'build',
@@ -334,15 +343,17 @@ export async function installHub(ui, update = false, maintenance = true) {
     'nexus404-shell:local',
     ROOT + '/02-hub'
   ]);
-  for (const name of ['config', 'data', 'modules'])
-    fs.mkdirSync(HUB + '/' + name, {recursive: true});
-  fs.chmodSync(HUB + '/config', 0o750);
-  fs.chownSync(HUB + '/config', 0, 1000);
-  fs.chmodSync(HUB + '/data', 0o700);
-  fs.chownSync(HUB + '/data', 1000, 1000);
+  await migrateHubStorage(ui);
+  for (const name of ['config', 'data'])
+    fs.mkdirSync(hubPath(HUB,name), {recursive: true});
+  fs.mkdirSync(HUB + '/modules', {recursive: true});
+  fs.chmodSync(hubPath(HUB,'config'), 0o750);
+  fs.chownSync(hubPath(HUB,'config'), 0, 1000);
+  fs.chmodSync(hubPath(HUB,'data'), 0o700);
+  fs.chownSync(hubPath(HUB,'data'), 1000, 1000);
   fs.chmodSync(HUB + '/modules', 0o755);
   ui.section('02 / 04 · Вход');
-  const file = HUB + '/config/auth.json';
+  const file = hubPath(HUB,'config') + '/auth.json';
   let config = json(file);
   if (!config || process.env.PRESET_HUB_PASSWORD) {
     const username = await ui.ask(
@@ -378,7 +389,7 @@ export async function updateHubOrigin(
   domain,
   {hub = HUB, state = STATE, write = writeAuth, restart = restartHub} = {}
 ) {
-  const file = hub + '/config/auth.json',
+  const file = hubPath(hub,'config') + '/auth.json',
     config = json(file);
   if (!config || (config.origin === 'https://' + domain && read(state + '/domain') === domain))
     return;
@@ -437,7 +448,7 @@ export function moduleFiles(
     throw new Error('Каталог модуля занят: ' + id);
   const shipped = validateManifest(json(source + '/manifest.json'));
   const manifest = currentManifest(id, {
-    ...(json(target + '/manifest.json') ?? json(hub + '/config/preserved-modules.json', {})[id] ?? shipped),
+    ...(json(target + '/manifest.json') ?? json(hubPath(hub,'config') + '/preserved-modules.json', {})[id] ?? shipped),
     apiVersion: shipped.apiVersion,
     version: shipped.version ?? null
   });
@@ -522,7 +533,7 @@ export function moduleOverride(extra) {
 
 export async function installModule(ui, id, maintenance = true) {
   supported();
-  if (!fs.existsSync(HUB + '/config/auth.json'))
+  if (!fs.existsSync(hubPath(HUB,'config') + '/auth.json'))
     throw new Error('Сначала установи хаб: Хаб и модули → Установить / настроить хаб');
   if (
     ![

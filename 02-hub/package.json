@@ -1,6 +1,6 @@
 {
   "name": "nexus404-hub",
-  "version": "0.35.262",
+  "version": "0.35.266",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,5 +16,6 @@
   },
   "imports": {
     "#hub/*": "./src/*"
-  }
+  },
+  "hubDataSchema": 1
 }

@@ -12,12 +12,17 @@ services:
       MODULES_DIR: /app/modules
       TRUST_PROXY: "1"
       HUB_UPDATE_DIRECTORY: /app/hub-update
+      DATA_BACKUP_DIRECTORY: /app/data-backup
       MAINTENANCE_DIRECTORY: /app/maintenance
     volumes:
-      - ./config/auth.json:/app/config/auth.json:ro
+      - /var/lib/nexus404-data-backup/bridge:/app/data-backup/bridge:ro
+      - /var/lib/nexus404-data-backup/requests:/app/data-backup/requests
+      - /var/lib/nexus404-data-backup/status:/app/data-backup/status:ro
+      - /var/lib/nexus404-data-backup/files:/app/data-backup/files:ro
+      - /var/lib/nexus404-hub/config/auth.json:/app/config/auth.json:ro
       - /var/lib/nexus404-updates/requests:/app/hub-update/requests
       - /var/lib/nexus404-updates/status:/app/hub-update/status:ro
-      - ./data:/app/data
+      - /var/lib/nexus404-hub/data:/app/data
       - ./modules:/app/modules:ro
       - /var/lib/nexus404-control/requests:/app/maintenance/requests
       - /var/lib/nexus404-control/status:/app/maintenance/status:ro

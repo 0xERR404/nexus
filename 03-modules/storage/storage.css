@@ -279,3 +279,20 @@
   margin-top: 8px;
   background: transparent;
 }
+
+.storage-app [hidden]{display:none!important}
+#storageFiles.storage-backups{grid-template-columns:minmax(0,1fr);max-width:1100px}
+.storage-backup-intro p{margin:0 0 10px;line-height:1.6;color:var(--muted);font-size:var(--ui-small-size)}
+.storage-backup-intro{grid-column:1/-1;margin-bottom:8px}
+.storage-backup-row .storage-actions form{margin:0}
+.storage-backup-row .storage-actions button{white-space:normal}
+.storage-backup-row button:disabled{opacity:.5;cursor:default}
+
+.storage-backup-row{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:center}
+.storage-backup-row .storage-file-type{max-width:none;align-self:center}
+.storage-backup-row .storage-actions{border:0;padding:0;margin:0}
+@media(max-width:600px){.storage-backup-row{grid-template-columns:56px minmax(0,1fr);gap:8px}.storage-backup-row .storage-file-type{align-self:start}.storage-backup-row .storage-actions{grid-column:2}.storage-backup-intro h3{margin-top:14px}}
+
+.storage-backup-row .storage-file-type{white-space:nowrap}
+.storage-backup-view .storage-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto}
+.storage-backup-view .storage-toolbar input[type=search]{width:100%;min-width:0}
