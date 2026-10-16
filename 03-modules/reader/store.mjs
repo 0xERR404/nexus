@@ -8,6 +8,7 @@ import {randomUUID, createHash} from 'node:crypto';
 import {Worker} from 'node:worker_threads';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {NBK_LIMIT, writeNBK, verifyNBK, nbkPath, readChapter, readAsset, syncDirectory} from './nbk.mjs';
 const exec = promisify(execFile);
 const clean = (s, max) => {
   if (typeof s !== 'string' || s.length > max || /[\x00-\x1f]/.test(s))
@@ -45,6 +46,7 @@ export class ReaderStore {
       await exec('ffmpeg',['-v','error','-nostdin','-threads','1','-protocol_whitelist','file,pipe','-i',input,'-frames:v','1','-vf','scale=600:900:force_original_aspect_ratio=decrease','-threads','1','-c:v','libwebp',output],{timeout:15000,maxBuffer:65536,windowsHide:true});});
     this.directory = directory;
     this.busy = false;
+    this.migrationErrors = new Map();
   }
   load() {
     if (this.data) return;
@@ -64,6 +66,101 @@ export class ReaderStore {
         settings: {size: 20, line: 1.7, font: 'serif', theme: 'hub', width: 'normal'}
       };
     }
+    void this.migrate().catch(()=>{});
+  }
+  async migrate() {
+    if(this.migrationTask)return this.migrationTask;
+    this.load();
+    if(this.migrationTask)return this.migrationTask;
+    this.migrationTask=(async()=>{
+      const ids=this.data.books.map(b=>b.id);
+      for(const id of ids) {
+        await new Promise(resolve=>setImmediate(resolve));
+        while(this.busy)await new Promise(resolve=>setTimeout(resolve,25));
+        try {this.migrateBook(id);this.migrationErrors.delete(id);} catch {
+          this.migrationErrors.set(id,'Не удалось перевести книгу в NBK. Исходные файлы сохранены.');
+        }
+      }
+    })();
+    return this.migrationTask;
+  }
+  contentSource(b, coverData) {
+    const directory=path.join(this.directory,b.id);
+    const chapters=b.chapters.map((c,i)=>b.nbk?readChapter(directory,b.nbk,i):JSON.parse(fs.readFileSync(path.join(directory,i+'.json'),'utf8')));
+    let start=0;
+    chapters.forEach((c,i)=>{
+      const size=c.blocks.reduce((sum,v)=>sum+weight(v),0),index=b.chapters[i];
+      if(c.blocks.length!==index.blocks||index.start!==start||index.weight!==size)throw fail('Индекс книги повреждён.',503);
+      start+=size;
+    });
+    if(start!==b.total)throw fail('Индекс книги повреждён.',503);
+    let cover=b.nbk?.cover??null;
+    if(!b.nbk && b.cover && !coverData) {
+      const file=b.coverFile||'cover.webp';
+      if(!/^cover(?:-[a-f0-9-]{36})?\.webp$/.test(file))throw fail('Обложка повреждена.',503);
+      coverData=fs.readFileSync(path.join(directory,file));
+    }
+    if(coverData)cover=createHash('sha256').update(coverData).digest('hex');
+    const refs=new Set(chapters.flatMap(c=>c.blocks.filter(v=>v.type==='image').map(v=>v.asset)));
+    function* assets() {
+      for(const [id,type] of Object.entries(b.assets)) {
+        if(!/^[a-f0-9]{64}$/.test(id))throw fail('Иллюстрация повреждена.',503);
+        if(coverData&&id===cover)continue;
+        if(coverData&&id===b.nbk?.cover&&!refs.has(id))continue;
+        const data=b.nbk?readAsset(directory,b.nbk,id).data:fs.readFileSync(path.join(directory,'assets',id));
+        yield {id,type,data};
+      }
+      if(coverData)yield {id:cover,type:imageType(coverData)[0],data:coverData};
+    }
+    return {title:b.title,author:b.author,chapters,assets:assets(),cover};
+  }
+  cleanupLegacy(b) {
+    const directory=path.join(this.directory,b.id);
+    verifyNBK(directory,b.nbk);syncDirectory(this.directory);
+    // Only known files of this UUID are removed, after durable NBK + catalog writes.
+    fs.rmSync(path.join(directory,'original'),{force:true});
+    b.chapters.forEach((_,i)=>fs.rmSync(path.join(directory,i+'.json'),{force:true}));
+    const assetDirectory=path.join(directory,'assets');
+    if(fs.existsSync(assetDirectory)) {
+      for(const name of fs.readdirSync(assetDirectory))if(/^[a-f0-9]{64}$/.test(name))fs.rmSync(path.join(assetDirectory,name),{force:true});
+      if(!fs.readdirSync(assetDirectory).length)fs.rmdirSync(assetDirectory);
+    }
+    syncDirectory(directory);
+  }
+  migrateBook(id) {
+    const b=this.book(id),directory=path.join(this.directory,id);
+    if(b.nbk) {
+      if(fs.existsSync(path.join(directory,'original'))||fs.existsSync(path.join(directory,'0.json'))||fs.existsSync(path.join(directory,'assets')))this.cleanupLegacy(b);
+      return b;
+    }
+    const source=this.contentSource(b),nbk=writeNBK(directory,source);
+    const assets=Object.fromEntries(Object.keys(nbk.assets).map(id=>[id,readAsset(directory,nbk,id).type]));
+    const next={...b,format:'nbk',sourceFormat:b.format,nbk,assets};
+    try {this.commit({...this.data,books:this.data.books.map(v=>v.id===id?next:v)});} catch(e) {
+      fs.rmSync(nbkPath(directory,nbk),{force:true});throw e;
+    }
+    this.cleanupLegacy(next);
+    return next;
+  }
+  commitEdition(current,next,coverData) {
+    if(!current.nbk) {this.commit({...this.data,books:this.data.books.map(b=>b.id===next.id?next:b)});return next;}
+    const directory=path.join(this.directory,next.id),source=this.contentSource(current,coverData);
+    const nbk=writeNBK(directory,{...source,title:next.title,author:next.author});
+    const assets=Object.fromEntries(Object.keys(nbk.assets).map(id=>[id,readAsset(directory,nbk,id).type]));
+    next={...next,nbk,assets};
+    try {this.commit({...this.data,books:this.data.books.map(b=>b.id===next.id?next:b)});}catch(e){fs.rmSync(nbkPath(directory,nbk),{force:true});throw e;}
+    try {syncDirectory(this.directory);fs.rmSync(nbkPath(directory,current.nbk),{force:true});}catch{}
+    return next;
+  }
+  exportFile(id) {
+    const b=this.migrateBook(id);
+    verifyNBK(path.join(this.directory,id),b.nbk);
+    return {file:nbkPath(path.join(this.directory,id),b.nbk),size:b.nbk.bytes,title:b.title};
+  }
+  asset(id,assetId) {
+    const b=this.book(id);
+    if(!/^[a-f0-9]{64}$/.test(assetId)||!Object.hasOwn(b.assets,assetId))throw fail('Иллюстрация не найдена.',404);
+    return b.nbk?readAsset(path.join(this.directory,id),b.nbk,assetId):{type:b.assets[assetId],data:fs.readFileSync(path.join(this.directory,id,'assets',assetId))};
   }
   commit(next) {
     const bytes = JSON.stringify(next);
@@ -92,8 +189,9 @@ export class ReaderStore {
   }
   library() {
     this.load();
-    return this.data.books.map(({chapters, assets, bookmarks, ...b}) => ({
+    return this.data.books.map(({chapters, assets, bookmarks, nbk, ...b}) => ({
       ...b,
+      ...(this.migrationErrors.has(b.id)?{storageWarning:this.migrationErrors.get(b.id)}:{}),
       chapterCount: chapters.length,
       bookmarkCount: bookmarks.length
     }));
@@ -101,11 +199,12 @@ export class ReaderStore {
   async upload(bytes, name, allowed = () => true) {
     this.load();
     if (this.busy) throw fail('Дождись завершения импорта.', 429);
-    if (!bytes.length || bytes.length > 64 * 1024 * 1024) throw fail('Книга — до 64 МБ.', 413);
     name = clean(name, 200);
-    if (!/\.(epub|txt)$/i.test(name)) throw fail('Поддерживаются EPUB и TXT.', 415);
+    const limit=/\.nbk$/i.test(name)?NBK_LIMIT:64*1024*1024;
+    if (!bytes.length || bytes.length > limit) throw fail('Превышен размер книги: EPUB/TXT — 64 МБ, NBK — 192 МБ.', 413);
+    if (!/\.(epub|txt|nbk)$/i.test(name)) throw fail('Поддерживаются EPUB, TXT и NBK.', 415);
     const digest = createHash('sha256').update(bytes).digest('hex'),
-      existing = this.data.books.find((b) => b.digest === digest);
+      existing = this.data.books.find((b) => b.digest === digest || b.nbk?.sha256 === digest);
     if (existing) return existing;
     if (this.data.books.length >= 1000) throw fail('Достигнут лимит 1000 книг.', 507);
     this.busy = true;
@@ -117,8 +216,7 @@ export class ReaderStore {
       const parsed = await parseAsync(bytes, name);
       if (!allowed()) throw fail('Сессия завершена или загрузка отменена.', 401);
       await fsp.mkdir(stage, {mode: 0o700});
-      await fsp.mkdir(path.join(stage, 'assets'), {mode: 0o700});
-      await fsp.writeFile(path.join(stage, 'original'), bytes, {mode: 0o600});
+      const nbk=writeNBK(stage,parsed);
       const chapters = [];
       let total = 0;
       for (let i = 0; i < parsed.chapters.length; i++) {
@@ -126,50 +224,28 @@ export class ReaderStore {
           size = c.blocks.reduce((sum, b) => sum + weight(b), 0);
         chapters.push({title: c.title, blocks: c.blocks.length, start: total, weight: size});
         total += size;
-        await fsp.writeFile(path.join(stage, i + '.json'), JSON.stringify(c), {mode: 0o600});
       }
       const assets = {};
       for (const a of parsed.assets) {
-        await fsp.writeFile(path.join(stage, 'assets', a.id), a.data, {mode: 0o600});
         assets[a.id] = a.type;
       }
       let cover = false;
       if (parsed.cover)
         try {
-          await exec(
-            'ffmpeg',
-            [
-              '-v',
-              'error',
-              '-nostdin',
-              '-threads',
-              '1',
-              '-protocol_whitelist',
-              'file,pipe',
-              '-i',
-              path.join(stage, 'assets', parsed.cover),
-              '-frames:v',
-              '1',
-              '-vf',
-              'scale=300:450:force_original_aspect_ratio=decrease',
-              '-threads',
-              '1',
-              '-c:v',
-              'libwebp',
-              path.join(stage, 'cover.webp')
-            ],
-            {timeout: 10000, maxBuffer: 65536}
-          );
+          await fsp.writeFile(path.join(stage,'.cover-input'),parsed.assets.find(a=>a.id===parsed.cover).data,{mode:0o600});
+          await this.convertCover(path.join(stage,'.cover-input'),path.join(stage,'cover.webp'));
           await fsp.chmod(path.join(stage, 'cover.webp'), 0o600);
           cover = true;
-        } catch {}
+        } catch {} finally {await fsp.rm(path.join(stage,'.cover-input'),{force:true});}
       if (!allowed()) throw fail('Сессия завершена или загрузка отменена.', 401);
       const book = {
         id,
         digest,
         title: parsed.title,
         author: parsed.author,
-        format: parsed.format,
+        format: 'nbk',
+        sourceFormat: parsed.format,
+        nbk,
         cover,
         created: Date.now(),
         total,
@@ -182,6 +258,7 @@ export class ReaderStore {
         readAt: null
       };
       await fsp.rename(stage, target);
+      syncDirectory(this.directory);
       this.commit({...this.data, books: [book, ...this.data.books]});
       committed = true;
       return book;
@@ -207,8 +284,7 @@ export class ReaderStore {
       if(!allowed())throw fail('Сессия завершена или загрузка отменена.',401);
       const current=this.book(id),previous=current.coverFile||'cover.webp';
       await fsp.chmod(output,0o600);
-      const next={...current,cover:true,coverFile:name,coverVersion:token};
-      this.commit({...this.data,books:this.data.books.map(b=>b.id===id?next:b)});committed=true;
+      const next=this.commitEdition(current,{...current,cover:true,coverFile:name,coverVersion:token},await fsp.readFile(output));committed=true;
       if(/^cover(?:-[a-f0-9-]{36})?\.webp$/.test(previous))await fsp.rm(path.join(directory,previous),{force:true}).catch(()=>{});
       return next;
     }finally{this.busy=false;await fsp.rm(input,{force:true}).catch(()=>{});if(!committed)await fsp.rm(output,{force:true}).catch(()=>{});}
@@ -217,7 +293,7 @@ export class ReaderStore {
     const b = this.book(id);
     if (!Number.isInteger(index) || index < 0 || index >= b.chapters.length)
       throw fail('Глава не найдена.', 404);
-    return JSON.parse(fs.readFileSync(path.join(this.directory, id, index + '.json'), 'utf8'));
+    return b.nbk?readChapter(path.join(this.directory,id),b.nbk,index):JSON.parse(fs.readFileSync(path.join(this.directory, id, index + '.json'), 'utf8'));
   }
   validatePosition(id, p) {
     const b = this.book(id);
@@ -285,8 +361,7 @@ export class ReaderStore {
     const b = this.book(id),
       next = {...b, title: clean(input.title, 180), author: clean(input.author, 180)};
     if (!next.title) throw fail('Укажи название.');
-    this.commit({...this.data, books: this.data.books.map((x) => (x.id === id ? next : x))});
-    return next;
+    return this.commitEdition(b,next);
   }
   remove(id) {
     this.book(id);

@@ -187,7 +187,7 @@ export function installHost(directory = '/opt/nexus404', {agent=false} = {}) {
   fs.mkdirSync(shared, {recursive: true, mode: 0o755});
   fs.chmodSync(path.dirname(shared), 0o755);
   fs.chmodSync(shared, 0o755);
-  for (const name of ['webpush.mjs', 'auth.mjs', 'modules.mjs', 'maintenance-schema.mjs', 'agent-protocol.mjs']) {
+  for (const name of ['webpush.mjs', 'auth.mjs', 'modules.mjs', 'maintenance-schema.mjs', 'agent-protocol.mjs', 'hub-update.mjs', 'archive.mjs']) {
     const source = path.join(ROOT, '02-hub/src', name),
       target = path.join(shared, name);
     if (source !== path.resolve(target)) fs.copyFileSync(source, target);

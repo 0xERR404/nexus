@@ -1,9 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#0c160f"/><g transform="translate(8 8) scale(.84)"><defs>
- <linearGradient id="nexus-light" x1="18" y1="18" x2="79" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#edffdf"/><stop offset=".55" stop-color="#c5eda9"/><stop offset="1" stop-color="#83b66b"/></linearGradient>
-</defs>
-<path d="M13 61A39 39 0 0 1 62 13M87 39A39 39 0 0 1 38 87" fill="none" stroke="#87b56e" stroke-width="2.5" stroke-linecap="square"/>
-<path d="M24 74V26H36L64 55V26H77V74H65L37 45V74Z" fill="url(#nexus-light)"/>
-<path d="m40 30 5 5M57 61l5 5" fill="none" stroke="#f2ffe7" stroke-width="1.5" stroke-linecap="square" opacity=".6"/>
-<path d="m76 9 6 6-6 6-6-6Z" fill="#ddfac8"/>
-<path d="m19 81 5 5-5 5-5-5Z" fill="#729f5c"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#161618"/><g transform="translate(8 8) scale(.84)">
+<path d="M39 12H24L12 24V42M61 88H76L88 76V58" fill="none" stroke="#89b374" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M30 72V28L70 72V28" fill="none" stroke="#d5f4bc" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M65 12H76L88 24V35" fill="none" stroke="#89b374" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M12 65V76L24 88H35" fill="none" stroke="#89b374" stroke-opacity=".35" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="bevel"/>
+<path d="M85 12H91V18H85Z" fill="#d5f4bc"/>
 </g></svg>

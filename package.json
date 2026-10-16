@@ -1,6 +1,6 @@
 {
   "name": "nexus404-project",
-  "version": "0.35.251",
+  "version": "0.35.257",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -14,5 +14,6 @@
   },
   "scripts": {
     "start": "npm run start --workspace=nexus404-hub"
-  }
+  },
+  "hubUpdateSchema": 1
 }

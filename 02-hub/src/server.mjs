@@ -1,8 +1,10 @@
 import {Diagnostics} from './diagnostics.mjs';
 import {Agents} from './agents.mjs';
 import {Notices, noticeCodes} from './notices.mjs';
+import {HubUpdates} from './hub-update.mjs';
 import {Maintenance} from './maintenance.mjs';
 import {Activity} from './activity.mjs';
+import {Profiles} from './profile.mjs';
 import {readJSON as parseJSON} from './input.mjs';
 import http from 'node:http';
 import {Overview} from './overview.mjs';
@@ -55,6 +57,7 @@ const assets = [
   'performance.js',
   'ui.js',
   'legacy-clients.js',
+  'updates.js', 'updates.css',
   'maintenance.js',
   'maintenance.css',
   'security.js',
@@ -126,7 +129,8 @@ export function createApp({
   trustProxy = false,
   publicDir = path.join(root, 'public'),
   auditFile,
-  maintenance = new Maintenance()
+  maintenance = new Maintenance(),
+  hubUpdates
 }) {
   validateAuth(config);
   const security = new Security(
@@ -135,6 +139,7 @@ export function createApp({
   );
   const noticeDirectory = dataDirectory ?? (dashboardFile ? path.dirname(dashboardFile) : null);
   const agents = new Agents(noticeDirectory);
+  const profiles = new Profiles(noticeDirectory);
   const agentSweep=setInterval(()=>{try{agents.sweep();}catch{console.error('Cannot persist agent link status');}},30000);agentSweep.unref();
   let registrationWindow=0,registrationCount=0;
   const notices = new Notices(noticeDirectory ? path.join(noticeDirectory, 'hub-notices.json') : null);
@@ -156,6 +161,7 @@ export function createApp({
     modules
   );
   const hubVersion = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+  hubUpdates ??= new HubUpdates(noticeDirectory, hubVersion);
   const diagnostics=new Diagnostics(noticeDirectory);
   const collectDiagnostics=()=>{try{diagnostics.collect(agents,notices.events);}catch{console.error('Cannot collect server diagnostics');}};
   collectDiagnostics();const diagnosticsTimer=setInterval(collectDiagnostics,60000);diagnosticsTimer.unref();
@@ -647,6 +653,15 @@ export function createApp({
         if(action==='/revoke')return json(agents.revoke(data.id));
         return json({error:'Не найдено'},404);
       }
+      if (url.pathname === '/api/hub-update') {
+        if (request.method === 'GET') return json(hubUpdates.list());
+        if (request.method !== 'POST') return json({error:'Метод не поддержан'},405);
+        const value=await readJSON();
+        if(!sessions.valid(token,security.state.epoch))return json({error:'Требуется вход'},401);
+        const result=hubUpdates.queue(value);
+        audit('system.hub.update.requested',address);
+        return json(result,202);
+      }
       if (url.pathname === '/api/maintenance') {
         if (request.method === 'GET') return json(maintenance.status());
         if (request.method !== 'POST') return json({error:'Метод не поддержан'},405);
@@ -697,6 +712,14 @@ export function createApp({
             content: url.pathname.startsWith('/status') ? statusView : searchView
           })
         );
+      if (url.pathname === '/api/profile' && request.method === 'GET')
+        return json(profiles.read(config.username));
+      if (url.pathname === '/api/profile' && request.method === 'POST') {
+        const value=await parseJSON(request,210000);
+        if(!sessions.valid(token,security.state.epoch))return json({error:'Сессия завершена'},401);
+        try {const result=profiles.write(config.username,value);return json(result.profile,result.ok?200:409);}
+        catch(error){if(error.status===400)return json({error:error.message},400);throw error;}
+      }
       if (url.pathname === '/api/activity' && request.method === 'GET')
         return json(
           activity.snapshot(url.searchParams.get('days'), url.searchParams.get('source'))
@@ -819,8 +842,7 @@ export function createApp({
               'cache-control',
               'content-security-policy',
               'connection',
-              'transfer-encoding',
-              'content-length'
+              'transfer-encoding'
             ].includes(key)
           )
             response.setHeader(key, value);
@@ -894,6 +916,10 @@ async function main() {
   const modules = await loadModules(process.env.MODULES_DIR ?? path.resolve(root, '../03-modules'), {
     start: true
   });
+  const {writeFileSync,renameSync}=await import('node:fs');
+  const receipt=path.join(process.env.DATA_DIR ?? '/app/data','hub-runtime.json');
+  writeFileSync(receipt+'.tmp',JSON.stringify({version:JSON.parse(readFileSync(path.join(root,'package.json'),'utf8')).version,modules:[...modules.keys()],errors:modules.diagnostics.filter(m=>m.state==='error').map(m=>m.id)}),{mode:0o600});
+  renameSync(receipt+'.tmp',receipt);
   const app = createApp({
     config,
     modules,

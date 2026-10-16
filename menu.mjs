@@ -1,3 +1,5 @@
+import {removeHub, restoreHub} from './host/hub-lifecycle.mjs';
+import {recoverHubFromBackup} from './host/hub-update.mjs';
 import {installRemote} from './host/remote-install.mjs';
 import {diagnoseVPN} from './host/vpn-diagnose.mjs';
 import {installVPNPanel,installVPNNode} from './host/vpn-install.mjs';
@@ -134,6 +136,7 @@ async function update(ui) {
   });
 }
 async function applyUpdate(ui) {
+  if (fs.existsSync(STATE + '/hub-removed')) return restoreHub(ui);
   if(fs.existsSync('/var/lib/nexus404-base/agent-mode')){await installAgent(ui);if(fs.existsSync('/var/lib/nexus404-base/vpn-mode'))await installVPNNode(ui,{update:true});return;}
   installHost();
   await migrate(ui);
@@ -163,7 +166,9 @@ export function installerSections(role = 'new') {
     ]},
     ...(!remote ? [{title: 'Хаб и модули', hint: 'Сначала подготовь Docker и Caddy, затем установи хаб и нужные модули.', items: [
       {title: 'Установить / настроить хаб · вход и PWA', action: 'hub'},
-      {title: 'Модули · все или по одному', action: 'modules'}
+      {title: 'Модули · все или по одному', action: 'modules'},
+      {title: 'Восстановить хаб и модули из сохранённых данных', action: 'restore-hub'},
+      {title: 'Удалить хаб и модули · сохранить данные', action: 'remove-hub'}
     ]}] : []),
     {title: 'VPN и удалённый VPS', hint: 'Действия выполняются на этом сервере. Панель — на хабе, нода и агент — на отдельном VPS.', items: [
       ...(!remote ? [{title: 'Панель Арго · в установленном хабе', action: 'vpn-panel'}] : []),
@@ -174,7 +179,8 @@ export function installerSections(role = 'new') {
     ]},
     {title: 'Обновления', hint: 'Обновляются установленные компоненты этого сервера. Данные и настройки сохраняются.', items: [
       {title: 'Применить этот выпуск · из распакованного проекта', action: 'apply'},
-      {title: 'Получить и применить обновление из Git', action: 'git'}
+      {title: 'Получить и применить обновление из Git', action: 'git'},
+      ...(!remote ? [{title: 'Вернуть хаб из резервной копии обновления', action: 'rollback-hub'}] : [])
     ]},
     {title: 'Диагностика', hint: 'Просмотр состояния и отчётов.', items: [
       {title: 'Информация о сервере', action: 'info', readOnly: true},
@@ -189,6 +195,9 @@ function serverRole() {
   return 'new';
 }
 async function menuAction(id, ui) {
+  if (id === 'remove-hub') return removeHub(ui);
+  if (id === 'restore-hub') return restoreHub(ui);
+  if (id === 'rollback-hub') return recoverHubFromBackup(ui);
   const legacy = {base: '1', caddy: '2', git: '3', hub: '5', 'vpn-panel': '8', 'vpn-node': '9'};
   if (legacy[id]) return action(legacy[id], ui);
   if (id === 'agent') {

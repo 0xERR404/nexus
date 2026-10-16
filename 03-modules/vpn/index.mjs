@@ -18,6 +18,7 @@ function subscriptionURL(u,origin){
 }
 export const agentExchange=(id,report)=>store().exchange(id,report);
 const headingControls=`<div class="vpn-header-controls"><nav class="vpn-tabs" aria-label="Разделы Арго"><button type="button" data-tab="users" aria-controls="vpnView" aria-pressed="true">Пользователи</button><button type="button" data-tab="nodes" aria-controls="vpnView" aria-pressed="false">Серверы</button><button type="button" data-tab="routing" aria-controls="vpnView" aria-pressed="false">Маршрутизация</button><button type="button" data-tab="diagnostics" aria-controls="vpnView" aria-pressed="false">Диагностика</button></nav><div id="vpnHeaderActions" class="vpn-actions"></div></div>`;
+const flags=JSON.parse(fs.readFileSync(new URL('./flags.json',import.meta.url),'utf8'));
 const content=`<link rel="stylesheet" href="/modules/vpn/style.css"><script src="/modules/vpn/country-picker.js" defer></script><script src="/modules/vpn/routing-fields.js" defer></script><script src="/modules/vpn/hysteria-fields.js" defer></script><script src="/modules/vpn/diagnostic-stats.js" defer></script><script src="/modules/vpn/diagnostics.js" defer></script><script src="/modules/vpn/cloudflare-fields.js" defer></script><script src="/modules/vpn/app.js" defer></script><section id="vpn"><p id="vpnStatus" role="status"></p><div id="vpnView" role="region" aria-label="Пользователи"></div><dialog id="vpnDialog" aria-labelledby="vpnDialogTitle"><form id="vpnForm"><div id="vpnFields"></div><div class="vpn-actions"><button type="submit">Сохранить</button><button id="vpnCancel" type="button">Отмена</button></div></form></dialog></section>`;
 export async function handle({request,path:route,user,searchParams,authorized=()=>false,agents,origin,clientAddress}){
   try{
@@ -25,7 +26,7 @@ export async function handle({request,path:route,user,searchParams,authorized=()
     if(request.method==='GET'){
       if(route==='/')return new Response(modulePage({embedded:user.embedded,username:user.username,title:'Арго',content,headingControls}),{headers:{'content-type':'text/html; charset=utf-8'}});
       if(['/app.js','/cloudflare-fields.js','/diagnostics.js','/diagnostic-stats.js','/hysteria-fields.js','/country-picker.js','/routing-fields.js','/style.css'].includes(route))return new Response(fs.readFileSync(new URL('.'+route,import.meta.url)),{headers:{'content-type':route.endsWith('.js')?'text/javascript':'text/css'}});
-      if(/^\/flags\/[a-z]{2}\.svg$/.test(route)&&countries.some(c=>route==='/flags/'+c.code.toLowerCase()+'.svg'))return new Response(fs.readFileSync(new URL('.'+route,import.meta.url)),{headers:{'content-type':'image/svg+xml','cache-control':'private, max-age=86400'}});
+      if(/^\/flags\/[a-z]{2}\.svg$/.test(route)&&countries.some(c=>route==='/flags/'+c.code.toLowerCase()+'.svg'))return new Response(flags[route.slice(7,9)],{headers:{'content-type':'image/svg+xml','cache-control':'private, max-age=86400'}});
       if(route==='/api/diagnostics/probe')return diagnostics.probe(user.username,request.headers['x-vpn-diagnostic'],searchParams.get('nonce'),clientAddress);
       if(route==='/api/diagnostics/load')return diagnostics.load(user.username,request.headers['x-vpn-diagnostic']);
       if(route==='/api')return Response.json({...store().snapshot(agents?.list()??[]),profiles:PROFILES,countries});

@@ -19,6 +19,8 @@ import {
 } from './common.mjs';
 import {passwordHash, validateAuth} from '../02-hub/src/auth.mjs';
 import {validateManifest, currentManifest} from '../02-hub/src/modules.mjs';
+import {initializeHubUpdates} from './hub-update.mjs';
+import {newerVersion} from '../02-hub/src/hub-update.mjs';
 import {initializeControl} from './maintenance-control.mjs';
 import {migrate} from './maintenance.mjs';
 const APP = '/opt/nexus404';
@@ -302,6 +304,9 @@ async function password(ui) {
 }
 export async function installHub(ui, update = false, maintenance = true) {
   supported();
+  const preserved=json(HUB+'/config/preserved-installation.json');
+  if(preserved?.version && newerVersion(preserved.version,json(ROOT+'/02-hub/package.json').version))
+    throw Error('Сохранённые данные относятся к более новому выпуску. Используй ту же или более новую версию проекта');
   const domain = read(CADDY + '/domain');
   if (!validDomain(domain)) throw new Error('Сначала настрой Caddy: Подготовка сервера → Docker и Caddy');
   if (update && !fs.existsSync(HUB + '/config/auth.json')) throw new Error('Хаб ещё не установлен');
@@ -317,8 +322,10 @@ export async function installHub(ui, update = false, maintenance = true) {
   }
   installHost();
   initializeControl();
+  initializeHubUpdates();
   await ui.run('Служба настроек обслуживания', 'systemctl', ['daemon-reload']);
   await ui.run('Настройки обслуживания из хаба', 'systemctl', ['enable', '--now', 'nexus404-maintenance-control.timer']);
+  await ui.run('Служба обновления хаба', 'systemctl', ['enable', '--now', 'nexus404-hub-update.timer']);
   ui.section('01 / 04 · Образ хаба');
   await ui.run('Сборка хаба', 'docker', [
     'build',
@@ -430,7 +437,7 @@ export function moduleFiles(
     throw new Error('Каталог модуля занят: ' + id);
   const shipped = validateManifest(json(source + '/manifest.json'));
   const manifest = currentManifest(id, {
-    ...(json(target + '/manifest.json') ?? shipped),
+    ...(json(target + '/manifest.json') ?? json(hub + '/config/preserved-modules.json', {})[id] ?? shipped),
     apiVersion: shipped.apiVersion,
     version: shipped.version ?? null
   });

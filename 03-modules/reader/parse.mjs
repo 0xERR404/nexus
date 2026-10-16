@@ -2,6 +2,7 @@ import path from 'node:path';
 import {inflateRawSync, crc32} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import {parentPort, workerData} from 'node:worker_threads';
+import {decodeNBK} from './nbk.mjs';
 const MB = 1024 * 1024;
 const fail = (message) => {
   throw Error(message);
@@ -346,13 +347,21 @@ function dimensions(data, type) {
   return {width, height};
 }
 export function parseBook(input, name) {
+  if(name.toLowerCase().endsWith('.nbk')) {
+    const book=decodeNBK(input),images=new Map();
+    for(const a of book.assets){Object.assign(a,dimensions(a.data,a.type));images.set(a.id,a);}
+    for(const c of book.chapters)for(const b of c.blocks)if(b.type==='image'){
+      const a=images.get(b.asset);b.width=a.width;b.height=a.height;
+    }
+    return book;
+  }
   const bytes = Buffer.from(input),
     format = name.toLowerCase().endsWith('.epub')
       ? 'epub'
       : name.toLowerCase().endsWith('.txt')
         ? 'txt'
         : null;
-  if (!format) fail('Поддерживаются EPUB и TXT.');
+  if (!format) fail('Поддерживаются EPUB, TXT и NBK.');
   const fallback = name.replace(/\.[^.]+$/, '').slice(0, 180);
   if (format === 'txt') {
     if (bytes.length > 16 * MB) fail('TXT: максимум 16 МБ.');

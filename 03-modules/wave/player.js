@@ -61,6 +61,7 @@
     retries = 0,
     recoveryTimer,
     startTimer,
+    stallTimer,
     failureCheck = -1,
     resumeOnReturn = false,
     stablePosition = 0,
@@ -321,6 +322,8 @@
     ++playRequest;
     clearTimeout(recoveryTimer);
     clearTimeout(startTimer);
+    clearTimeout(stallTimer);
+    stallTimer = undefined;
     audio.pause();
     paint();
     save();
@@ -354,7 +357,7 @@
     recoveryTimer = setTimeout(() => {
       if (request !== playRequest || !intentPlaying) return;
       retries = Math.min(retries + 1, 6);
-      void select(true, position, true);
+      void select(true, position, true, true);
     }, delay === 0 ? 0 : Math.min(30000, delay * 2 ** retries));
   }
   async function mediaFailure() {
@@ -370,7 +373,8 @@
         headers: {Range: 'bytes=0-0'}, signal: AbortSignal.timeout(10000)
       });
       unauthorized = response.status === 401 || response.redirected;
-      temporary = response.status >= 500 || [408, 425, 429].includes(response.status);
+      temporary = response.status >= 500 || [408, 425, 429].includes(response.status) ||
+        (response.ok && ![3, 4].includes(audio.error?.code));
       await response.body?.cancel();
     } catch {} finally {
       if (failureCheck === request) failureCheck = -1;
@@ -393,6 +397,8 @@
       t = track();
     clearTimeout(recoveryTimer);
     clearTimeout(startTimer);
+    clearTimeout(stallTimer);
+    stallTimer = undefined;
     intentPlaying = play;
     resumeOnReturn = false;
     switching = play;
@@ -433,6 +439,10 @@
         note('Запуск задержался. Восстанавливаем воспроизведение…');
         recoverPlayback();
       }, 20000);
+      if (play) {
+        // Safari exposes a playback session; use it only where supported.
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+      }
       const started = play ? audio.play() : undefined;
       metadata();
       paint();
@@ -485,7 +495,7 @@
     }
     if (automatic && state.repeat === 'one') {
       audio.currentTime = 0;
-      await select(true);
+      await select(true, 0, false, true);
       return;
     }
     let index = state.index + direction;
@@ -502,7 +512,7 @@
       }
     }
     state.index = index;
-    await select(true);
+    await select(true, 0, false, automatic);
   }
   async function refresh() {
     const response = await fetch('/modules/wave/library', {signal: AbortSignal.timeout(15000)});
@@ -912,6 +922,9 @@
       intentPlaying = false;
       ++playRequest;
       clearTimeout(recoveryTimer);
+      clearTimeout(startTimer);
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
     }
     paint();
     save();
@@ -939,13 +952,13 @@
   });
   for (const name of ['waiting', 'stalled'])
     audio.addEventListener(name, () => {
-      if (!intentPlaying) return;
+      if (!intentPlaying || stallTimer) return;
       cacheJob?.controller.abort();
       cacheJob = null;
-      clearTimeout(recoveryTimer);
       const request = playRequest,
         at = audio.currentTime;
-      recoveryTimer = setTimeout(() => {
+      stallTimer = setTimeout(() => {
+        stallTimer = undefined;
         if (request === playRequest && intentPlaying && audio.currentTime <= at + 0.1)
           recoverPlayback(0);
       }, 15000);
@@ -953,6 +966,9 @@
   audio.addEventListener('playing', () => {
     clearTimeout(startTimer);
     clearTimeout(recoveryTimer);
+    clearTimeout(stallTimer);
+    stallTimer = undefined;
+    retries = 0;
     preloadQueue();
     note('');
   });
@@ -961,16 +977,19 @@
     preloadQueue();
     if (intentPlaying && (audio.error || audio.paused || audio.readyState < 3)) recoverPlayback(0);
   });
-  function resumePlayback() {
+  async function resumePlayback() {
     leaving = false;
-    if (!document.hidden && ready && !signingOut) void playbackSync.pull();
-    if (document.hidden || signingOut || state.closed) return;
+    if (document.hidden || !ready || signingOut || state.closed) return;
+    const command = queueRequest, request = playRequest;
+    await playbackSync.pull();
+    // A remote takeover or a local command wins over automatic restoration.
+    if (command !== queueRequest || request !== playRequest || document.hidden || signingOut || state.closed) return;
     save();
     metadata();
     paint();
     position();
     if ((resumeOnReturn || intentPlaying) && audio.paused && !audio.ended)
-      void select(true, restoring || state.position, Boolean(audio.error));
+      void select(true, restoring || state.position, Boolean(audio.error), true);
     else if (intentPlaying && audio.ended) void next(1, true);
     preloadQueue();
   }
@@ -982,11 +1001,16 @@
   addEventListener('pageshow', resumePlayback);
   document.addEventListener('freeze', () => { save(); playbackSync.save(true); });
   document.addEventListener('resume', resumePlayback);
-  addEventListener('pagehide', () => {
+  addEventListener('pagehide', (event) => {
     save();
-    playbackSync.save(true, true);
+    playbackSync.save(true, !event.persisted);
+    if (event.persisted) return;
     leaving = true;
-    closePlayback();
+    // Keep the queue for reopening, but stop audio when this document is gone.
+    pausePlayback();
+    audio.removeAttribute('src');
+    audio.load();
+    clearAudioCache();
   });
   if (navigator.mediaSession) {
     for (const [name, fn] of Object.entries({

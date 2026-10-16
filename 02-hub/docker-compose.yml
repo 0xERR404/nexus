@@ -11,9 +11,12 @@ services:
       DATA_DIR: /app/data
       MODULES_DIR: /app/modules
       TRUST_PROXY: "1"
+      HUB_UPDATE_DIRECTORY: /app/hub-update
       MAINTENANCE_DIRECTORY: /app/maintenance
     volumes:
       - ./config/auth.json:/app/config/auth.json:ro
+      - /var/lib/nexus404-updates/requests:/app/hub-update/requests
+      - /var/lib/nexus404-updates/status:/app/hub-update/status:ro
       - ./data:/app/data
       - ./modules:/app/modules:ro
       - /var/lib/nexus404-control/requests:/app/maintenance/requests

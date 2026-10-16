@@ -145,13 +145,14 @@
     );
     if (!filtered.length)
       $('readerBooks').append(
-        Nexus.empty(books.length ? 'Ничего не найдено' : 'Библиотека пуста', books.length ? 'Попробуй другое название или автора.' : 'Добавь книгу в EPUB или TXT.', books.length ? 'Сбросить поиск' : 'Добавить книгу', () => { if(books.length) { $('readerSearch').value=''; render(); } else $('readerUpload').click(); })
+        Nexus.empty(books.length ? 'Ничего не найдено' : 'Библиотека пуста', books.length ? 'Попробуй другое название или автора.' : 'Добавь книгу в EPUB, TXT или NBK.', books.length ? 'Сбросить поиск' : 'Добавить книгу', () => { if(books.length) { $('readerSearch').value=''; render(); } else $('readerUpload').click(); })
       );
     $('readerMore').hidden = filtered.length <= limit;
   }
   const view = Nexus.rememberView?.(['readerSearch'], () => ({limit}));
   async function library() {
     books = await api('/library');
+    const warning=books.find(b=>b.storageWarning);if(warning)status(warning.storageWarning);
     if (view?.restore()) { limit = view.value.limit || 60; render(false); }
     else render();
   }
@@ -173,7 +174,7 @@
         for (const file of files) {
           status(`Импорт ${done + failed.length + 1} / ${files.length} · ${file.name}`);
           try {
-            if (file.size > 64 * 1024 * 1024) throw Error('Файл больше 64 МБ');
+            if (file.size > (/\.nbk$/i.test(file.name)?192:64) * 1024 * 1024) throw Error('EPUB/TXT — до 64 МБ, NBK — до 192 МБ.');
             await api('/upload', undefined, {
               method: 'POST',
               headers: {
@@ -582,6 +583,7 @@
   $('readerEditDialog').addEventListener('close',clearCoverPreview);
   function editMetadata(target) {
     editingBook = target;
+    $('readerExport').href=base+'/book/'+encodeURIComponent(target.id)+'/export';
     document.querySelectorAll('.reader-error').forEach((n) => n.remove());
     $('readerTitleInput').value = target.title;
     $('readerAuthorInput').value = target.author;

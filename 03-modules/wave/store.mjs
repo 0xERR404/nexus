@@ -538,6 +538,7 @@ export class WaveStore {
     } catch {
       fail('Файл не найден.', 404);
     }
+    if (!size) fail('Аудиофайл пуст или повреждён.', 410);
     const headers = {
       'Content-Type':
         kind === 'cover'

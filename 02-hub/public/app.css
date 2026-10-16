@@ -87,15 +87,15 @@
 /* Quiet Orbit — a single opaque material system shared by every module. */
 :root {
  color-scheme:dark; --control-height:32px; --page-max-width:1440px; --page-gutter:12px;
- --bg:#090f0b; --surface:#111c14; --surface-solid:#18271c; --control-bg:#0c160f;
- --dialog-bg:var(--surface-solid); --dialog-glass:var(--surface-solid); --surface-raised:#203324;
+ --bg:#111113; --surface:#1b1b1e; --surface-solid:#232326; --control-bg:#161618;
+ --dialog-bg:var(--surface-solid); --dialog-glass:var(--surface-solid); --surface-raised:#2b2b2f;
  --theme-surface:var(--surface); --theme-solid:var(--surface-solid); --theme-control:var(--control-bg); --theme-settings-surface:var(--surface);
  --surface-highlight:linear-gradient(transparent,transparent); --surface-shadow:none;
- --line:#314534; --line-strong:#627b59; --line-soft:#253629; --text:#e9f3df; --muted:#afbea7;
+ --line:#343439; --line-strong:#505057; --line-soft:#29292e; --text:#f0f0f2; --muted:#a3a3ab;
  --theme-secondary:var(--accent); --accent:#c5eda9; --accent-rgb:197,237,169; --accent-soft:#c5eda917; --accent-glow:transparent;
- --button-bg:#1b2c1e; --button-hover:#2c4430; --button-active:#c5eda924; --button-radius:8px;
- --amber:#edbc8e; --green:#c5eda9; --red:#f0989f; --track:#314835; --backdrop:#040a06c7;
- --heat-0:#17271b; --heat-1:#2d4d31; --heat-2:#6c9a59; --heat-3:#c5eda9; --heat-4:#e0f6cd;
+ --button-bg:#28282d; --button-hover:#36363d; --button-active:#c5eda924; --button-radius:8px;
+ --amber:#edbc8e; --green:#c5eda9; --red:#f0989f; --track:#37373d; --backdrop:#09090bc7;
+ --heat-0:#252529; --heat-1:#2d4d31; --heat-2:#6c9a59; --heat-3:#c5eda9; --heat-4:#e0f6cd;
  --sans:'Onest',system-ui,sans-serif; --display:'Unbounded','Onest',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
  --pattern:linear-gradient(transparent,transparent);
 }

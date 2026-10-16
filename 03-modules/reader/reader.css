@@ -569,3 +569,7 @@ html body #readerBooks :is(.reader-book-open, .reader-card-edit):focus-visible {
     background:var(--dialog-bg);  
   }
 }
+
+#readerExport { display:inline-flex; align-items:center; justify-content:center; min-height:32px; padding:5px 10px; border:1px solid var(--line-strong); border-radius:var(--button-radius); color:var(--text); background:var(--button-bg); text-decoration:none; }
+#readerExport:hover { background:var(--button-hover); }
+#readerExport:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }

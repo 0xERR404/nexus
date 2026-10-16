@@ -81,6 +81,44 @@
   font-size: var(--ui-title-size);
   margin: 10px 0;
 }
+html body #projectDetail .project-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 12px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+html body #projectDetail #projectTitle {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+html body #projectDetail .project-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+html body #projectDetail .project-actions button {
+  flex: none;
+  width: auto;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+html body #projectDescription {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+html body #projectDescription:empty { display: none; }
+@media (max-width: 600px) {
+  html body #projectDetail .project-header { gap: 8px; }
+}
 #installAccess {
   display: grid;
   gap: 8px;

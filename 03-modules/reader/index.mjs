@@ -5,6 +5,7 @@ import path from 'node:path';
 import {Readable} from 'node:stream';
 import {modulePage} from '#hub/views.mjs';
 import {ReaderStore, fail} from './store.mjs';
+import {NBK_LIMIT} from './nbk.mjs';
 const assets = new Map(
   ['reader.js', 'engine.js', 'reader.css'].map((n) => [
     '/' + n,
@@ -15,7 +16,7 @@ const head =
   '<link rel="stylesheet" href="/modules/reader/reader.css"><script src="/modules/reader/engine.js" defer></script><script src="/modules/reader/reader.js" defer></script>';
 const close =
   '<button class="dialog-close" type="button" data-reader-close aria-label="Закрыть">×</button>';
-const content = `${head}<section id="readerPage"><p id="readerStatus" role="status"></p><section id="readerLibrary"><div class="reader-toolbar"><input id="readerSearch" type="search" placeholder="Название или автор" aria-label="Поиск книги"><label class="reader-upload">＋ Книги<input id="readerUpload" type="file" accept=".epub,.txt" multiple hidden></label></div><div id="readerBooks" class="reader-grid"></div><button type="button" id="readerMore" hidden>Показать ещё</button></section><dialog id="readerReading" aria-label="Чтение книги"><div id="readerControls"><div class="reader-toolbar"><button type="button" id="readerBack" class="dialog-close" aria-label="Закрыть книгу" title="Вернуться в библиотеку">×</button><h2 id="readerBookTitle"></h2><button type="button" id="readerEdit" aria-label="Название и автор">✎</button></div><div class="reader-toolbar"><button id="readerPrev" type="button" aria-label="Назад">←</button><select id="readerChapter" aria-label="Глава"></select><button id="readerNext" type="button" aria-label="Вперёд">→</button><select id="readerLiveSize" aria-label="Размер шрифта книги"><option value="16">16 px</option><option value="18">18 px</option><option value="20">20 px</option><option value="22">22 px</option><option value="24">24 px</option><option value="28">28 px</option><option value="32">32 px</option></select><select id="readerMode" aria-label="Режим чтения"><option value="scroll">Свиток</option><option value="pages">Страницы</option></select><button id="readerAddMark" type="button">＋ Закладка</button><button id="readerMarks" type="button">Закладки</button></div><div id="readerConflict" hidden><p>Позиция изменилась на другом устройстве.</p><button id="readerRemote" type="button">Перейти к ней</button><button id="readerLocal" type="button">Продолжить здесь</button></div></div><div id="readerViewport" tabindex="0" aria-label="Текст книги"><article id="readerText" class="reader-text"></article></div><div id="readerHUD" class="reader-footer"><span id="readerProgress"></span><span id="readerSaved" role="status"></span></div><p id="readerReadStatus" role="status"></p></dialog></section><dialog id="readerMarksDialog" class="reader-dialog"><div class="reader-heading"><h2>Закладки</h2>${close}</div><div id="readerMarksList"></div></dialog><dialog id="readerEditDialog" class="reader-dialog"><div class="reader-heading"><h2>Книга</h2>${close}</div><form id="readerMetaForm"><label>Автор<input id="readerAuthorInput" maxlength="180"></label><label>Название<input id="readerTitleInput" maxlength="180" required></label><div class="reader-cover-editor"><img id="readerCoverPreview" alt="Обложка книги" hidden><label>Обложка<input id="readerCoverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><small>JPEG, PNG, WebP или GIF · до 8 МБ</small></label></div><div class="reader-toolbar"><button type="submit">Сохранить</button><button type="button" id="readerDelete">Удалить книгу</button></div></form></dialog><dialog id="readerDeleteDialog" class="reader-dialog"><div class="reader-heading"><h2>Удалить книгу?</h2>${close}</div><p>Книга, позиция и закладки будут удалены.</p><button type="button" id="readerDeleteConfirm">Удалить</button></dialog>`;
+const content = `${head}<section id="readerPage"><p id="readerStatus" role="status"></p><section id="readerLibrary"><div class="reader-toolbar"><input id="readerSearch" type="search" placeholder="Название или автор" aria-label="Поиск книги"><label class="reader-upload">＋ Книги<input id="readerUpload" type="file" accept=".epub,.txt,.nbk" multiple hidden></label></div><div id="readerBooks" class="reader-grid"></div><button type="button" id="readerMore" hidden>Показать ещё</button></section><dialog id="readerReading" aria-label="Чтение книги"><div id="readerControls"><div class="reader-toolbar"><button type="button" id="readerBack" class="dialog-close" aria-label="Закрыть книгу" title="Вернуться в библиотеку">×</button><h2 id="readerBookTitle"></h2><button type="button" id="readerEdit" aria-label="Название и автор">✎</button></div><div class="reader-toolbar"><button id="readerPrev" type="button" aria-label="Назад">←</button><select id="readerChapter" aria-label="Глава"></select><button id="readerNext" type="button" aria-label="Вперёд">→</button><select id="readerLiveSize" aria-label="Размер шрифта книги"><option value="16">16 px</option><option value="18">18 px</option><option value="20">20 px</option><option value="22">22 px</option><option value="24">24 px</option><option value="28">28 px</option><option value="32">32 px</option></select><select id="readerMode" aria-label="Режим чтения"><option value="scroll">Свиток</option><option value="pages">Страницы</option></select><button id="readerAddMark" type="button">＋ Закладка</button><button id="readerMarks" type="button">Закладки</button></div><div id="readerConflict" hidden><p>Позиция изменилась на другом устройстве.</p><button id="readerRemote" type="button">Перейти к ней</button><button id="readerLocal" type="button">Продолжить здесь</button></div></div><div id="readerViewport" tabindex="0" aria-label="Текст книги"><article id="readerText" class="reader-text"></article></div><div id="readerHUD" class="reader-footer"><span id="readerProgress"></span><span id="readerSaved" role="status"></span></div><p id="readerReadStatus" role="status"></p></dialog></section><dialog id="readerMarksDialog" class="reader-dialog"><div class="reader-heading"><h2>Закладки</h2>${close}</div><div id="readerMarksList"></div></dialog><dialog id="readerEditDialog" class="reader-dialog"><div class="reader-heading"><h2>Книга</h2>${close}</div><form id="readerMetaForm"><label>Автор<input id="readerAuthorInput" maxlength="180"></label><label>Название<input id="readerTitleInput" maxlength="180" required></label><div class="reader-cover-editor"><img id="readerCoverPreview" alt="Обложка книги" hidden><label>Обложка<input id="readerCoverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><small>JPEG, PNG, WebP или GIF · до 8 МБ</small></label></div><div class="reader-toolbar"><button type="submit">Сохранить</button><a id="readerExport" download>Скачать NBK</a><button type="button" id="readerDelete">Удалить книгу</button></div></form></dialog><dialog id="readerDeleteDialog" class="reader-dialog"><div class="reader-heading"><h2>Удалить книгу?</h2>${close}</div><p>Книга, позиция и закладки будут удалены.</p><button type="button" id="readerDeleteConfirm">Удалить</button></dialog>`;
 export const settings = {
   title: 'Александрия',
   content: `${head}<section id="readerSettings"><p id="readerStatus" role="status"></p><form id="readerSettingsForm" class="reader-settings"><label>Размер текста<select id="readerSize">${[16, 18, 20, 22, 24, 28, 32].map((n) => `<option value="${n}">${n}</option>`).join('')}</select></label><label>Межстрочный интервал<select id="readerLine"><option value="1.4">Компактный</option><option value="1.7">Обычный</option><option value="2">Свободный</option></select></label><label>Шрифт<select id="readerFont"><option value="serif">С засечками</option><option value="sans">Без засечек</option><option value="mono">Моноширинный</option></select></label><label>Фон чтения<select id="readerTheme"><option value="hub">Как в хабе</option><option value="paper">Светлый</option><option value="sepia">Сепия</option></select></label><label>Ширина текста<select id="readerWidth"><option value="normal">Обычная</option><option value="wide">Широкая</option></select></label><button type="submit">Сохранить</button></form></section>`
@@ -65,12 +66,24 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
             });
           if (route === '/library') return Response.json(store.library());
           if (route === '/settings') return Response.json(store.settings());
+          const download=/^\/book\/([a-f0-9-]+)\/export$/.exec(route);
+          if(download) {
+            const exported=store.exportFile(download[1]);
+            const stream=request.method==='HEAD'?null:fs.createReadStream(exported.file,{fd:fs.openSync(exported.file,'r'),autoClose:true});
+            if(stream){const abort=()=>stream.destroy();signal?.addEventListener('abort',abort,{once:true});stream.on('close',()=>signal?.removeEventListener('abort',abort));}
+            return new Response(stream?Readable.toWeb(stream):null,{headers:{
+              'Content-Type':'application/x-nexus-book; charset=utf-8',
+              'Content-Length':String(exported.size),
+              'Content-Disposition':"attachment; filename=\"book.nbk\"; filename*=UTF-8''"+encodeURIComponent(exported.title+'.nbk').replace(/'/g,'%27'),
+              'X-Content-Type-Options':'nosniff'
+            }});
+          }
           const match = /^\/book\/([a-f0-9-]+)(?:\/(chapter|asset)\/([a-f0-9]+))?$/.exec(route),
             cover = /^\/cover\/([a-f0-9-]+)$/.exec(route);
           if (match || cover) {
             const book = store.book((match || cover)[1]);
             if (match && !match[2]) {
-              const {assets, ...view} = book;
+              const {assets, nbk, ...view} = book;
               return Response.json(view);
             }
             if (match?.[2] === 'chapter')
@@ -79,6 +92,10 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
               type = isCover ? 'image/webp' : book.assets[match[3]];
             if (!type || (isCover && !book.cover) || (!isCover && !/^[a-f0-9]{64}$/.test(match[3])))
               throw fail('Изображение не найдено.', 404);
+            if(!isCover && book.nbk) {
+              const asset=store.asset(book.id,match[3]);
+              return new Response(request.method==='HEAD'?null:asset.data,{headers:{'Content-Type':asset.type,'Content-Length':String(asset.data.length),'X-Content-Type-Options':'nosniff'}});
+            }
             const file = path.join(
               store.directory,
               book.id,
@@ -102,18 +119,14 @@ export function createModule(directory = path.join(process.env.DATA_DIR ?? '/app
         }
         if (request.method === 'POST') {
           if(route==='/cover'){const bytes=await readBytes(request,8*1024*1024);return Response.json(await store.setCover(request.headers['x-book-id'],bytes,()=>authorized()&&!signal?.aborted));}
+          let name;
+          if(route==='/upload')try{name=decodeURIComponent(request.headers['x-file-name']||'');}catch{throw fail('Некорректное имя.');}
           const data = await (route === '/upload'
-              ? readBytes(request, 64 * 1024 * 1024)
+              ? readBytes(request, /\.nbk$/i.test(name)?NBK_LIMIT:64*1024*1024)
               : readJSON(request)),
             allowed = () => authorized() && !signal?.aborted;
           if (!allowed()) throw fail('Сессия завершена.', 401);
           if (route === '/upload') {
-            let name;
-            try {
-              name = decodeURIComponent(request.headers['x-file-name'] || '');
-            } catch {
-              throw fail('Некорректное имя.');
-            }
             return Response.json(await store.upload(data, name, allowed));
           }
           if (route === '/position') {
