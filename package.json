@@ -1,6 +1,6 @@
 {
   "name": "nexus404-project",
-  "version": "0.35.266",
+  "version": "0.35.268",
   "private": true,
   "type": "module",
   "workspaces": [

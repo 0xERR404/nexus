@@ -59,6 +59,8 @@ export const projectFiles = [
   '02-hub/public/data-backup.css',
   'host/hub-lifecycle.mjs',
   'host/hub-update.mjs',
+  'host/update-candidate.mjs',
+  'host/update-probe.mjs',
   '02-hub/src/hub-update.mjs',
   '02-hub/src/archive.mjs',
   '02-hub/public/updates.js',

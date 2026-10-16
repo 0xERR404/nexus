@@ -8,7 +8,7 @@ import {HUB,HOST,NODE,atomic,lock,direct} from './common.mjs';
 import {archiveFiles,backupID,backupFail} from '../02-hub/src/data-backup.mjs';
 const CONTROL='/var/lib/nexus404-data-backup';
 const UPDATES='/var/lib/nexus404-updates';
-const active=new Set(['preparing','building','backup','installing','checking','rolling-back','recovery-required']);
+const active=new Set(['preparing','building','snapshot','preflight','backup','installing','checking','rolling-back','recovery-required']);
 const parseID=value=>{if(typeof value!=='string')throw backupFail('Копия не найдена',404);const m=/^(update|failed)-([a-f0-9-]+)$/.exec(value??'');if(!m||!backupID.test(m[2]))throw backupFail('Копия не найдена',404);return m;};
 function record(file){
  try{const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.size>2*1024*1024)throw Error('Invalid metadata');return JSON.parse(fs.readFileSync(file,'utf8'));}catch(e){if(e.code==='ENOENT')return {};throw e;}
